@@ -58,15 +58,8 @@ Item {
     }
     function setTheme(id) { set("theme", id); }
     function validateKey() {
-        var result = JSON.parse(app.aiValidate(provider(), keyField));
-        if (result.success) {
-            var keys = Object.assign({}, val("aiApiKeys", {}));
-            keys[provider()] = keyField;
-            set("aiApiKeys", keys);
-            keyStatus = "Connected";
-        } else {
-            keyStatus = result.error || "Invalid API key";
-        }
+        keyStatus = "Checking…";
+        app.aiValidate(provider(), keyField);
     }
     function localPath(url) {
         var s = url.toString();
@@ -79,6 +72,21 @@ Item {
         else if (which === "data") dataFolderDialog.open();
         else if (which === "legacy") legacyDialog.open();
         else if (which === "sync") syncFolderDialog.open();
+    }
+
+    Connections {
+        target: app
+        function onAiKeyResult(provider, success, message) {
+            if (provider !== root.provider()) return;
+            if (success) {
+                var keys = Object.assign({}, root.val("aiApiKeys", {}));
+                keys[provider] = root.keyField;
+                root.set("aiApiKeys", keys);
+                root.keyStatus = "Connected";
+            } else {
+                root.keyStatus = message || "Invalid API key";
+            }
+        }
     }
 
     Rectangle {

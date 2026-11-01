@@ -83,6 +83,14 @@ pub mod qobject {
         #[cxx_name = "notice"]
         fn notice(self: Pin<&mut Self>, kind: QString, message: QString);
 
+        #[qsignal]
+        #[cxx_name = "aiKeyResult"]
+        fn ai_key_result(self: Pin<&mut Self>, provider: QString, success: bool, message: QString);
+
+        #[qsignal]
+        #[cxx_name = "aiModelsResult"]
+        fn ai_models_result(self: Pin<&mut Self>, json: QString);
+
         #[qinvokable]
         fn boot(self: Pin<&mut Self>);
 
@@ -208,11 +216,11 @@ pub mod qobject {
 
         #[qinvokable]
         #[cxx_name = "aiValidate"]
-        fn ai_validate(self: &Self, provider: &QString, key: &QString) -> QString;
+        fn ai_validate(self: Pin<&mut Self>, provider: &QString, key: &QString) -> QString;
 
         #[qinvokable]
         #[cxx_name = "aiFetchModels"]
-        fn ai_fetch_models(self: &Self, server_url: &QString, key: &QString) -> QString;
+        fn ai_fetch_models(self: Pin<&mut Self>, server_url: &QString, key: &QString) -> QString;
 
         #[qinvokable]
         #[cxx_name = "syncNow"]
@@ -756,41 +764,61 @@ impl qobject::AppController {
         s(id)
     }
 
-    pub fn ai_validate(&self, provider: &QString, key: &QString) -> QString {
+    pub fn ai_validate(mut self: Pin<&mut Self>, provider: &QString, key: &QString) -> QString {
         let prov = p(provider);
         let key = p(key);
         let server = self
+            .as_ref()
+            .rust()
             .core
+            .clone()
             .lock()
             .unwrap()
             .ws
             .settings
             .ai_local_server_url
             .clone();
-        let (tx, rx) = std::sync::mpsc::channel();
+        let qt = self.as_mut().qt_thread();
         runtime().spawn(async move {
-            let res = ai::validate_key(&prov, &key, &server).await;
-            let _ = tx.send(res.is_ok());
+            match ai::validate_key(&prov, &key, &server).await {
+                Ok(()) => {
+                    let provider = prov.clone();
+                    let _ = qt.queue(move |mut q| {
+                        q.as_mut().ai_key_result(s(provider), true, s("Connected"));
+                    });
+                }
+                Err(err) => {
+                    let provider = prov.clone();
+                    let message = err.to_string();
+                    let _ = qt.queue(move |mut q| {
+                        q.as_mut().ai_key_result(s(provider), false, s(message));
+                    });
+                }
+            }
         });
-        let ok = rx.recv_timeout(Duration::from_secs(20)).unwrap_or(false);
-        s(serde_json::json!({"success": ok}).to_string())
+        s("")
     }
 
-    pub fn ai_fetch_models(&self, server_url: &QString, key: &QString) -> QString {
+    pub fn ai_fetch_models(
+        mut self: Pin<&mut Self>,
+        server_url: &QString,
+        key: &QString,
+    ) -> QString {
         let url = p(server_url);
         let key = p(key);
-        let (tx, rx) = std::sync::mpsc::channel();
+        let qt = self.as_mut().qt_thread();
         runtime().spawn(async move {
-            let res = ai::fetch_models(&url, &key).await;
-            let _ = tx.send(res);
+            let json = match ai::fetch_models(&url, &key).await {
+                Ok(models) => serde_json::json!({"success": true, "models": models}).to_string(),
+                Err(err) => {
+                    serde_json::json!({"success": false, "error": err.to_string()}).to_string()
+                }
+            };
+            let _ = qt.queue(move |mut q| {
+                q.as_mut().ai_models_result(s(json));
+            });
         });
-        match rx.recv_timeout(Duration::from_secs(20)) {
-            Ok(Ok(models)) => s(serde_json::json!({"success": true, "models": models}).to_string()),
-            Ok(Err(e)) => {
-                s(serde_json::json!({"success": false, "error": e.to_string()}).to_string())
-            }
-            Err(_) => s(serde_json::json!({"success": false, "error": "timeout"}).to_string()),
-        }
+        s("")
     }
 
     pub fn sync_now(mut self: Pin<&mut Self>) {

@@ -426,7 +426,6 @@ Known limits, deliberately documented rather than hidden:
 - Kanban moves use hover arrows instead of pointer drag-and-drop.
 - Website ad blocking covers top-level navigation, `fetch`/XHR calls to known
   hosts, and a DOM cleanup pass; it is not a full network interceptor.
-- AI key validation and model fetch use a short blocking call.
 - MCP SSE event subscriptions, the Unix-socket GUI transport and web-card tools
   that need QtWebEngine are not implemented; everything else is available over
   stdio and HTTP.
