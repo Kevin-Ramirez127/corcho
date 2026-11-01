@@ -5,6 +5,7 @@ use serde_json::{Map, Value};
 
 pub const SCHEMA_VERSION: u32 = 1;
 
+#[allow(dead_code)]
 pub const CARD_KINDS: &[&str] = &[
     "note",
     "website",
@@ -63,6 +64,7 @@ impl Card {
         }
     }
 
+    #[allow(dead_code)]
     pub fn get(&self, key: &str) -> Option<&Value> {
         self.payload.get(key)
     }
@@ -71,6 +73,7 @@ impl Card {
         self.payload.insert(key.to_string(), value);
     }
 
+    #[allow(dead_code)]
     pub fn str_field(&self, key: &str, fallback: &str) -> String {
         self.payload
             .get(key)
@@ -231,6 +234,12 @@ pub struct Settings {
     pub debug_mode: bool,
     pub reduced_motion: bool,
     pub data_dir: Option<String>,
+    pub git_sync_enabled: bool,
+    pub git_remote: String,
+    pub git_branch: String,
+    pub git_auto_push: bool,
+    pub git_auto_pull: bool,
+    pub git_include_attachments: bool,
 }
 
 impl Default for Settings {
@@ -284,6 +293,12 @@ impl Default for Settings {
             debug_mode: false,
             reduced_motion: false,
             data_dir: None,
+            git_sync_enabled: false,
+            git_remote: String::new(),
+            git_branch: "main".into(),
+            git_auto_push: true,
+            git_auto_pull: true,
+            git_include_attachments: false,
         }
     }
 }
@@ -380,6 +395,7 @@ impl Workspace {
         f
     }
 
+    #[allow(dead_code)]
     pub fn total_cards(&self) -> usize {
         self.grids.iter().map(|g| g.cards.len()).sum()
     }
@@ -446,7 +462,7 @@ pub fn themes() -> serde_json::Value {
         {"id":"obsidian","name":"Obsidian","bg":"#0a0a0a","surface":"#121212","accent":"#a78bfa","text":"#ece9f6","builtin":true},
         {"id":"monokai","name":"Monokai","bg":"#22221d","surface":"#2b2b25","accent":"#f92672","text":"#ecebdc","builtin":true},
         {"id":"alpine","name":"Alpine","bg":"#f8fafc","surface":"#ffffff","accent":"#3b82f6","text":"#1e293b","builtin":true,"light":true},
-        {"id":"fog","name":"Fog","bg":"#f1f5f9","surface":"#ffffff","accent":"#6b7280","text":"#27303b","builtin":true,"light":true},
+        {"id":"fog","name":"Fog","bg":"#f1f5f9","surface":"#ffffff","accent":"#5b6472","text":"#27303b","builtin":true,"light":true},
         {"id":"blueprint","name":"Blueprint","bg":"#eff6ff","surface":"#ffffff","accent":"#1d4ed8","text":"#1e2a45","builtin":true,"light":true},
         {"id":"solarized-dark","name":"Solarized Dark","bg":"#002b36","surface":"#073642","accent":"#2aa198","text":"#d6e2e3","builtin":true},
         {"id":"gruvbox","name":"Gruvbox","bg":"#282828","surface":"#35302a","accent":"#fe8019","text":"#ebdbb2","builtin":true},
@@ -505,5 +521,85 @@ mod tests {
         let v = serde_json::to_value(&s).unwrap();
         assert!(v.get("aiProvider").is_some());
         assert!(v.get("launch_at_startup").is_some());
+    }
+}
+
+#[cfg(test)]
+mod contrast_tests {
+    use super::*;
+
+    fn channel(value: u8) -> f64 {
+        let c = value as f64 / 255.0;
+        if c <= 0.04045 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055).powf(2.4)
+        }
+    }
+
+    fn luminance(hex: &str) -> f64 {
+        let h = hex.trim_start_matches('#');
+        let r = u8::from_str_radix(&h[0..2], 16).unwrap();
+        let g = u8::from_str_radix(&h[2..4], 16).unwrap();
+        let b = u8::from_str_radix(&h[4..6], 16).unwrap();
+        0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+    }
+
+    fn contrast(a: &str, b: &str) -> f64 {
+        let (la, lb) = (luminance(a), luminance(b));
+        let (hi, lo) = if la > lb { (la, lb) } else { (lb, la) };
+        (hi + 0.05) / (lo + 0.05)
+    }
+
+    fn blend(fg: &str, bg: &str, alpha: f64) -> String {
+        let f: Vec<u8> = (0..3)
+            .map(|i| u8::from_str_radix(&fg[1 + i * 2..3 + i * 2], 16).unwrap())
+            .collect();
+        let b: Vec<u8> = (0..3)
+            .map(|i| u8::from_str_radix(&bg[1 + i * 2..3 + i * 2], 16).unwrap())
+            .collect();
+        let mix: Vec<u8> = (0..3)
+            .map(|i| (f[i] as f64 * alpha + b[i] as f64 * (1.0 - alpha)).round() as u8)
+            .collect();
+        format!("#{:02x}{:02x}{:02x}", mix[0], mix[1], mix[2])
+    }
+
+    #[test]
+    fn every_theme_meets_text_and_accent_contrast() {
+        let value = themes();
+        for theme in value.as_array().unwrap() {
+            let id = theme["id"].as_str().unwrap();
+            let bg = theme["bg"].as_str().unwrap();
+            let surface = theme["surface"].as_str().unwrap();
+            let text = theme["text"].as_str().unwrap();
+            let accent = theme["accent"].as_str().unwrap();
+            let light = theme["light"].as_bool().unwrap_or(false);
+            let t2_alpha = if light { 0.80 } else { 0.86 };
+            let muted_alpha = if light { 0.72 } else { 0.66 };
+
+            assert!(contrast(text, bg) >= 4.5, "{id}: primary text");
+            assert!(
+                contrast(text, surface) >= 4.5,
+                "{id}: primary text on surface"
+            );
+            assert!(
+                contrast(&blend(text, bg, t2_alpha), bg) >= 4.5,
+                "{id}: secondary text"
+            );
+            assert!(
+                contrast(&blend(text, bg, muted_alpha), bg) >= 4.5,
+                "{id}: muted text"
+            );
+
+            let dark_ink = "#171717";
+            let light_ink = "#f7f4ec";
+            let best = if contrast(accent, dark_ink) >= contrast(accent, light_ink) {
+                contrast(accent, dark_ink)
+            } else {
+                contrast(accent, light_ink)
+            };
+            assert!(best >= 4.5, "{id}: accent ink");
+            assert!(contrast(accent, bg) >= 3.0, "{id}: accent non-text");
+        }
     }
 }

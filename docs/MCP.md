@@ -151,6 +151,9 @@ API keys are write-only: `settings.get` redacts them; logs never include them.
 | `sync.now` | — |
 | `sync.configure` | `enabled`, `provider` (`folder`\|`gdrive`), `folder?` |
 | `gdrive.connect` / `gdrive.disconnect` | PKCE flow (browser) |
+| `git.status` | enabled, remote, branch, last sync, last error |
+| `git.configure` | enabled, remote, branch, autoPull, autoPush, includeAttachments |
+| `git.sync` | commit, pull/ff/union-merge, push |
 | `backup.export` / `backup.import` | `path` |
 | `data.setDir` | `path` |
 | `attachments.list/read/write/delete` | base64 for binary |

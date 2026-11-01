@@ -20,8 +20,7 @@ pub struct UpdateState {
 }
 
 fn repo() -> String {
-    std::env::var("CORCHO_UPDATE_REPO")
-        .unwrap_or_else(|_| "emiliano-go/repo".to_string())
+    std::env::var("CORCHO_UPDATE_REPO").unwrap_or_else(|_| "emiliano-go/repo".to_string())
 }
 
 pub async fn check(channel: &str) -> Result<UpdateState> {
@@ -47,10 +46,15 @@ pub async fn check(channel: &str) -> Result<UpdateState> {
         if draft {
             continue;
         }
-        let pre = rel.get("prerelease").and_then(|v| v.as_bool()).unwrap_or(false);
+        let pre = rel
+            .get("prerelease")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         let tag = rel.get("tag_name").and_then(|v| v.as_str()).unwrap_or("");
         let ver_str = tag.trim_start_matches('v');
-        let Ok(ver) = semver::Version::parse(ver_str) else { continue };
+        let Ok(ver) = semver::Version::parse(ver_str) else {
+            continue;
+        };
         if !ver.gt(&current) {
             continue;
         }
@@ -105,11 +109,7 @@ pub async fn check(channel: &str) -> Result<UpdateState> {
     Ok(state)
 }
 
-pub async fn download(
-    url: &str,
-    dest: &Path,
-    mut progress: impl FnMut(f64) + Send,
-) -> Result<()> {
+pub async fn download(url: &str, dest: &Path, mut progress: impl FnMut(f64) + Send) -> Result<()> {
     let client = reqwest::Client::builder()
         .user_agent("Corcho/0.1")
         .build()?;

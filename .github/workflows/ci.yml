@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.8.2"
+          modules: "qtwebengine qtquick3d qtmultimedia"
+          cache: true
+      - name: System libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libgl1-mesa-dev libxkbcommon-dev \
+            libfontconfig1-dev libfreetype6-dev
+      - name: Format
+        run: cargo fmt --check
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Tests
+        run: QMAKE="$(which qmake6)" cargo test
+      - name: Release build
+        run: QMAKE="$(which qmake6)" cargo build --release

@@ -6,6 +6,10 @@ sensory fragments on an infinite grid.
 Built with **Rust** and **Qt 6** (Qt Quick + QtWebEngine). Linux only.
 No Electron shell, no telemetry, no analytics.
 
+![Corcho canvas](docs/screenshots/canvas.png)
+
+![Corcho settings](docs/screenshots/settings.png)
+
 ## Features
 
 - Infinite grid canvas with pan, zoom, snapping, minimap and undo/redo.
@@ -16,8 +20,10 @@ No Electron shell, no telemetry, no analytics.
 - Five AI providers (Anthropic, OpenAI, Google, xAI, Mistral) plus a local
   OpenAI-compatible server, with streaming and context injection.
 - Isolated website sessions, a host-based ad blocker and a session self-test.
-- Folder sync and Google Drive sync, conflict backups, zip import/export and
-  legacy data import.
+- Folder sync, Google Drive sync and **git sync** to any remote (GitHub,
+  Codeberg, GitLab, self-hosted): pull at start, debounced auto-push, and a
+  union merge that never drops a grid or card. Conflict copies are kept in
+  `backups/`.
 - Stable, beta and experimental update channels, MPRIS, scripts, launch at
   startup and a `corcho://` protocol handler. Every feature is free.
 - A full MCP server plan: [`docs/MCP.md`](docs/MCP.md).

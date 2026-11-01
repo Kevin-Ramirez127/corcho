@@ -55,6 +55,7 @@ pub mod qobject {
         #[qproperty(bool, syncing, cxx_name = "syncing")]
         #[qproperty(bool, ai_busy, cxx_name = "aiBusy")]
         #[qproperty(QString, update_json, cxx_name = "updateJson")]
+        #[qproperty(QString, git_json, cxx_name = "gitJson")]
         #[qproperty(QString, search_json, cxx_name = "searchJson")]
         #[qproperty(QString, themes_json, cxx_name = "themesJson")]
         #[qproperty(QString, fonts_json, cxx_name = "fontsJson")]
@@ -151,7 +152,11 @@ pub mod qobject {
 
         #[qinvokable]
         #[cxx_name = "moveGridToFolder"]
-        fn move_grid_to_folder(self: Pin<&mut Self>, grid_id: &QString, folder_id: &QString) -> bool;
+        fn move_grid_to_folder(
+            self: Pin<&mut Self>,
+            grid_id: &QString,
+            folder_id: &QString,
+        ) -> bool;
 
         #[qinvokable]
         #[cxx_name = "reorderGrid"]
@@ -212,6 +217,10 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "syncNow"]
         fn sync_now(self: Pin<&mut Self>);
+
+        #[qinvokable]
+        #[cxx_name = "gitSyncNow"]
+        fn git_sync_now(self: Pin<&mut Self>);
 
         #[qinvokable]
         #[cxx_name = "gdriveConnect"]
@@ -310,6 +319,7 @@ pub struct AppControllerRust {
     syncing: bool,
     ai_busy: bool,
     update_json: QString,
+    git_json: QString,
     search_json: QString,
     themes_json: QString,
     fonts_json: QString,
@@ -337,6 +347,7 @@ impl Default for AppControllerRust {
             syncing: false,
             ai_busy: false,
             update_json: QString::default(),
+            git_json: QString::from("{}"),
             search_json: QString::from("[]"),
             themes_json: model::themes().to_string().into(),
             fonts_json: model::fonts().to_string().into(),
@@ -350,7 +361,7 @@ impl Default for AppControllerRust {
 
 impl qobject::AppController {
     fn refresh_all(mut self: Pin<&mut Self>) {
-        let (grids, cards, folders, settings, active, pan, pany, zoom, upd) = {
+        let (grids, cards, folders, settings, active, pan, pany, zoom, upd, git) = {
             let core_arc = self.as_ref().rust().core.clone();
             let core = core_arc.lock().unwrap();
             (
@@ -363,6 +374,7 @@ impl qobject::AppController {
                 core.active_grid_view().1,
                 core.active_grid_view().2,
                 serde_json::to_string(&core.update).unwrap_or_else(|_| "{}".into()),
+                core.git.status_json(),
             )
         };
         self.as_mut().set_grids_json(s(grids));
@@ -374,6 +386,7 @@ impl qobject::AppController {
         self.as_mut().set_pan_y(pany);
         self.as_mut().set_zoom(zoom);
         self.as_mut().set_update_json(s(upd));
+        self.as_mut().set_git_json(s(git));
     }
 
     pub fn boot(mut self: Pin<&mut Self>) {
@@ -416,6 +429,15 @@ impl qobject::AppController {
         self.as_mut().refresh_all();
     }
 
+    fn refresh_cards(mut self: Pin<&mut Self>) {
+        let cards = {
+            let core_arc = self.as_ref().rust().core.clone();
+            let core = core_arc.lock().unwrap();
+            core.cards_json()
+        };
+        self.as_mut().set_cards_json(s(cards));
+    }
+
     pub fn save_now(self: Pin<&mut Self>) {
         let core_arc = self.as_ref().rust().core.clone();
         let mut core = core_arc.lock().unwrap();
@@ -439,7 +461,7 @@ impl qobject::AppController {
             let mut core = core_arc.lock().unwrap();
             core.update_card_json(&p(json))
         };
-        self.as_mut().refresh_all();
+        self.as_mut().refresh_cards();
         ok
     }
 
@@ -464,7 +486,11 @@ impl qobject::AppController {
             .unwrap_or_default()
     }
 
-    pub fn send_card_to_grid(mut self: Pin<&mut Self>, card_id: &QString, grid_id: &QString) -> bool {
+    pub fn send_card_to_grid(
+        mut self: Pin<&mut Self>,
+        card_id: &QString,
+        grid_id: &QString,
+    ) -> bool {
         let ok = {
             let core_arc = self.as_ref().rust().core.clone();
             let mut core = core_arc.lock().unwrap();
@@ -553,12 +579,23 @@ impl qobject::AppController {
         self.as_mut().refresh_all();
     }
 
-    pub fn move_grid_to_folder(mut self: Pin<&mut Self>, grid_id: &QString, folder_id: &QString) -> bool {
+    pub fn move_grid_to_folder(
+        mut self: Pin<&mut Self>,
+        grid_id: &QString,
+        folder_id: &QString,
+    ) -> bool {
         let fid = p(folder_id);
         let ok = {
             let core_arc = self.as_ref().rust().core.clone();
             let mut core = core_arc.lock().unwrap();
-            core.move_grid_to_folder(&p(grid_id), if fid.is_empty() { None } else { Some(fid.as_str()) })
+            core.move_grid_to_folder(
+                &p(grid_id),
+                if fid.is_empty() {
+                    None
+                } else {
+                    Some(fid.as_str())
+                },
+            )
         };
         self.as_mut().refresh_all();
         ok
@@ -586,7 +623,13 @@ impl qobject::AppController {
     }
 
     pub fn set_view(self: Pin<&mut Self>, pan_x: f64, pan_y: f64, zoom: f64) {
-        self.as_ref().rust().core.clone().lock().unwrap().set_view(pan_x, pan_y, zoom);
+        self.as_ref()
+            .rust()
+            .core
+            .clone()
+            .lock()
+            .unwrap()
+            .set_view(pan_x, pan_y, zoom);
     }
 
     pub fn undo(mut self: Pin<&mut Self>) -> bool {
@@ -643,7 +686,12 @@ impl qobject::AppController {
             let core = core_arc.lock().unwrap();
             let prov = p(provider);
             (
-                core.ws.settings.ai_api_keys.get(&prov).cloned().unwrap_or_default(),
+                core.ws
+                    .settings
+                    .ai_api_keys
+                    .get(&prov)
+                    .cloned()
+                    .unwrap_or_default(),
                 core.ws.settings.ai_local_server_url.clone(),
                 core.ws.settings.ai_web_search,
                 core.ws.settings.ai_stream,
@@ -734,7 +782,9 @@ impl qobject::AppController {
         });
         match rx.recv_timeout(Duration::from_secs(20)) {
             Ok(Ok(models)) => s(serde_json::json!({"success": true, "models": models}).to_string()),
-            Ok(Err(e)) => s(serde_json::json!({"success": false, "error": e.to_string()}).to_string()),
+            Ok(Err(e)) => {
+                s(serde_json::json!({"success": false, "error": e.to_string()}).to_string())
+            }
             Err(_) => s(serde_json::json!({"success": false, "error": "timeout"}).to_string()),
         }
     }
@@ -768,13 +818,17 @@ impl qobject::AppController {
                     let Some(client_id) = client_id else {
                         return Err(anyhow::anyhow!("Google Drive client id missing"));
                     };
-                    let token = sync::refresh_token(&client_id, secret.as_deref(), &refresh).await?;
+                    let token =
+                        sync::refresh_token(&client_id, secret.as_deref(), &refresh).await?;
                     let remote = sync::drive_read(&token).await?;
                     let local = std::fs::read(data_dir.join("workspace.json")).unwrap_or_default();
                     if let Some(remote) = remote {
                         if remote != local {
                             let _ = std::fs::create_dir_all(data_dir.join("backups"));
-                            let name = format!("conflict-{}.json", time::OffsetDateTime::now_utc().unix_timestamp());
+                            let name = format!(
+                                "conflict-{}.json",
+                                time::OffsetDateTime::now_utc().unix_timestamp()
+                            );
                             let _ = std::fs::write(data_dir.join("backups").join(name), &remote);
                             let ws: crate::model::Workspace = serde_json::from_slice(&remote)?;
                             std::fs::write(data_dir.join("workspace.json"), &remote)?;
@@ -799,7 +853,8 @@ impl qobject::AppController {
                         if let Some(ws) = ws {
                             if let Ok(mut core) = q.as_ref().rust().core.clone().lock() {
                                 core.ws = ws;
-                                let ws_snapshot = core.ws.clone(); core.history.reset(&ws_snapshot);
+                                let ws_snapshot = core.ws.clone();
+                                core.history.reset(&ws_snapshot);
                             }
                         }
                         q.as_mut().set_syncing(false);
@@ -818,14 +873,43 @@ impl qobject::AppController {
         });
     }
 
+    pub fn git_sync_now(mut self: Pin<&mut Self>) {
+        let (git, dir, config) = {
+            let core_arc = self.as_ref().rust().core.clone();
+            let core = core_arc.lock().unwrap();
+            (core.git.clone(), core.data_dir.clone(), core.git_config())
+        };
+        let qt = self.as_mut().qt_thread();
+        std::thread::spawn(move || {
+            let result = git.sync_now(&dir, &config);
+            let _ = qt.queue(move |mut q| match result {
+                Ok(status) => {
+                    let core_arc = q.as_ref().rust().core.clone();
+                    if let Ok(mut core) = core_arc.lock() {
+                        let _ = core.reload_from_disk();
+                    }
+                    q.as_mut().refresh_all();
+                    q.as_mut().notice(s("git"), s(status));
+                }
+                Err(err) => {
+                    q.as_mut().notice(s("git-error"), s(err.to_string()));
+                }
+            });
+        });
+    }
+
     pub fn gdrive_connect(mut self: Pin<&mut Self>) -> QString {
         let (client_id, secret) = {
             let core_arc = self.as_ref().rust().core.clone();
             let core = core_arc.lock().unwrap();
-            (core.ws.settings.gdrive_client_id.clone(), core.ws.settings.gdrive_client_secret.clone())
+            (
+                core.ws.settings.gdrive_client_id.clone(),
+                core.ws.settings.gdrive_client_secret.clone(),
+            )
         };
         let Some(client_id) = client_id else {
-            self.as_mut().toast(s("Add a Google OAuth client id in Settings first"));
+            self.as_mut()
+                .toast(s("Add a Google OAuth client id in Settings first"));
             return s("{\"success\":false}");
         };
         let (verifier, challenge) = sync::pkce_pair();
@@ -833,18 +917,31 @@ impl qobject::AppController {
         let url = sync::auth_url(&client_id, redirect, &challenge);
         let _ = open::that(&url);
         let qt = self.as_mut().qt_thread();
-        let data_dir = self.as_ref().rust().core.clone().lock().unwrap().data_dir.clone();
+        let data_dir = self
+            .as_ref()
+            .rust()
+            .core
+            .clone()
+            .lock()
+            .unwrap()
+            .data_dir
+            .clone();
         runtime().spawn(async move {
             let code = wait_for_oauth_code(47823).await;
             let result = async {
                 let code = code?;
-                let tokens = sync::exchange_code(&client_id, secret.as_deref(), &code, &verifier, redirect).await?;
+                let tokens =
+                    sync::exchange_code(&client_id, secret.as_deref(), &code, &verifier, redirect)
+                        .await?;
                 let refresh = tokens
                     .get("refresh_token")
                     .and_then(|v| v.as_str())
                     .map(str::to_string)
                     .ok_or_else(|| anyhow::anyhow!("no refresh token returned"))?;
-                let access = tokens.get("access_token").and_then(|v| v.as_str()).unwrap_or("");
+                let access = tokens
+                    .get("access_token")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
                 let email = sync::user_email(access).await;
                 Ok::<_, anyhow::Error>((refresh, email))
             }
@@ -943,7 +1040,8 @@ impl qobject::AppController {
                             core.update = state.clone();
                             core.save_quiet();
                         }
-                        q.as_mut().set_update_json(s(serde_json::to_string(&state).unwrap_or_default()));
+                        q.as_mut()
+                            .set_update_json(s(serde_json::to_string(&state).unwrap_or_default()));
                     });
                 }
                 Err(e) => {
@@ -970,8 +1068,9 @@ impl qobject::AppController {
             let qt_progress = qt.clone();
             let res = updates::download(&url, &dest, move |pct| {
                 let _ = qt_progress.queue(move |mut q| {
-                    let mut value: serde_json::Value = serde_json::from_str(&q.update_json().to_string())
-                        .unwrap_or_else(|_| serde_json::json!({}));
+                    let mut value: serde_json::Value =
+                        serde_json::from_str(&q.update_json().to_string())
+                            .unwrap_or_else(|_| serde_json::json!({}));
                     value["progress"] = serde_json::json!(pct);
                     value["status"] = serde_json::json!("downloading");
                     q.as_mut().set_update_json(s(value.to_string()));
@@ -981,7 +1080,10 @@ impl qobject::AppController {
             match res {
                 Ok(()) => {
                     let _ = qt.queue(move |mut q| {
-                        q.as_mut().notice(s("update"), s(format!("Update downloaded to {}", dest.display())));
+                        q.as_mut().notice(
+                            s("update"),
+                            s(format!("Update downloaded to {}", dest.display())),
+                        );
                     });
                 }
                 Err(e) => {
@@ -997,8 +1099,6 @@ impl qobject::AppController {
         let path = dir.join("updates").join("Corcho.AppImage");
         updates::install(&path).is_ok()
     }
-
-
 
     pub fn read_attachment(&self, name: &QString) -> QString {
         let data_dir = self.core.lock().unwrap().data_dir.clone();
@@ -1021,7 +1121,10 @@ impl qobject::AppController {
 
     pub fn list_attachments(&self) -> QString {
         let data_dir = self.core.lock().unwrap().data_dir.clone();
-        s(serde_json::to_string(&crate::storage::list_attachments(&data_dir)).unwrap_or_else(|_| "[]".into()))
+        s(
+            serde_json::to_string(&crate::storage::list_attachments(&data_dir))
+                .unwrap_or_else(|_| "[]".into()),
+        )
     }
 
     pub fn open_external(&self, url: &QString) {
@@ -1041,10 +1144,15 @@ impl qobject::AppController {
     }
 
     pub fn reset_tutorials(mut self: Pin<&mut Self>) {
-        self.as_ref().rust().core.clone().lock().unwrap().reset_tutorials();
+        self.as_ref()
+            .rust()
+            .core
+            .clone()
+            .lock()
+            .unwrap()
+            .reset_tutorials();
         self.as_mut().refresh_all();
     }
-
 
     pub fn spectrum_start(&self, volume: f64, tone_freq: f64, tone_mix: f64) {
         if let Err(e) = crate::audio::start(volume as f32, tone_freq as f32, tone_mix as f32) {

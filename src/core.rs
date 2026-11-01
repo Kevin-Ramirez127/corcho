@@ -14,6 +14,7 @@ pub struct Core {
     pub ws: Workspace,
     pub history: History,
     pub adblock: Adblock,
+    pub git: crate::gitsync::GitSync,
     pub update: crate::updates::UpdateState,
     pub last_saved: Option<std::time::Instant>,
 }
@@ -22,12 +23,34 @@ impl Core {
     pub fn boot() -> Result<Self> {
         let default_dir = storage::default_data_dir();
         storage::ensure_dirs(&default_dir)?;
-        let ws = storage::load_workspace(&default_dir)?;
+        let mut ws = storage::load_workspace(&default_dir)?;
+        let config = crate::gitsync::config_from(&ws.settings);
+        let git = crate::gitsync::GitSync::new(config.clone());
+
+        if config.enabled && !config.remote.is_empty() {
+            if let Err(err) = git.ensure_repo(&default_dir, &config) {
+                tracing::warn!("git sync setup failed: {err}");
+            }
+            if config.auto_pull {
+                match git.pull_at_start(&default_dir, &config) {
+                    Ok(true) => {
+                        if let Ok(fresh) = storage::load_workspace(&default_dir) {
+                            ws = fresh;
+                        }
+                    }
+                    Ok(false) => {}
+                    Err(err) => tracing::warn!("git pull failed: {err}"),
+                }
+            }
+        }
+        git.start_worker(default_dir.clone());
+
         let mut core = Self {
             data_dir: default_dir,
             history: History::new(ws.settings.undo_steps, ws.clone()),
             ws,
             adblock: Adblock::new(),
+            git,
             update: crate::updates::UpdateState::default(),
             last_saved: None,
         };
@@ -43,6 +66,7 @@ impl Core {
             history: History::new(ws.settings.undo_steps, ws.clone()),
             ws,
             adblock: Adblock::new(),
+            git: crate::gitsync::GitSync::default(),
             update: crate::updates::UpdateState::default(),
             last_saved: None,
         }
@@ -51,7 +75,19 @@ impl Core {
     pub fn save(&mut self) -> Result<()> {
         storage::save_workspace(&self.data_dir, &self.ws)?;
         self.last_saved = Some(std::time::Instant::now());
+        self.git.mark_dirty();
         Ok(())
+    }
+
+    pub fn reload_from_disk(&mut self) -> Result<()> {
+        self.ws = storage::load_workspace(&self.data_dir)?;
+        self.history.reset(&self.ws);
+        self.adblock.set_enabled(self.ws.settings.ad_blocker);
+        Ok(())
+    }
+
+    pub fn git_config(&self) -> crate::gitsync::GitConfig {
+        crate::gitsync::config_from(&self.ws.settings)
     }
 
     pub fn save_quiet(&mut self) {
@@ -139,10 +175,9 @@ impl Core {
         self.checkpoint();
         let mut card = Card::new(kind, x.round(), y.round());
         populate_defaults(&mut card, &self.ws);
-        if let Some(g) = self.ws.active_grid_mut() {
+        {
+            let g = self.ws.active_grid_mut()?;
             g.cards.push(card.clone());
-        } else {
-            return None;
         }
         self.save_quiet();
         Some(card)
@@ -363,6 +398,15 @@ impl Core {
         if key == "ad_blocker" {
             self.adblock.set_enabled(self.ws.settings.ad_blocker);
         }
+        if key.starts_with("git_") {
+            let config = crate::gitsync::config_from(&self.ws.settings);
+            self.git.configure(config.clone());
+            if config.enabled && !config.remote.is_empty() {
+                if let Err(err) = self.git.ensure_repo(&self.data_dir.clone(), &config) {
+                    tracing::warn!("git setup failed: {err}");
+                }
+            }
+        }
         self.save_quiet();
         true
     }
@@ -415,9 +459,15 @@ impl Core {
             "create-ai" => self.spawn("ai").map(card_json).unwrap_or(Value::Null),
             "create-script" => self.spawn("script").map(card_json).unwrap_or(Value::Null),
             "create-fragment" => self.spawn("fragment").map(card_json).unwrap_or(Value::Null),
-            "create-checklist" => self.spawn("checklist").map(card_json).unwrap_or(Value::Null),
+            "create-checklist" => self
+                .spawn("checklist")
+                .map(card_json)
+                .unwrap_or(Value::Null),
             "create-kanban" => self.spawn("kanban").map(card_json).unwrap_or(Value::Null),
-            "create-whiteboard" => self.spawn("whiteboard").map(card_json).unwrap_or(Value::Null),
+            "create-whiteboard" => self
+                .spawn("whiteboard")
+                .map(card_json)
+                .unwrap_or(Value::Null),
             "create-pomodoro" => self.spawn("pomodoro").map(card_json).unwrap_or(Value::Null),
             "create-mpris" => self.spawn("mpris").map(card_json).unwrap_or(Value::Null),
             "create-grid" => json!({"grid": self.create_grid("New Grid")}),
@@ -432,7 +482,6 @@ impl Core {
             _ => json!({"ok": false, "error": "unknown command"}),
         }
     }
-
 
     pub fn reset_tutorials(&mut self) {
         let s = &mut self.ws.settings;
@@ -529,6 +578,7 @@ fn populate_defaults(card: &mut Card, ws: &Workspace) {
     }
 }
 
+#[allow(dead_code)]
 pub fn now_iso() -> String {
     time::OffsetDateTime::now_utc()
         .replace_nanosecond(0)
@@ -536,5 +586,3 @@ pub fn now_iso() -> String {
         .format(&time::format_description::well_known::Rfc3339)
         .unwrap_or_default()
 }
-
-

@@ -26,6 +26,7 @@ pub fn default_model(provider: &str) -> &'static str {
     }
 }
 
+#[allow(dead_code)]
 pub fn models_json() -> String {
     models_by_provider().to_string()
 }
@@ -60,7 +61,11 @@ pub async fn validate_key(provider: &str, api_key: &str, server_url: &str) -> Re
                 urlencode(api_key)
             );
             let r = c.get(url).send().await?;
-            if r.status().is_success() { Ok(()) } else { Err(anyhow!("Invalid API key")) }
+            if r.status().is_success() {
+                Ok(())
+            } else {
+                Err(anyhow!("Invalid API key"))
+            }
         }
         "claude" | "anthropic" => {
             let body = json!({
@@ -75,7 +80,11 @@ pub async fn validate_key(provider: &str, api_key: &str, server_url: &str) -> Re
                 .json(&body)
                 .send()
                 .await?;
-            if r.status().is_success() { Ok(()) } else { Err(anyhow!("Invalid API key")) }
+            if r.status().is_success() {
+                Ok(())
+            } else {
+                Err(anyhow!("Invalid API key"))
+            }
         }
         _ => {
             let base = openai_like_base(provider, server_url);
@@ -84,7 +93,11 @@ pub async fn validate_key(provider: &str, api_key: &str, server_url: &str) -> Re
                 .bearer_auth(api_key)
                 .send()
                 .await?;
-            if r.status().is_success() { Ok(()) } else { Err(anyhow!("Invalid API key")) }
+            if r.status().is_success() {
+                Ok(())
+            } else {
+                Err(anyhow!("Invalid API key"))
+            }
         }
     }
 }
@@ -98,7 +111,10 @@ pub async fn fetch_models(server_url: &str, api_key: &str) -> Result<Vec<Value>>
         .send()
         .await?;
     let v: Value = r.json().await?;
-    Ok(v.get("data").and_then(|d| d.as_array()).cloned().unwrap_or_default())
+    Ok(v.get("data")
+        .and_then(|d| d.as_array())
+        .cloned()
+        .unwrap_or_default())
 }
 
 /// Run a completion; `on_chunk` receives incremental text when streaming.
@@ -128,11 +144,14 @@ async fn anthropic(req: AIRequest, on_chunk: &mut (impl FnMut(&str) + Send)) -> 
         .send()
         .await?;
     if !r.status().is_success() {
-        return Err(anyhow!("AI request failed: {}", r.text().await.unwrap_or_default()));
+        return Err(anyhow!(
+            "AI request failed: {}",
+            r.text().await.unwrap_or_default()
+        ));
     }
     read_sse(r, |event, data| {
         if event == "content_block_delta" {
-            if let Ok(v) = serde_json::from_str::<Value>(&data) {
+            if let Ok(v) = serde_json::from_str::<Value>(data) {
                 if let Some(text) = v.pointer("/delta/text").and_then(|t| t.as_str()) {
                     on_chunk(text);
                     return Some(text.to_string());
@@ -161,11 +180,17 @@ async fn google(req: AIRequest, on_chunk: &mut (impl FnMut(&str) + Send)) -> Res
     );
     let r = c.post(url).json(&body).send().await?;
     if !r.status().is_success() {
-        return Err(anyhow!("AI request failed: {}", r.text().await.unwrap_or_default()));
+        return Err(anyhow!(
+            "AI request failed: {}",
+            r.text().await.unwrap_or_default()
+        ));
     }
     read_sse(r, |_event, data| {
-        if let Ok(v) = serde_json::from_str::<Value>(&data) {
-            if let Some(parts) = v.pointer("/candidates/0/content/parts").and_then(|p| p.as_array()) {
+        if let Ok(v) = serde_json::from_str::<Value>(data) {
+            if let Some(parts) = v
+                .pointer("/candidates/0/content/parts")
+                .and_then(|p| p.as_array())
+            {
                 let mut s = String::new();
                 for p in parts {
                     if let Some(t) = p.get("text").and_then(|t| t.as_str()) {
@@ -201,13 +226,16 @@ async fn openai_like(req: AIRequest, on_chunk: &mut (impl FnMut(&str) + Send)) -
         .send()
         .await?;
     if !r.status().is_success() {
-        return Err(anyhow!("AI request failed: {}", r.text().await.unwrap_or_default()));
+        return Err(anyhow!(
+            "AI request failed: {}",
+            r.text().await.unwrap_or_default()
+        ));
     }
     read_sse(r, |_event, data| {
         if data == "[DONE]" {
             return None;
         }
-        if let Ok(v) = serde_json::from_str::<Value>(&data) {
+        if let Ok(v) = serde_json::from_str::<Value>(data) {
             if let Some(t) = v
                 .pointer("/choices/0/delta/content")
                 .and_then(|t| t.as_str())

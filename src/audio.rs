@@ -46,9 +46,7 @@ fn ensure_stream() -> Result<(), String> {
     let device = host
         .default_output_device()
         .ok_or_else(|| "no audio output device".to_string())?;
-    let config = device
-        .default_output_config()
-        .map_err(|e| e.to_string())?;
+    let config = device.default_output_config().map_err(|e| e.to_string())?;
     let sample_rate = config.sample_rate().0 as f32;
     let channels = config.channels() as usize;
     let state = state().clone();
@@ -105,6 +103,7 @@ pub fn stop() {
     }
 }
 
+#[allow(dead_code)]
 pub fn update(volume: f32, tone_freq: f32, tone_mix: f32) {
     if let Ok(mut s) = state().lock() {
         s.volume = volume.clamp(0.0, 1.0);

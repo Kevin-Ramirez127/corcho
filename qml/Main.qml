@@ -57,6 +57,21 @@ ApplicationWindow {
 
     readonly property var th: buildTheme(themeDef)
 
+    function channelLin(c) {
+        return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    }
+    function relLum(c) {
+        return 0.2126 * channelLin(c.r) + 0.7152 * channelLin(c.g) + 0.0722 * channelLin(c.b);
+    }
+    function contrastRatio(a, b) {
+        var la = relLum(a), lb = relLum(b);
+        var hi = Math.max(la, lb), lo = Math.min(la, lb);
+        return (hi + 0.05) / (lo + 0.05);
+    }
+    function withAlpha(c, alpha) {
+        return Qt.rgba(c.r, c.g, c.b, alpha);
+    }
+
     function buildTheme(def) {
         var isLight = def.light === true;
         var bg = def.bg || "#121214";
@@ -65,7 +80,16 @@ ApplicationWindow {
         var text = def.text || "#f0eee7";
         var tc = Qt.color(text);
         var ac = Qt.color(accent);
-        var lum = 0.2126 * ac.r + 0.7152 * ac.g + 0.0722 * ac.b;
+        var darkInk = Qt.color("#171717");
+        var lightInk = Qt.color("#f7f4ec");
+        var cd = contrastRatio(ac, darkInk);
+        var cl = contrastRatio(ac, lightInk);
+        var ink = cd >= cl ? "#171717" : "#f7f4ec";
+        var buttonAccent = accent;
+        if (Math.max(cd, cl) < 4.5) {
+            buttonAccent = ink === "#171717" ? Qt.lighter(accent, 1.2) : Qt.darker(accent, 1.2);
+        }
+        var accentText = isLight ? Qt.darker(accent, 1.3) : Qt.lighter(accent, 1.15);
 
         var family = "Inter";
         var fid = settings.font || "inter";
@@ -89,10 +113,12 @@ ApplicationWindow {
             border: Qt.rgba(tc.r, tc.g, tc.b, isLight ? 0.14 : 0.13),
             borderStrong: Qt.rgba(tc.r, tc.g, tc.b, isLight ? 0.26 : 0.24),
             text: text,
-            text2: Qt.rgba(tc.r, tc.g, tc.b, isLight ? 0.78 : 0.86),
-            muted: Qt.rgba(tc.r, tc.g, tc.b, isLight ? 0.58 : 0.66),
+            text2: withAlpha(tc, isLight ? 0.80 : 0.86),
+            muted: withAlpha(tc, isLight ? 0.72 : 0.66),
             accent: accent,
-            accentInk: lum > 0.55 ? "#171717" : "#f7f4ec",
+            accentButton: buttonAccent,
+            accentText: accentText,
+            accentInk: ink,
             danger: "#d97a72",
             success: "#7fae83",
             fontFamily: family
@@ -304,7 +330,7 @@ ApplicationWindow {
             grids: root.grids
             folders: root.folders
             activeGridId: app.activeGridId
-            collapsed: root.sidebarCollapsed
+            collapsed: root.sidebarCollapsed || root.width < 800
             onGridSelected: function (id) { app.switchGrid(id) }
             onNewGridRequested: app.createGrid("New Grid")
             onNewFolderRequested: app.createFolder("New Folder")
@@ -352,7 +378,7 @@ ApplicationWindow {
 
                     TextInput {
                         id: gridTitle
-                        width: Math.max(80, contentWidth + 8)
+                        width: Math.min(360, Math.max(80, contentWidth + 8))
                         text: root.activeGrid ? root.activeGrid.name : ""
                         color: root.th.text
                         font.family: root.th.fontFamily
@@ -366,6 +392,7 @@ ApplicationWindow {
 
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
+                        visible: root.width > 860
                         text: root.cards.length + (root.cards.length === 1 ? " card" : " cards")
                         color: root.th.muted
                         font.family: "JetBrains Mono"
@@ -382,13 +409,14 @@ ApplicationWindow {
                     AppButton {
                         th: root.th
                         icon: "search"
-                        text: "Powerbar"
+                        text: root.width > 1180 ? "Powerbar" : ""
                         onClicked: powerbar.open()
                     }
 
-                    Item { width: 6; height: 1 }
+                    Item { width: 6; height: 1; visible: root.width > 980 }
 
                     Icon {
+                        visible: root.width > 980
                         anchors.verticalCenter: parent.verticalCenter
                         name: "zoom-out"
                         size: 15
@@ -397,6 +425,7 @@ ApplicationWindow {
                     }
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
+                        visible: root.width > 980
                         text: Math.round(app.zoom * 100) + "%"
                         color: root.th.text2
                         font.family: "JetBrains Mono"
@@ -404,6 +433,7 @@ ApplicationWindow {
                     }
                     Icon {
                         anchors.verticalCenter: parent.verticalCenter
+                        visible: root.width > 980
                         name: "zoom-in"
                         size: 15
                         color: root.th.text2
@@ -411,6 +441,7 @@ ApplicationWindow {
                     }
                     Icon {
                         anchors.verticalCenter: parent.verticalCenter
+                        visible: root.width > 980
                         name: "maximize"
                         size: 14
                         color: root.th.muted
@@ -478,7 +509,7 @@ ApplicationWindow {
 
                     Text {
                         text: app.syncing ? "Syncing" : ""
-                        color: root.th.accent
+                        color: root.th.accentText
                         font.family: root.th.fontFamily
                         font.pixelSize: 10
                     }

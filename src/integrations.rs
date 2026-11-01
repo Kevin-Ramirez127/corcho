@@ -64,6 +64,7 @@ impl Adblock {
         self.enabled = enabled;
     }
 
+    #[allow(dead_code)]
     pub fn is_enabled(&self) -> bool {
         self.enabled
     }
@@ -104,7 +105,9 @@ impl Adblock {
             return false;
         };
         let host = host.to_lowercase();
-        self.hosts.iter().any(|b| host == *b || host.ends_with(&format!(".{b}")))
+        self.hosts
+            .iter()
+            .any(|b| host == *b || host.ends_with(&format!(".{b}")))
     }
 }
 
@@ -180,7 +183,9 @@ pub fn mpris_metadata_named(player: &str) -> Value {
 
 pub fn mpris_action(player: &str, action: &str) -> Value {
     let action = match action {
-        "play" | "pause" | "play-pause" | "next" | "previous" | "stop" | "shuffle" | "repeat" => action,
+        "play" | "pause" | "play-pause" | "next" | "previous" | "stop" | "shuffle" | "repeat" => {
+            action
+        }
         _ => return json!({"ok": false, "error": "unknown action"}),
     };
     match playerctl(&["--player", player, action]) {

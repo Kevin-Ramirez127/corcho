@@ -10,15 +10,13 @@ fn main() {
     qml_files.sort();
     println!("cargo::rerun-if-changed=qml");
 
-    CxxQtBuilder::new_qml_module(
-        QmlModule::new("Corcho").qml_files(qml_files),
-    )
-    .qt_module("Quick")
-    .qt_module("QuickControls2")
-    .qt_module("Network")
-    .qt_module("Svg")
-    .qt_module("WebEngineQuick")
-    .qrc("resources.qrc")
-    .files(["src/bridge.rs"])
-    .build();
+    CxxQtBuilder::new_qml_module(QmlModule::new("Corcho").qml_files(qml_files))
+        .qt_module("Quick")
+        .qt_module("QuickControls2")
+        .qt_module("Network")
+        .qt_module("Svg")
+        .qt_module("WebEngineQuick")
+        .qrc("resources.qrc")
+        .files(["src/bridge.rs"])
+        .build();
 }

@@ -180,6 +180,7 @@ enum CardKind { Note, Website, Bookmark, ApiData, Ai, Script,
 ### 7.6 Sync, backup, data (`crates/sync`, `crates/storage`)
 - **Folder sync** provider: any local/cloud-mounted directory (works for iCloud Drive on macOS, Nextcloud/Dropbox mounts on Linux) via `notify` watcher + debounce. This replaces the macOS-only iCloud helper on Linux.
 - **Google Drive**: `oauth2` (PKCE, local redirect) + `reqwest` Drive v3 `appDataFolder`; refresh tokens; conflict backup files; delete/clear data.
+- **Git sync**: managed repo in the data folder, any remote (GitHub/Codeberg/GitLab/self-hosted), pull at start, debounced auto-push, explicit two-parent union merge on divergence, conflict copies in `backups/`.
 - Conflict resolution: mtime + content hash + `.backup_<ts>` like upstream; never overwrite on unknown cloud state.
 - Import/export `.corcho` ZIP; selective wipe; data-folder selection.
 
@@ -210,7 +211,7 @@ Everything in the inventory maps as follows. Nothing is dropped; OS-specific ite
 | 19 themes + custom, 14 fonts, opacity/volume/effects | Full |
 | AI: 5 providers + local, model lists, streaming, web search, refresh, context injection, stats | Full |
 | Website cards: webview/bookmark/API, isolated sessions, nav/zoom, scroll memory, adblock, cookie debug, attack sim | Full |
-| Cloud sync: folder provider (iCloud substitute) + Google Drive, conflicts, indicator, troubleshoot | Full |
+| Cloud sync: folder provider (iCloud substitute) + Google Drive + Git remote, conflicts, indicator, troubleshoot | Full |
 | Backups import/export, data folder, migration, wipe/reset | Full |
 | Updates: channels, auto modes, mandatory flow, changelog | Full |
 | Licensing | Removed — Corcho is fully free software |

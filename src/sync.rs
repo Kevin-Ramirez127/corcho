@@ -31,10 +31,7 @@ fn conflict_backup(data_dir: &Path, bytes: &[u8]) -> Result<()> {
 }
 
 /// Two-way folder sync. Returns (status, optional remote workspace to adopt).
-pub fn sync_folder(
-    data_dir: &Path,
-    folder: &Path,
-) -> Result<(String, Option<Workspace>)> {
+pub fn sync_folder(data_dir: &Path, folder: &Path) -> Result<(String, Option<Workspace>)> {
     std::fs::create_dir_all(folder)?;
     let remote = folder.join(REMOTE_FILE);
     let local = local_path(data_dir);
@@ -83,11 +80,7 @@ pub fn sync_folder(
 }
 
 pub fn pkce_pair() -> (String, String) {
-    let random = format!(
-        "{}{}",
-        uuid::Uuid::new_v4(),
-        uuid::Uuid::new_v4()
-    );
+    let random = format!("{}{}", uuid::Uuid::new_v4(), uuid::Uuid::new_v4());
     let verifier = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(random.as_bytes());
     let challenge = base64::engine::general_purpose::URL_SAFE_NO_PAD
         .encode(Sha256::digest(verifier.as_bytes()));
@@ -95,7 +88,8 @@ pub fn pkce_pair() -> (String, String) {
 }
 
 pub fn auth_url(client_id: &str, redirect_uri: &str, challenge: &str) -> String {
-    let scope = "https://www.googleapis.com/auth/drive.appdata https://www.googleapis.com/auth/drive.file";
+    let scope =
+        "https://www.googleapis.com/auth/drive.appdata https://www.googleapis.com/auth/drive.file";
     format!(
         "https://accounts.google.com/o/oauth2/v2/auth?client_id={}&redirect_uri={}&response_type=code&scope={}&code_challenge={}&code_challenge_method=S256&access_type=offline&prompt=consent",
         urlencode(client_id),
@@ -131,7 +125,12 @@ pub async fn exchange_code(
         .json()
         .await?;
     if r.get("error").is_some() {
-        return Err(anyhow!("{}", r.get("error_description").and_then(|v| v.as_str()).unwrap_or("OAuth failed")));
+        return Err(anyhow!(
+            "{}",
+            r.get("error_description")
+                .and_then(|v| v.as_str())
+                .unwrap_or("OAuth failed")
+        ));
     }
     Ok(r)
 }
@@ -185,15 +184,13 @@ async fn find_file(client: &reqwest::Client, token: &str) -> Result<Option<Strin
         .await?
         .json()
         .await?;
-    Ok(v.get("files")
-        .and_then(|f| f.as_array())
-        .and_then(|files| {
-            files
-                .iter()
-                .find(|f| f.get("name").and_then(|n| n.as_str()) == Some(REMOTE_FILE))
-                .and_then(|f| f.get("id").and_then(|i| i.as_str()))
-                .map(str::to_string)
-        }))
+    Ok(v.get("files").and_then(|f| f.as_array()).and_then(|files| {
+        files
+            .iter()
+            .find(|f| f.get("name").and_then(|n| n.as_str()) == Some(REMOTE_FILE))
+            .and_then(|f| f.get("id").and_then(|i| i.as_str()))
+            .map(str::to_string)
+    }))
 }
 
 pub async fn drive_read(token: &str) -> Result<Option<Vec<u8>>> {
@@ -234,15 +231,22 @@ pub async fn drive_write(token: &str, bytes: &[u8]) -> Result<()> {
             "parents": ["appDataFolder"]
         });
         let mut body = Vec::new();
-        body.extend_from_slice(format!("--{boundary}\r\nContent-Type: application/json\r\n\r\n").as_bytes());
+        body.extend_from_slice(
+            format!("--{boundary}\r\nContent-Type: application/json\r\n\r\n").as_bytes(),
+        );
         body.extend_from_slice(meta.to_string().as_bytes());
-        body.extend_from_slice(format!("\r\n--{boundary}\r\nContent-Type: application/json\r\n\r\n").as_bytes());
+        body.extend_from_slice(
+            format!("\r\n--{boundary}\r\nContent-Type: application/json\r\n\r\n").as_bytes(),
+        );
         body.extend_from_slice(bytes);
         body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
         client
             .post("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart")
             .bearer_auth(token)
-            .header("content-type", format!("multipart/related; boundary={boundary}"))
+            .header(
+                "content-type",
+                format!("multipart/related; boundary={boundary}"),
+            )
             .body(body)
             .send()
             .await?
@@ -300,7 +304,10 @@ mod tests {
         let (status, adopt) = sync_folder(data.path(), cloud.path()).unwrap();
         assert_eq!(status, "pulled");
         assert_eq!(adopt.unwrap().grids[0].name, "Remote");
-        assert!(std::fs::read_dir(data.path().join("backups")).unwrap().next().is_some());
+        assert!(std::fs::read_dir(data.path().join("backups"))
+            .unwrap()
+            .next()
+            .is_some());
     }
 
     #[test]

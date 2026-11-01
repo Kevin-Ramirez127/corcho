@@ -8,8 +8,7 @@ use directories::ProjectDirs;
 use crate::model::Workspace;
 
 pub fn project_dirs() -> ProjectDirs {
-    ProjectDirs::from("io", "corcho", "corcho")
-        .expect("no valid home directory")
+    ProjectDirs::from("io", "corcho", "corcho").expect("no valid home directory")
 }
 
 pub fn default_data_dir() -> PathBuf {
@@ -125,7 +124,10 @@ pub fn export_zip(data_dir: &Path, dest: &Path) -> Result<()> {
             }
             let mut buf = Vec::new();
             fs::File::open(entry.path())?.read_to_end(&mut buf)?;
-            zip.start_file(format!("attachments/{}", entry.file_name().to_string_lossy()), opts)?;
+            zip.start_file(
+                format!("attachments/{}", entry.file_name().to_string_lossy()),
+                opts,
+            )?;
             zip.write_all(&buf)?;
         }
     }
@@ -191,7 +193,10 @@ pub fn import_legacy(dir: &Path) -> Result<Workspace> {
         let Ok(entry) = entry else { continue };
         let p = entry.path();
         if p.extension().and_then(|e| e.to_str()) == Some("json")
-            && p.file_name().and_then(|n| n.to_str()).map(|n| n.starts_with("grid-")).unwrap_or(false)
+            && p.file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| n.starts_with("grid-"))
+                .unwrap_or(false)
         {
             if let Ok(raw) = fs::read_to_string(&p) {
                 if let Ok(grid) = serde_json::from_str::<crate::model::Grid>(&raw) {
@@ -210,13 +215,17 @@ pub fn import_legacy(dir: &Path) -> Result<Workspace> {
 }
 
 pub fn read_attachment(data_dir: &Path, name: &str) -> Result<Vec<u8>> {
-    let safe = Path::new(name).file_name().context("invalid attachment name")?;
+    let safe = Path::new(name)
+        .file_name()
+        .context("invalid attachment name")?;
     Ok(fs::read(attachments_dir(data_dir).join(safe))?)
 }
 
 pub fn write_attachment(data_dir: &Path, name: &str, bytes: &[u8]) -> Result<PathBuf> {
     ensure_dirs(data_dir)?;
-    let safe = Path::new(name).file_name().context("invalid attachment name")?;
+    let safe = Path::new(name)
+        .file_name()
+        .context("invalid attachment name")?;
     let dest = attachments_dir(data_dir).join(safe);
     fs::write(&dest, bytes)?;
     Ok(dest)

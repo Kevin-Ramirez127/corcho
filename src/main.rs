@@ -1,8 +1,9 @@
 mod ai;
 mod audio;
-mod deeplink;
 mod bridge;
 mod core;
+mod deeplink;
+mod gitsync;
 mod history;
 mod integrations;
 mod model;

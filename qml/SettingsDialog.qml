@@ -34,6 +34,9 @@ Item {
     readonly property var upd: {
         try { return JSON.parse(app.updateJson || "{}"); } catch (e) { return {}; }
     }
+    readonly property var git: {
+        try { return JSON.parse(app.gitJson || "{}"); } catch (e) { return {}; }
+    }
 
     function set(key, value) {
         app.setSetting(key, JSON.stringify(value));
@@ -720,6 +723,80 @@ Item {
                             }
                             SettingRow {
                                 th: root.th
+                                title: "Git sync"
+                                description: "Keep the workspace in a Git repository on GitHub, Codeberg, GitLab or any remote."
+                                ToggleSwitch {
+                                    th: root.th
+                                    checked: root.val("git_sync_enabled", false)
+                                    onToggled: function (value) { root.set("git_sync_enabled", value); }
+                                }
+                            }
+                            SettingRow {
+                                th: root.th
+                                title: "Remote"
+                                description: "SSH or HTTPS URL. The system git credentials and SSH agent are used."
+                                AppTextField {
+                                    width: 300
+                                    th: root.th
+                                    text: root.val("git_remote", "")
+                                    placeholder: "git@github.com:you/corcho-data.git"
+                                    onCommitted: function (value) { root.set("git_remote", value); }
+                                }
+                            }
+                            SettingRow {
+                                th: root.th
+                                title: "Branch"
+                                AppTextField {
+                                    width: 160
+                                    th: root.th
+                                    text: root.val("git_branch", "main")
+                                    placeholder: "main"
+                                    onCommitted: function (value) { root.set("git_branch", value); }
+                                }
+                            }
+                            SettingRow {
+                                th: root.th
+                                title: "Pull at start"
+                                description: "Fast-forward or union-merge the remote before loading."
+                                ToggleSwitch {
+                                    th: root.th
+                                    checked: root.val("git_auto_pull", true)
+                                    onToggled: function (value) { root.set("git_auto_pull", value); }
+                                }
+                            }
+                            SettingRow {
+                                th: root.th
+                                title: "Push changes"
+                                description: "Commit and push two seconds after the last edit."
+                                ToggleSwitch {
+                                    th: root.th
+                                    checked: root.val("git_auto_push", true)
+                                    onToggled: function (value) { root.set("git_auto_push", value); }
+                                }
+                            }
+                            SettingRow {
+                                th: root.th
+                                title: "Include attachments"
+                                ToggleSwitch {
+                                    th: root.th
+                                    checked: root.val("git_include_attachments", false)
+                                    onToggled: function (value) { root.set("git_include_attachments", value); }
+                                }
+                            }
+                            SettingRow {
+                                th: root.th
+                                title: "Git status"
+                                description: root.git.lastError ? ("Error: " + root.git.lastError) : (root.git.lastSync ? ("Last sync: " + root.git.lastSync) : "Not synced yet")
+                                AppButton {
+                                    th: root.th
+                                    icon: "git-compare"
+                                    text: "Sync now"
+                                    enabledButton: root.val("git_sync_enabled", false) && root.val("git_remote", "") !== ""
+                                    onClicked: root.app.gitSyncNow()
+                                }
+                            }
+                            SettingRow {
+                                th: root.th
                                 title: "Backup"
                                 description: "Export or import all grids and cards."
                                 AppButton {
@@ -992,14 +1069,14 @@ Item {
                                 topPadding: 10
                                 Text {
                                     text: "Project"
-                                    color: root.th.accent
+                                    color: root.th.accentText
                                     font.family: root.th.fontFamily
                                     font.pixelSize: 12
                                     TapHandler { onTapped: root.app.openExternal("https://github.com/emiliano-go/repo") }
                                 }
                                 Text {
                                     text: "Privacy"
-                                    color: root.th.accent
+                                    color: root.th.accentText
                                     font.family: root.th.fontFamily
                                     font.pixelSize: 12
                                     TapHandler { onTapped: root.app.openExternal("https://sfg545.dev/orchard") }
