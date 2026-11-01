@@ -12,6 +12,14 @@ Item {
     property bool isHovered: false
 
     signal clicked()
+    focus: true
+    activeFocusOnTab: true
+    Accessible.role: Accessible.Button
+    Accessible.name: root.text !== "" ? root.text : root.icon
+    Accessible.description: root.variant === "solid" ? "Primary action" : ""
+    Accessible.onPressAction: root.clicked()
+    Keys.onSpacePressed: root.clicked()
+    Keys.onReturnPressed: root.clicked()
 
     implicitHeight: 32
     implicitWidth: Math.max(32, row.implicitWidth + 24)
@@ -27,8 +35,8 @@ Item {
             if (root.selected) return root.th.surfaceStrong;
             return root.isHovered ? root.th.hover : "transparent";
         }
-        border.width: root.variant === "ghost" || root.variant === "quiet" ? 1 : 0
-        border.color: root.th.border
+        border.width: root.activeFocus ? 1.5 : (root.variant === "ghost" || root.variant === "quiet" ? 1 : 0)
+        border.color: root.activeFocus ? root.th.accent : root.th.border
     }
 
     Row {

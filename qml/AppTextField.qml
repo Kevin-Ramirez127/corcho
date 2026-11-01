@@ -14,6 +14,9 @@ Item {
     signal accepted()
     signal keyPressed(var event)
     signal committed(string value)
+    activeFocusOnTab: true
+    Accessible.role: Accessible.EditableText
+    Accessible.name: root.placeholder
 
     implicitHeight: inputHeight
     implicitWidth: 240

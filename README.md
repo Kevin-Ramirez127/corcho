@@ -41,6 +41,11 @@ References consulted: the 60-30-10 color rule and â€œtwo neutrals + one accentâ€
 guidance from [Color Scheme Calculator](https://colorschemecalculator.com/create-color-palette/)
 and [Sky Rye Design](https://skyryedesign.com/inspiration/color-palette-inspiration/).
 
+## Accessibility
+
+See [docs/ACCESSIBILITY.md](docs/ACCESSIBILITY.md) for contrast targets,
+focus behaviour and reduced motion.
+
 ## Build
 
 Requires Rust 1.85+, Qt 6.8+ development packages (Core, Gui, Qml, Quick,

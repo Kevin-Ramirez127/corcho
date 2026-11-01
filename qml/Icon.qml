@@ -11,6 +11,7 @@ Item {
 
     implicitWidth: size
     implicitHeight: size
+    Accessible.ignored: true
 
     Image {
         id: source

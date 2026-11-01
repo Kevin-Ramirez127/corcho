@@ -8,6 +8,7 @@ Item {
     property var th
     property var app
     property bool active: true
+    property bool reducedMotion: false
     property real tick: 0
 
     property var particles: []
@@ -39,7 +40,7 @@ Item {
         }
     }
 
-    Component.onCompleted: initParticles()
+    Component.onCompleted: { initParticles(); canvas.requestPaint(); }
     Component.onDestruction: if (mode === "noise") root.app.spectrumStop()
 
     onModeChanged: {
@@ -54,7 +55,7 @@ Item {
     Timer {
         interval: 33
         repeat: true
-        running: root.active && root.visible
+        running: root.active && root.visible && !root.reducedMotion
         onTriggered: {
             root.tick += 0.033;
             if (root.mode === "boson") root.stepParticles();

@@ -21,6 +21,10 @@ CardFrame {
         return list;
     }
 
+    readonly property bool reducedMotion: {
+        try { return JSON.parse(root.app.settingsJson).reduced_motion === true; } catch (e) { return false; }
+    }
+
     FragmentView {
         anchors.fill: parent
         mode: root.mode
@@ -28,6 +32,7 @@ CardFrame {
         th: root.th
         app: root.app
         active: root.visible
+        reducedMotion: root.reducedMotion
     }
 
     Rectangle {

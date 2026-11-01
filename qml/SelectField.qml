@@ -9,6 +9,13 @@ Item {
     property string placeholder: "Select"
 
     signal selected(string value)
+    focus: true
+    activeFocusOnTab: true
+    Accessible.role: Accessible.Button
+    Accessible.name: root.current ? root.current.label : root.placeholder
+    Accessible.onPressAction: menu.open()
+    Keys.onSpacePressed: menu.open()
+    Keys.onReturnPressed: menu.open()
     property bool fieldHovered: false
 
     implicitWidth: 180
@@ -25,7 +32,7 @@ Item {
         radius: 8
         color: root.fieldHovered ? root.th.hover : root.th.input
         border.width: 1
-        border.color: open ? root.th.accent : root.th.border
+        border.color: (open || root.activeFocus) ? root.th.accent : root.th.border
         Behavior on color { ColorAnimation { duration: 110 } }
     }
 

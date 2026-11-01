@@ -14,6 +14,43 @@ Item {
     signal createRequested(real worldX, real worldY)
 
     clip: true
+    property bool panning: false
+    property bool syncingModel: false
+
+    ListModel { id: cardModel }
+
+    function syncCards() {
+        syncingModel = true;
+        var arr = root.cards || [];
+        // remove deleted
+        for (var i = cardModel.count - 1; i >= 0; i--) {
+            var existing = cardModel.get(i).card;
+            var keep = false;
+            for (var j = 0; j < arr.length; j++) {
+                if (arr[j].id === existing.id) { keep = true; break; }
+            }
+            if (!keep) cardModel.remove(i);
+        }
+        // update and insert in order
+        for (var k = 0; k < arr.length; k++) {
+            var card = arr[k];
+            var found = -1;
+            for (var m = 0; m < cardModel.count; m++) {
+                if (cardModel.get(m).card.id === card.id) { found = m; break; }
+            }
+            if (found < 0) {
+                cardModel.insert(Math.min(k, cardModel.count), { "card": card });
+            } else {
+                if (found !== k) cardModel.move(found, k, 1);
+                cardModel.setProperty(k, "card", card);
+            }
+        }
+        syncingModel = false;
+    }
+
+    onCardsChanged: syncCards()
+    Component.onCompleted: syncCards()
+    property bool minimapVisible: false
 
     function bodyFor(type) {
         switch (type) {
@@ -82,7 +119,8 @@ Item {
             if (step < 9) step *= 2;
             var ox = ((root.app.panX % step) + step) % step;
             var oy = ((root.app.panY % step) + step) % step;
-            ctx.fillStyle = Qt.rgba(root.th.text.r, root.th.text.g, root.th.text.b, 0.10);
+            var opacity = root.settings && root.settings.grid_opacity !== undefined ? root.settings.grid_opacity : 0.6;
+            ctx.fillStyle = Qt.rgba(root.th.text.r, root.th.text.g, root.th.text.b, 0.09 * (opacity / 0.6));
             for (var x = ox; x < width; x += step) {
                 for (var y = oy; y < height; y += step) {
                     ctx.beginPath();
@@ -103,6 +141,7 @@ Item {
         onPressed: function (mouse) {
             lastPoint = Qt.point(mouse.x, mouse.y);
             panning = mouse.button === Qt.MiddleButton || mouse.button === Qt.LeftButton;
+            root.panning = panning;
             root.selectedId = "";
         }
         onPositionChanged: function (mouse) {
@@ -115,8 +154,17 @@ Item {
         onReleased: {
             if (panning) root.app.saveNow();
             panning = false;
+            root.panning = false;
+            if (root.settings && root.settings.minimap_display === "panning") {
+                minimapHideTimer.restart();
+            }
         }
         onClicked: function (mouse) {
+            if (mouse.button === Qt.LeftButton && root.settings && root.settings.grid_ripple && !root.settings.reduced_motion) {
+                ripple.x = mouse.x - 24;
+                ripple.y = mouse.y - 24;
+                rippleAnim.restart();
+            }
             if (mouse.button === Qt.RightButton) {
                 var g = root.mapToItem(null, mouse.x, mouse.y);
                 var z = Math.max(0.2, root.app.zoom);
@@ -128,10 +176,9 @@ Item {
             root.createRequested((mouse.x - root.app.panX) / z, (mouse.y - root.app.panY) / z);
         }
         onWheel: function (wheel) {
-            if (wheel.modifiers & Qt.ControlModifier) {
+            var wantPan = !root.settings || root.settings.trackpad_pan !== false;
+            if (wheel.modifiers & Qt.ControlModifier || !wantPan) {
                 root.zoomAt(wheel.angleDelta.y > 0 ? 1.12 : 0.89, wheel.x, wheel.y);
-            } else if (wheel.modifiers & Qt.ShiftModifier) {
-                root.app.setView(root.app.panX - wheel.angleDelta.y * 1.4, root.app.panY, root.app.zoom);
             } else {
                 root.app.setView(root.app.panX - wheel.angleDelta.x * 0.7, root.app.panY - wheel.angleDelta.y * 0.7, root.app.zoom);
             }
@@ -146,26 +193,29 @@ Item {
         transformOrigin: Item.TopLeft
 
         Repeater {
-            model: root.cards
+            model: cardModel
 
             delegate: Loader {
                 id: cardLoader
-                required property var modelData
+                required property var card
 
-                active: root.inView(modelData)
-                source: root.bodyFor(modelData.type)
+                active: root.inView(card)
+                source: root.bodyFor(card.type)
                 asynchronous: false
 
+                onCardChanged: if (item) item.card = card
+
                 onLoaded: {
-                    item.card = cardLoader.modelData;
+                    item.card = card;
                     item.app = root.app;
                     item.th = root.th;
+                    item.settings = root.settings;
                     item.gridId = root.app.activeGridId;
-                    item.selected = Qt.binding(function () { return root.selectedId === cardLoader.modelData.id; });
-                    item.selectRequested.connect(function () { root.selectedId = cardLoader.modelData.id; });
-                    item.menuRequested.connect(function (card, gx, gy) {
-                        root.selectedId = card.id;
-                        root.menuRequested(card, gx, gy);
+                    item.selected = Qt.binding(function () { return root.selectedId === cardLoader.card.id; });
+                    item.selectRequested.connect(function () { root.selectedId = cardLoader.card.id; });
+                    item.menuRequested.connect(function (cardData, gx, gy) {
+                        root.selectedId = cardData.id;
+                        root.menuRequested(cardData, gx, gy);
                     });
                 }
             }
@@ -202,8 +252,36 @@ Item {
         }
     }
 
+    Rectangle {
+        id: ripple
+        width: 48
+        height: 48
+        radius: 24
+        color: "transparent"
+        border.width: 1.5
+        border.color: root.th.accent
+        opacity: 0
+        z: 2
+    }
+
+    ParallelAnimation {
+        id: rippleAnim
+        NumberAnimation { target: ripple; property: "width"; from: 48; to: 220; duration: 420; easing.type: Easing.OutCubic }
+        NumberAnimation { target: ripple; property: "height"; from: 48; to: 220; duration: 420; easing.type: Easing.OutCubic }
+        NumberAnimation { target: ripple; property: "x"; to: ripple.x - 86; duration: 420; easing.type: Easing.OutCubic }
+        NumberAnimation { target: ripple; property: "y"; to: ripple.y - 86; duration: 420; easing.type: Easing.OutCubic }
+        NumberAnimation { target: ripple; property: "opacity"; from: 0.55; to: 0; duration: 420; easing.type: Easing.OutCubic }
+    }
+
+    Timer {
+        id: minimapHideTimer
+        interval: 900
+        onTriggered: root.minimapVisible = false
+    }
+
     Minimap {
-        visible: root.settings && root.settings.minimapDisplay !== "hidden"
+        visible: root.settings && root.settings.minimap_display !== "hidden"
+                 && (root.settings.minimap_display !== "panning" || root.panning || root.minimapVisible)
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         anchors.margins: 16

@@ -71,7 +71,6 @@ CardFrame {
             font.family: root.th.fontFamily
             font.pixelSize: 11
             font.weight: 500
-            font.letterSpacing: 0.6
         }
 
         Text {

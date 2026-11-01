@@ -312,3 +312,77 @@ Corcho is free software under the MIT license. It is a clean-room reimplementati
 5. Start M1 canvas + model.
 
 Reference repos cloned: `KDAB/cxx-qt` (binding API). Qt/Rust toolchains cloned? **No** — installed versions are sufficient; clone only if a specific API needs reading.
+
+---
+
+## 15. Optimization pass
+
+Goal: keep interaction at 60 fps with hundreds of cards, and keep idle work at
+zero.
+
+- **Card model:** replace the Repeater-over-JS-array with a `ListModel` that is
+  diffed by card id. Geometry and text updates patch the row in place instead of
+  destroying and recreating every delegate. (Done.)
+- **Light refresh:** card updates refresh only `cardsJson`; grids/folders/
+  settings are refreshed only when their shape changes.
+- **Culling:** cards outside the viewport plus a margin are unloaded by the
+  `Loader`, so off-screen webviews and fragment timers cost nothing.
+- **Canvas:** dot grid redraws are coalesced per frame; minimap redraws only on
+  pan/zoom; ripple and spawn animations are single-shot.
+- **Fragments:** 30 fps cap, one Timer per fragment, stopped when off-screen or
+  when **Reduced motion** is on.
+- **Persistence:** view changes stay in memory and save on release; JSON writes
+  are atomic; a future pass adds a 400 ms debounce for text edits.
+- **Network:** AI streams are emitted per chunk without re-serialising the
+  workspace; sync/update tasks run on the tokio pool, never on the GUI thread.
+- **Startup:** QML is compiled ahead of time by `qmlcachegen`; fonts/icons are
+  qrc resources; no network at launch.
+
+Acceptance: 200 cards at 60 fps on the reference machine; pan with a webview
+card visible stays above 50 fps; idle CPU < 1% with no fragment playing.
+
+## 16. Theme and accessibility color grading pass
+
+Research basis: WCAG 2.1 SC 1.4.3 (4.5:1 body text, 3:1 large text and UI
+graphics) and APCA (Lc 75 minimum for body text, Lc 60 for content, Lc 45 for
+large text, Lc 30 for placeholders/disabled). Also the 60-30-10 rule: 60%
+ink, 30% neutral surfaces, 10% ember accent.
+
+Procedure:
+1. Build every surface from one tinted neutral ramp (ink → surface → hover).
+2. Keep three text roles. Target WCAG AA for `text` and `text2` on every
+   surface; `muted` must still clear 4.5:1 at 13 px.
+3. Accent is checked both as ink on ink (≥ 4.5:1) and as a surface with
+   `accentInk` text (≥ 4.5:1).
+4. Non-text UI (borders, focus rings, icons) targets ≥ 3:1 against adjacent
+   colors.
+5. Audit all 19 themes, not only the default. Light themes get darker `muted`
+   and `text2` values; dark themes get lighter ones.
+6. Add a visible focus ring, keyboard activation, and screen-reader roles/names
+   to every control.
+7. Honour the OS/reduced-motion setting: no spawn, ripple, parallax or fragment
+   animation when enabled.
+
+Acceptance: a contrast script over the theme table reports no body-text pair
+below 4.5:1 and no focus ring below 3:1; Tab reaches every control; every
+interactive element exposes `Accessible.name` and a role.
+
+## 17. Unslop pass (skill: `unslop`)
+
+Run the skill's nine passes over every screen: spacing, color, icons, copy,
+type, layout, details, visuals, motion.
+
+- 4 px rhythm; identical rows share height and gap; sidebar is the densest area.
+- Quiet chrome, one accent; no hue gradients, glows, gradient text or blobs.
+- One Lucide set at 16/18 px and 1.5 stroke; no emoji; no gems, crowns, keys or
+  other premium iconography.
+- Sentence case, no exclamation marks, no trailer periods, no greeting
+  headlines, no unverified claims.
+- 400/500 weights, 600 rare; no negative tracking on small text; tabular figures.
+- Nested radii: controls 8, cards 14, panels 16.
+- The canvas is the one rich moment; chrome stays quiet.
+- One easing curve; short feedback transitions; no looping decoration.
+- Re-run the checklist and compare against the before screenshots.
+
+Acceptance: the checklist at the end of the skill is fully checked, and the
+screens look like Corcho specifically, not a generic dark app.

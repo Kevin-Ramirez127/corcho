@@ -8,6 +8,15 @@ Item {
     property bool enabledSwitch: true
 
     signal toggled(bool value)
+    property string accessibleName: ""
+    focus: true
+    activeFocusOnTab: true
+    Accessible.role: Accessible.CheckBox
+    Accessible.name: root.accessibleName
+    Accessible.checkable: true
+    Accessible.checked: root.checked
+    Accessible.onPressAction: root.toggled(!root.checked)
+    Keys.onSpacePressed: root.toggled(!root.checked)
 
     implicitWidth: 40
     implicitHeight: 24
@@ -17,8 +26,8 @@ Item {
         anchors.fill: parent
         radius: height / 2
         color: root.checked ? root.th.accent : root.th.surfaceStrong
-        border.width: 1
-        border.color: root.checked ? root.th.accent : root.th.border
+        border.width: root.activeFocus ? 2 : 1
+        border.color: root.activeFocus ? root.th.accent : (root.checked ? root.th.accent : root.th.border)
         Behavior on color { ColorAnimation { duration: 130 } }
     }
 

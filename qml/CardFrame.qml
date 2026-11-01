@@ -6,6 +6,7 @@ FocusScope {
     property var app
     property var th
     property var card
+    property var settings
     property string gridId: ""
     property bool selected: false
     property bool resizable: true
@@ -13,6 +14,8 @@ FocusScope {
     default property alias bodyData: body.data
 
     signal selectRequested()
+    Accessible.role: Accessible.Grouping
+    Accessible.name: (root.card.title || root.card.type) + " card"
     signal menuRequested(var card, real globalX, real globalY)
     property bool cardHovered: false
     property bool menuHovered: false
@@ -23,6 +26,39 @@ FocusScope {
     width: card.width
     height: card.height
     z: selected ? 20 : (root.cardHovered ? 10 : 1)
+    property bool entered: false
+
+    function enter() {
+        if (entered) return;
+        entered = true;
+        if (root.settings && root.settings.spawn_animations && !root.settings.reduced_motion) {
+            opacity = 0;
+            scale = 0.97;
+            enterAnim.start();
+        }
+    }
+
+    onSettingsChanged: enter()
+
+    onCardChanged: {
+        if (!mover.active && !resizer.active) {
+            x = card.x;
+            y = card.y;
+            width = card.width;
+            height = card.height;
+        }
+        if (!titleInput.activeFocus) titleInput.text = card.title || "";
+    }
+    Component.onCompleted: enter()
+
+    NumberAnimation {
+        id: enterAnim
+        target: root
+        properties: "opacity,scale"
+        to: 1
+        duration: 130
+        easing.type: Easing.OutCubic
+    }
 
     function commit(payloadPatch, textValue) {
         var payload = {};
@@ -41,7 +77,17 @@ FocusScope {
         }));
     }
 
+    function snapValue(value) {
+        return (root.settings && root.settings.grid_magnetic) ? Math.round(value / 32) * 32 : value;
+    }
+
     function commitGeometry() {
+        if (root.settings && root.settings.grid_magnetic) {
+            root.x = snapValue(root.x);
+            root.y = snapValue(root.y);
+            root.width = Math.max(180, snapValue(root.width));
+            root.height = Math.max(120, snapValue(root.height));
+        }
         app.updateCard(JSON.stringify({
             id: card.id,
             x: root.x,
