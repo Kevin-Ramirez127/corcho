@@ -423,7 +423,6 @@ Delivered in this repository:
 Known limits, deliberately documented rather than hidden:
 
 - Card parallax is a subtle pointer-driven tilt, not a depth-parallax plane.
-- Kanban moves use hover arrows instead of pointer drag-and-drop.
 - Website ad blocking covers top-level navigation, `fetch`/XHR calls to known
   hosts, and a DOM cleanup pass; it is not a full network interceptor.
 - MCP SSE event subscriptions, the Unix-socket GUI transport and web-card tools

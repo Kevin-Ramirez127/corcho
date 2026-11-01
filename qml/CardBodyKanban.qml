@@ -27,6 +27,14 @@ CardFrame {
         persist(next);
     }
 
+    function moveTo(colIndex, itemIndex, targetCol) {
+        if (targetCol === colIndex || targetCol < 0 || targetCol >= columns.length) return;
+        var next = JSON.parse(JSON.stringify(columns));
+        var item = next[colIndex].items.splice(itemIndex, 1)[0];
+        next[targetCol].items.push(item);
+        persist(next);
+    }
+
     function move(colIndex, itemIndex, dir) {
         var next = JSON.parse(JSON.stringify(columns));
         var target = colIndex + dir;
@@ -43,6 +51,7 @@ CardFrame {
     }
 
     Row {
+        id: columnsRow
         anchors.fill: parent
         spacing: 10
 
