@@ -5,7 +5,6 @@ mod bridge;
 mod core;
 mod history;
 mod integrations;
-mod license;
 mod model;
 mod search;
 mod single_instance;

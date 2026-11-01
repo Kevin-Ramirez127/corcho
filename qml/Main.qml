@@ -131,7 +131,7 @@ ApplicationWindow {
             { label: "Add bookmark", icon: "bookmark", action: "create:bookmark" },
             { label: "Add API data", icon: "database", action: "create:api" },
             { label: "Add AI processor", icon: "cpu", action: "create:ai" },
-            { label: "Add fragment", icon: "gem", action: "create:fragment" },
+            { label: "Add fragment", icon: "aperture", action: "create:fragment" },
             { label: "Add script", icon: "terminal", action: "create:script" },
             { label: "Add checklist", icon: "list-checks", action: "create:checklist" },
             { label: "Add kanban", icon: "kanban", action: "create:kanban" },

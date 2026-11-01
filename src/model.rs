@@ -99,7 +99,7 @@ pub fn default_card_style(kind: &str) -> (f64, f64, &'static str, &'static str, 
         "api" => (480.0, 320.0, "#2f3b45", "database", "API Data"),
         "ai" => (416.0, 288.0, "#3a3348", "cpu", "AI"),
         "script" => (416.0, 256.0, "#333a33", "terminal", "Script"),
-        "fragment" => (320.0, 320.0, "#33333a", "gem", ""),
+        "fragment" => (320.0, 320.0, "#33333a", "aperture", ""),
         "gridlink" => (288.0, 128.0, "#323a3d", "arrow-right-circle", "Grid Link"),
         "checklist" => (352.0, 320.0, "#353a33", "list-checks", "Checklist"),
         "kanban" => (416.0, 320.0, "#33384a", "kanban", "Kanban"),
@@ -225,10 +225,6 @@ pub struct Settings {
     pub context_tutorial_completed: bool,
     pub fragment_tutorial_completed: bool,
     pub powerbar_tutorial_completed: bool,
-    #[serde(rename = "unlockedThemes")]
-    pub unlocked_themes: Vec<String>,
-    #[serde(rename = "unlockedFragments")]
-    pub unlocked_fragments: Vec<String>,
     #[serde(rename = "customTheme")]
     pub custom_theme: Option<CustomTheme>,
     pub last_seen_version: Option<String>,
@@ -283,8 +279,6 @@ impl Default for Settings {
             context_tutorial_completed: false,
             fragment_tutorial_completed: false,
             powerbar_tutorial_completed: false,
-            unlocked_themes: Vec::new(),
-            unlocked_fragments: Vec::new(),
             custom_theme: None,
             last_seen_version: None,
             debug_mode: false,
@@ -510,7 +504,6 @@ mod tests {
         let s = Settings::default();
         let v = serde_json::to_value(&s).unwrap();
         assert!(v.get("aiProvider").is_some());
-        assert!(v.get("unlockedThemes").is_some());
         assert!(v.get("launch_at_startup").is_some());
     }
 }

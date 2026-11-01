@@ -14,7 +14,6 @@ pub struct Core {
     pub ws: Workspace,
     pub history: History,
     pub adblock: Adblock,
-    pub license: crate::license::LicenseState,
     pub update: crate::updates::UpdateState,
     pub last_saved: Option<std::time::Instant>,
 }
@@ -29,13 +28,11 @@ impl Core {
             history: History::new(ws.settings.undo_steps, ws.clone()),
             ws,
             adblock: Adblock::new(),
-            license: crate::license::LicenseState::default(),
             update: crate::updates::UpdateState::default(),
             last_saved: None,
         };
         core.adblock.set_enabled(core.ws.settings.ad_blocker);
         core.adblock.load_lists(&core.data_dir);
-        core.reload_license();
         Ok(core)
     }
 
@@ -46,14 +43,9 @@ impl Core {
             history: History::new(ws.settings.undo_steps, ws.clone()),
             ws,
             adblock: Adblock::new(),
-            license: crate::license::LicenseState::default(),
             update: crate::updates::UpdateState::default(),
             last_saved: None,
         }
-    }
-
-    pub fn reload_license(&mut self) {
-        self.license = crate::license::load(&self.data_dir);
     }
 
     pub fn save(&mut self) -> Result<()> {
@@ -437,33 +429,10 @@ impl Core {
                 self.set_setting_json("theme", &serde_json::to_string(theme).unwrap());
                 json!({"ok": true})
             }
-            _ if id.starts_with("unlock-") => {
-                let egg = id.trim_start_matches("unlock-");
-                self.unlock_easter_egg(egg);
-                json!({"ok": true, "unlocked": egg})
-            }
             _ => json!({"ok": false, "error": "unknown command"}),
         }
     }
 
-    pub fn unlock_easter_egg(&mut self, id: &str) {
-        match id {
-            "pulsar" | "plasma" => {
-                let theme_id = id.to_string();
-                if !self.ws.settings.unlocked_themes.contains(&theme_id) {
-                    self.ws.settings.unlocked_themes.push(theme_id.clone());
-                }
-                self.ws.settings.theme = theme_id;
-            }
-            "hypercube" => {
-                if !self.ws.settings.unlocked_fragments.iter().any(|f| f == "hypercube") {
-                    self.ws.settings.unlocked_fragments.push("hypercube".into());
-                }
-            }
-            _ => {}
-        }
-        self.save_quiet();
-    }
 
     pub fn reset_tutorials(&mut self) {
         let s = &mut self.ws.settings;

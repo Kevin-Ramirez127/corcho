@@ -34,9 +34,6 @@ Item {
     readonly property var upd: {
         try { return JSON.parse(app.updateJson || "{}"); } catch (e) { return {}; }
     }
-    readonly property var lic: {
-        try { return JSON.parse(app.licenseJson || "{}"); } catch (e) { return {}; }
-    }
 
     function set(key, value) {
         app.setSetting(key, JSON.stringify(value));
@@ -119,7 +116,7 @@ Item {
                             { id: "interface", label: "Interface", icon: "panels-top-left" },
                             { id: "appearance", label: "Appearance", icon: "palette" },
                             { id: "data", label: "Data", icon: "hard-drive" },
-                            { id: "ai", label: "AI", icon: "sparkles" },
+                            { id: "ai", label: "AI", icon: "cpu" },
                             { id: "security", label: "Security", icon: "shield" },
                             { id: "about", label: "About", icon: "info" }
                         ]
@@ -441,11 +438,7 @@ Item {
                                 spacing: 8
 
                                 Repeater {
-                                    model: root.themeList.filter(function (t) {
-                                        if (t.id === "pulsar" || t.id === "plasma")
-                                            return (root.val("unlockedThemes", []) || []).indexOf(t.id) >= 0;
-                                        return true;
-                                    })
+                                    model: root.themeList
 
                                     delegate: Item {
                                         required property var modelData
@@ -813,7 +806,7 @@ Item {
                                 }
                                 AppButton {
                                     th: root.th
-                                    icon: "key"
+                                    icon: "plug"
                                     text: "Connect"
                                     onClicked: root.validateKey()
                                 }
@@ -975,31 +968,11 @@ Item {
                             }
                             SettingRow {
                                 th: root.th
-                                title: "License"
-                                description: root.lic.active ? ("Active · " + (root.lic.plan || "Corcho")) : "No license key"
-                                AppTextField {
-                                    width: 210
-                                    th: root.th
-                                    placeholder: "License key"
-                                    onEdited: function (value) { root.keyField = value; }
-                                }
-                                AppButton {
-                                    th: root.th
-                                    icon: "key-round"
-                                    text: root.lic.active ? "Clear" : "Activate"
-                                    onClicked: {
-                                        if (root.lic.active) root.app.clearLicense();
-                                        else root.app.activateLicense(root.keyField);
-                                    }
-                                }
-                            }
-                            SettingRow {
-                                th: root.th
                                 title: "Tutorials"
                                 description: "Replay the welcome sequence."
                                 AppButton {
                                     th: root.th
-                                    icon: "sparkles"
+                                    icon: "rotate-ccw"
                                     text: "Replay"
                                     onClicked: root.app.resetTutorials()
                                 }

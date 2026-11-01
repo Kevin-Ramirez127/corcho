@@ -10,7 +10,6 @@ use cxx_qt_lib::QString;
 use crate::ai::{self, AIRequest};
 use crate::core::Core;
 use crate::integrations;
-use crate::license;
 use crate::model;
 use crate::sync;
 use crate::updates;
@@ -55,7 +54,6 @@ pub mod qobject {
         #[qproperty(QString, status_text, cxx_name = "statusText")]
         #[qproperty(bool, syncing, cxx_name = "syncing")]
         #[qproperty(bool, ai_busy, cxx_name = "aiBusy")]
-        #[qproperty(QString, license_json, cxx_name = "licenseJson")]
         #[qproperty(QString, update_json, cxx_name = "updateJson")]
         #[qproperty(QString, search_json, cxx_name = "searchJson")]
         #[qproperty(QString, themes_json, cxx_name = "themesJson")]
@@ -252,14 +250,6 @@ pub mod qobject {
         fn install_update(self: &Self) -> bool;
 
         #[qinvokable]
-        #[cxx_name = "activateLicense"]
-        fn activate_license(self: Pin<&mut Self>, key: &QString);
-
-        #[qinvokable]
-        #[cxx_name = "clearLicense"]
-        fn clear_license(self: Pin<&mut Self>);
-
-        #[qinvokable]
         #[cxx_name = "readAttachment"]
         fn read_attachment(self: &Self, name: &QString) -> QString;
 
@@ -282,10 +272,6 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "resetTutorials"]
         fn reset_tutorials(self: Pin<&mut Self>);
-
-        #[qinvokable]
-        #[cxx_name = "unlockEasterEgg"]
-        fn unlock_easter_egg(self: Pin<&mut Self>, id: &QString);
 
         #[qinvokable]
         #[cxx_name = "spectrumStart"]
@@ -323,7 +309,6 @@ pub struct AppControllerRust {
     status_text: QString,
     syncing: bool,
     ai_busy: bool,
-    license_json: QString,
     update_json: QString,
     search_json: QString,
     themes_json: QString,
@@ -351,7 +336,6 @@ impl Default for AppControllerRust {
             status_text: QString::default(),
             syncing: false,
             ai_busy: false,
-            license_json: QString::default(),
             update_json: QString::default(),
             search_json: QString::from("[]"),
             themes_json: model::themes().to_string().into(),
@@ -366,7 +350,7 @@ impl Default for AppControllerRust {
 
 impl qobject::AppController {
     fn refresh_all(mut self: Pin<&mut Self>) {
-        let (grids, cards, folders, settings, active, pan, pany, zoom, lic, upd) = {
+        let (grids, cards, folders, settings, active, pan, pany, zoom, upd) = {
             let core_arc = self.as_ref().rust().core.clone();
             let core = core_arc.lock().unwrap();
             (
@@ -378,7 +362,6 @@ impl qobject::AppController {
                 core.active_grid_view().0,
                 core.active_grid_view().1,
                 core.active_grid_view().2,
-                serde_json::to_string(&core.license).unwrap_or_else(|_| "{}".into()),
                 serde_json::to_string(&core.update).unwrap_or_else(|_| "{}".into()),
             )
         };
@@ -390,7 +373,6 @@ impl qobject::AppController {
         self.as_mut().set_pan_x(pan);
         self.as_mut().set_pan_y(pany);
         self.as_mut().set_zoom(zoom);
-        self.as_mut().set_license_json(s(lic));
         self.as_mut().set_update_json(s(upd));
     }
 
@@ -1016,39 +998,7 @@ impl qobject::AppController {
         updates::install(&path).is_ok()
     }
 
-    pub fn activate_license(mut self: Pin<&mut Self>, key: &QString) {
-        let key = p(key);
-        let qt = self.as_mut().qt_thread();
-        let data_dir = self.as_ref().rust().core.clone().lock().unwrap().data_dir.clone();
-        runtime().spawn(async move {
-            match license::verify(&key).await {
-                Ok(state) => {
-                    let _ = license::save(&data_dir, &state);
-                    let _ = qt.queue(move |mut q| {
-                        if let Ok(mut core) = q.as_ref().rust().core.clone().lock() {
-                            core.license = state.clone();
-                        }
-                        q.as_mut().set_license_json(s(serde_json::to_string(&state).unwrap_or_default()));
-                        q.as_mut().notice(s("license"), s("License activated"));
-                    });
-                }
-                Err(e) => {
-                    let msg = e.to_string();
-                    let _ = qt.queue(move |mut q| q.as_mut().notice(s("license-error"), s(msg)));
-                }
-            }
-        });
-    }
 
-    pub fn clear_license(mut self: Pin<&mut Self>) {
-        let data_dir = self.as_ref().rust().core.clone().lock().unwrap().data_dir.clone();
-        license::clear(&data_dir);
-        if let Ok(mut core) = self.as_ref().rust().core.clone().lock() {
-            core.license = license::LicenseState::default();
-            core.save_quiet();
-        }
-        self.as_mut().set_license_json(s("{}"));
-    }
 
     pub fn read_attachment(&self, name: &QString) -> QString {
         let data_dir = self.core.lock().unwrap().data_dir.clone();
@@ -1095,10 +1045,6 @@ impl qobject::AppController {
         self.as_mut().refresh_all();
     }
 
-    pub fn unlock_easter_egg(mut self: Pin<&mut Self>, id: &QString) {
-        self.as_ref().rust().core.clone().lock().unwrap().unlock_easter_egg(&p(id));
-        self.as_mut().refresh_all();
-    }
 
     pub fn spectrum_start(&self, volume: f64, tone_freq: f64, tone_mix: f64) {
         if let Err(e) = crate::audio::start(volume as f32, tone_freq as f32, tone_mix as f32) {

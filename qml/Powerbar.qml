@@ -34,7 +34,7 @@ Item {
         { id: "create-bookmark", label: "Add bookmark", icon: "bookmark", keywords: "link" },
         { id: "create-api", label: "Add API data", icon: "database", keywords: "http json" },
         { id: "create-ai", label: "Add AI processor", icon: "cpu", keywords: "ai prompt" },
-        { id: "create-fragment", label: "Add fragment", icon: "gem", keywords: "sensory" },
+        { id: "create-fragment", label: "Add fragment", icon: "aperture", keywords: "sensory" },
         { id: "create-script", label: "Add script", icon: "terminal", keywords: "shell" },
         { id: "create-checklist", label: "Add checklist", icon: "list-checks", keywords: "todo tasks" },
         { id: "create-kanban", label: "Add kanban", icon: "kanban", keywords: "board columns" },
@@ -45,10 +45,7 @@ Item {
         { id: "create-folder", label: "Create folder", icon: "folder-plus", keywords: "new folder" },
         { id: "undo", label: "Undo", icon: "undo-2", keywords: "history" },
         { id: "redo", label: "Redo", icon: "rotate-cw", keywords: "history" },
-        { id: "settings", label: "Open settings", icon: "settings", keywords: "preferences" },
-        { id: "unlock-pulsar", label: "Easter egg found", icon: "egg", keywords: "pulsar secret", egg: true },
-        { id: "unlock-plasma", label: "Easter egg found", icon: "egg", keywords: "plasma secret", egg: true },
-        { id: "unlock-hypercube", label: "Easter egg found", icon: "egg", keywords: "hypercube secret", egg: true }
+        { id: "settings", label: "Open settings", icon: "settings", keywords: "preferences" }
     ]
 
     ListModel { id: results }
@@ -79,7 +76,6 @@ Item {
 
         for (var k = 0; k < commands.length && found < 50; k++) {
             var cmd = commands[k];
-            if (cmd.egg && q === "") continue;
             var hay = cmd.label.toLowerCase() + " " + cmd.keywords;
             if (q === "" || hay.indexOf(q) >= 0) {
                 results.append({ kind: "command", id: cmd.id, label: cmd.label, detail: "", icon: cmd.icon });

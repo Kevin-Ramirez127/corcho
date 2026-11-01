@@ -47,6 +47,9 @@ pub fn load_workspace(data_dir: &Path) -> Result<Workspace> {
     });
     for g in &mut ws.grids {
         for (i, c) in g.cards.iter_mut().enumerate() {
+            if c.icon == "gem" || c.icon == "diamond" {
+                c.icon = "aperture".to_string();
+            }
             if !c.x.is_finite() || c.x.abs() > 1_000_000.0 {
                 c.x = 64.0 + i as f64 * 28.0;
             }

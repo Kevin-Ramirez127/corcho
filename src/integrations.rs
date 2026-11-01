@@ -188,3 +188,25 @@ pub fn mpris_action(player: &str, action: &str) -> Value {
         Err(e) => json!({"ok": false, "error": e.to_string()}),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn script_captures_stdout() {
+        let result = run_script("printf corcho", Duration::from_secs(5)).unwrap();
+        assert_eq!(result["ok"], true);
+        assert!(result["stdout"].as_str().unwrap().contains("corcho"));
+    }
+
+    #[test]
+    fn adblock_matches_hosts_and_subdomains() {
+        let mut block = Adblock::new();
+        assert!(!block.blocked("https://doubleclick.net/x"));
+        block.set_enabled(true);
+        assert!(block.blocked("https://doubleclick.net/x"));
+        assert!(block.blocked("https://ads.doubleclick.net/x"));
+        assert!(!block.blocked("https://example.com/x"));
+    }
+}

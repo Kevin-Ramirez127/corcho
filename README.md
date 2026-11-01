@@ -18,8 +18,8 @@ No Electron shell, no telemetry, no analytics.
 - Isolated website sessions, a host-based ad blocker and a session self-test.
 - Folder sync and Google Drive sync, conflict backups, zip import/export and
   legacy data import.
-- Stable, beta and experimental update channels, Gumroad licensing, MPRIS,
-  scripts, launch at startup and a `corcho://` protocol handler.
+- Stable, beta and experimental update channels, MPRIS, scripts, launch at
+  startup and a `corcho://` protocol handler. Every feature is free.
 - A full MCP server plan: [`docs/MCP.md`](docs/MCP.md).
 
 ## Palette

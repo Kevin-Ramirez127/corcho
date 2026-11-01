@@ -77,7 +77,7 @@ corcho-rs/
 │  ├─ storage/                   # JSON store, atomic writes, backups, import/export
 │  ├─ sync/                      # folder sync, Google Drive, conflicts
 │  ├─ ai/                        # providers, streaming, prompts, context
-│  └─ integrations/              # mpris, script runner, adblock, updates, license, hotkeys
+│  └─ integrations/              # mpris, script runner, adblock, updates, hotkeys
 ├─ cpp/                          # minimal C++ shims (WebEngine interceptor, portal)
 ├─ qml/
 │  ├─ Main.qml
@@ -89,7 +89,7 @@ corcho-rs/
 │  ├─ fragments/                 # Haptic, Nebula, Spectrum, Artifact, Boson,
 │  │                             # Vector, Calendar, Hypercube
 │  ├─ dialogs/                   # Settings*, Powerbar, ContextMenu, Tutorials,
-│  │                             # Onboarding, License, Update, Changelog
+│  │                             # Onboarding, Update, Changelog
 │  └─ style/                     # Themes.qml, Fonts.qml, Icons.qml, Metrics.qml
 ├─ assets/                       # fonts/, icons/lucide/, images/
 ├─ tests/                        # Rust unit/integration, QML (QtQuickTest)
@@ -183,10 +183,9 @@ enum CardKind { Note, Website, Bookmark, ApiData, Ai, Script,
 - Conflict resolution: mtime + content hash + `.backup_<ts>` like upstream; never overwrite on unknown cloud state.
 - Import/export `.corcho` ZIP; selective wipe; data-folder selection.
 
-### 7.7 Updates, licensing, OS integration
+### 7.7 Updates and OS integration
 - Updater: GitHub Releases (`reqwest` + `semver`), channels **stable/beta/experimental**, mandatory-update gate, AppImage/DEB installer strategy per package type.
-- Licensing: Gumroad verify (`reqwest`), grace period/offline token, "Corcho / Corcho" feature gate.
-- Launch-at-startup (XDG autostart / portal), single instance (D-Bus name), `corcho://`/`corcho://` protocol handler, native file dialogs, About panel, changelog.
+- Launch-at-startup (XDG autostart / portal), single instance (D-Bus name), `corcho://` protocol handler, native file dialogs, About panel, changelog.
 - Global Powerbar hotkey via XDG `GlobalShortcuts` portal (`ashpd`) with X11 fallback.
 - MPRIS card, media art cache, clipboard, open-in-browser.
 
@@ -194,8 +193,8 @@ enum CardKind { Note, Website, Bookmark, ApiData, Ai, Script,
 - Sidebar (grids, folders, sync indicator, settings, powerbar), topbar, status bar, responsive/mobile layout.
 - Powerbar (command palette): grids/cards search, create commands, zoom, undo/redo, themes, easter eggs.
 - Settings — General / Interface / Appearance / Data / AI / Security / About, porting all options from §11 of the inventory.
-- Themes: 17 standard + custom editor + unlockable Plasma/Pulsar; 14 fonts; opacity, audio, visual-effect toggles.
-- Tutorials/onboarding, splash, easter eggs (unlock Hypercube/Plasma/Pulsar), changelog, legal links, analytics **opt-in** with local diagnostics buffer.
+- Themes: 19 standard + custom editor; 14 fonts; opacity, audio, visual-effect toggles.
+- Tutorials/onboarding, splash, easter eggs, changelog, legal links, local diagnostics (no telemetry).
 
 ---
 
@@ -208,13 +207,13 @@ Everything in the inventory maps as follows. Nothing is dropped; OS-specific ite
 | Canvas/grid (pan, zoom, snap, magnet, ripple, parallax, minimap, folders, grid links, lock, undo/redo) | Full — QML + Rust |
 | 12 card types | Full |
 | 8 fragment modes | Full (QtQuick3D + QML + cpal) |
-| 17 themes + custom + 2 unlockable, 14 fonts, opacity/volume/effects | Full |
+| 19 themes + custom, 14 fonts, opacity/volume/effects | Full |
 | AI: 5 providers + local, model lists, streaming, web search, refresh, context injection, stats | Full |
 | Website cards: webview/bookmark/API, isolated sessions, nav/zoom, scroll memory, adblock, cookie debug, attack sim | Full |
 | Cloud sync: folder provider (iCloud substitute) + Google Drive, conflicts, indicator, troubleshoot | Full |
 | Backups import/export, data folder, migration, wipe/reset | Full |
 | Updates: channels, auto modes, mandatory flow, changelog | Full |
-| Licensing: Gumroad activate/validate/grace/clear | Full |
+| Licensing | Removed — Corcho is fully free software |
 | Powerbar + tutorials + onboarding + easter eggs + legal + diagnostics + analytics (opt-in) | Full |
 | MPRIS/now-playing | Full (`mpris`/zbus + playerctl fallback) — Linux |
 | Script card `/bin/sh` | Full, disabled-by-default menu entry like upstream |
@@ -229,7 +228,7 @@ Everything in the inventory maps as follows. Nothing is dropped; OS-specific ite
 
 ## 9. Key dependencies (crates)
 
-`cxx-qt`, `cxx-qt-lib`, `cxx-qt-build`, `serde`, `serde_json`, `tokio`, `reqwest` (rustls), `eventsource-stream`, `futures`, `notify`, `zip`, `aes-gcm`, `argon2`, `mpris`/`zbus`, `adblock-rust`, `oauth2`, `semver`, `uuid`, `time`/`chrono`, `anyhow`, `thiserror`, `tracing`, `tracing-subscriber`, `comrak`, `html5ever`/`scraper`, `cpal`, `ashpd` (portal), `rand`, `base64`, `image`, `open`/`QDesktopServices`, `keyring` (optional license token), `directories`.
+`cxx-qt`, `cxx-qt-lib`, `cxx-qt-build`, `serde`, `serde_json`, `tokio`, `reqwest` (rustls), `eventsource-stream`, `futures`, `notify`, `zip`, `aes-gcm`, `argon2`, `mpris`/`zbus`, `adblock-rust`, `oauth2`, `semver`, `uuid`, `time`/`chrono`, `anyhow`, `thiserror`, `tracing`, `tracing-subscriber`, `comrak`, `html5ever`/`scraper`, `cpal`, `ashpd` (portal), `rand`, `base64`, `image`, `open`/`QDesktopServices`, `directories`.
 
 Keep the dependency surface small; prefer Qt for rendering/OS and Rust for logic.
 
@@ -253,7 +252,7 @@ Sizing assumes one developer; rough, not a commitment.
 
 **M6 — Sync/data (M).** Folder sync + Google Drive, conflicts, backups, import/export, migration. *Accept:* two-instance convergence test + conflict backup.
 
-**M7 — Platform (M).** Updates, licensing, launch-at-startup, protocol, hotkey, single instance, MPRIS, analytics opt-in, legal. *Accept:* end-to-end update on AppImage; license gate works.
+**M7 — Platform (M).** Updates, launch-at-startup, protocol, hotkey, single instance, MPRIS, legal. *Accept:* end-to-end update on AppImage.
 
 **M8 — Polish & packaging (M).** Themes/fonts parity, tutorials/onboarding, accessibility, AppImage/DEB/Flatpak, docs. *Accept:* clean install on fresh VM; feature matrix checklist green.
 
@@ -271,7 +270,7 @@ Total: **~3–5 months solo** for parity, more with cross-platform packaging.
 | Wayland global hotkeys | XDG GlobalShortcuts portal via `ashpd`; document fallback. |
 | iCloud unavailable on Linux | Folder-sync abstraction; iCloud works where a mounted path exists (macOS build). |
 | Data loss during sync | Never overwrite on unknown state; hash+mtime+backup; extensive tests. |
-| Licensing/legal | Reimplement code; do not reuse proprietary assets. Verify font/icon licenses (Lucide ISC, OFL fonts). |
+| Legal | Clean-room reimplementation; do not reuse the original product's assets. Verify font/icon licenses (Lucide ISC, OFL fonts). |
 | Qt 6.12 vs cxx-qt | Spike already configures/builds; pin versions. |
 
 ---
@@ -297,7 +296,7 @@ Total: **~3–5 months solo** for parity, more with cross-platform packaging.
 
 ## 14. Legal
 
-The original is a proprietary product ("Corcho", Gumroad licensing). This project is a clean-room reimplementation of behaviour for personal/experimental use. Do not copy the original's binaries, icons, fonts, or bundled assets. Use:
+Corcho is free software under the MIT license. It is a clean-room reimplementation of behaviour. Do not copy the original product's binaries, icons, fonts, or bundled assets. Use:
 - Lucide icons (ISC) — fetch from upstream.
 - Fonts under their own licenses (Inter/DM Sans/Manrope/JetBrains Mono/Fira Code/Source Code Pro/IBM Plex/Space Mono are OFL; check OCR-A and OpenDyslexic).
 - Own branding and visual design.

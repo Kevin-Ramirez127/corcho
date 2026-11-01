@@ -17,7 +17,7 @@ resources, prompts and completions are advertised from one registry.
   GUI (Qt) ──▶│        Core (Rust)       │◀── MCP server
               │ model · storage · history│
               │ ai · sync · updates      │
-              │ license · integrations   │
+              │ integrations             │
               └───────────┬──────────────┘
                           │ broadcast events (tokio::broadcast)
               ┌───────────┴──────────────┐
@@ -139,7 +139,6 @@ API keys are write-only: `settings.get` redacts them; logs never include them.
 | `theme.list` | — |
 | `theme.set` | `themeId` |
 | `theme.custom.set` | `background`, `surface`, `accent`, `text` |
-| `theme.unlock` | `pulsar`\|`plasma`\|`hypercube` |
 | `font.list` / `font.set` | Font id |
 | `effects.set` | spawn, parallax, ripple, reducedMotion |
 | `audio.setVolume` | 0–100 |
@@ -156,14 +155,13 @@ API keys are write-only: `settings.get` redacts them; logs never include them.
 | `data.setDir` | `path` |
 | `attachments.list/read/write/delete` | base64 for binary |
 
-### 3.6 Updates, license, OS
+### 3.6 Updates and OS
 
 | Tool | Input |
 | --- | --- |
 | `update.check` | — |
 | `update.channel.set` | `stable`\|`beta`\|`experimental` |
 | `update.download` / `update.install` | — |
-| `license.status` / `license.activate` / `license.clear` | `key?` |
 | `app.launchAtStartup` | boolean |
 | `app.openExternal` | URL (allowlist http/https) |
 | `app.quit` / `app.relaunch` | confirm |
@@ -179,7 +177,6 @@ API keys are write-only: `settings.get` redacts them; logs never include them.
 | `powerbar.run` | `commandId`, `args?` |
 | `tutorial.reset` | — |
 | `onboarding.complete` | — |
-| `easterEgg.unlock` | `id` |
 
 ---
 
@@ -229,7 +226,6 @@ sync.status       { state }
 update.status     { state }
 ai.chunk          { streamId, text }
 ai.done           { streamId, text }
-license.changed   { state }
 script.output     { cardId, chunk }
 ```
 
@@ -241,8 +237,8 @@ during drags.
 
 - **Write scope:** only the Corcho data dir and explicitly supplied
   import/export paths. `..` and symlinks are resolved and re-checked.
-- **Secrets:** API keys, OAuth tokens and license keys are redacted from reads,
-  errors and logs. `settings.set` accepts them; nothing returns them.
+- **Secrets:** API keys and OAuth tokens are redacted from reads, errors and
+  logs. `settings.set` accepts them; nothing returns them.
 - **Destructive tools** (`workspace.reset`, `grid.delete`, `data.setDir`,
   `app.quit`) require `confirm: "yes"` and are annotated
   `destructiveHint: true`.
@@ -251,7 +247,7 @@ during drags.
 - **Rate limits:** per-tool token bucket (mutations 10/s, AI 2/s, updates 1/min).
 - **Audit log:** every tool call appended to `~/.local/share/corcho/mcp-audit.log`
   with tool, args hash, revision and outcome; secrets omitted.
-- **No implicit network:** only AI, sync, updates and license tools touch the
+- **No implicit network:** only AI, sync and update tools touch the
   network, and only when invoked.
 
 ## 8. Implementation
@@ -275,7 +271,7 @@ during drags.
 1. **Registry + stdio + workspace/grid/card CRUD** with revision checks.
 2. **Settings/themes/fonts + resources + events.**
 3. **AI (streaming) + web/API/script tools** with permission gates.
-4. **Sync/backup/update/license/OS tools.**
+4. **Sync/backup/update/OS tools.**
 5. **HTTP transport + token auth + audit log + rate limits.**
 6. **Prompts + completions + conformance tests** against the MCP spec.
 

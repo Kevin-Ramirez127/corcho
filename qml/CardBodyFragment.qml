@@ -15,13 +15,9 @@ CardFrame {
             { value: "object", label: "Artifact" },
             { value: "boson", label: "Boson" },
             { value: "vector", label: "Vector" },
-            { value: "calendar", label: "Calendar" }
+            { value: "calendar", label: "Calendar" },
+            { value: "hypercube", label: "Hypercube" }
         ];
-        try {
-            var s = JSON.parse(root.app.settingsJson);
-            if (s.unlockedFragments && s.unlockedFragments.indexOf("hypercube") >= 0)
-                list.push({ value: "hypercube", label: "Hypercube" });
-        } catch (e) {}
         return list;
     }
 

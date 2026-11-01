@@ -4,6 +4,7 @@
   <file>assets/fonts/inter_medium.ttf</file>
   <file>assets/fonts/inter_regular.ttf</file>
   <file>assets/fonts/inter_semibold.ttf</file>
+  <file>assets/icons/aperture.svg</file>
   <file>assets/icons/app-window.svg</file>
   <file>assets/icons/arrow-down.svg</file>
   <file>assets/icons/arrow-left.svg</file>
@@ -45,7 +46,6 @@
   <file>assets/icons/database.svg</file>
   <file>assets/icons/download-cloud.svg</file>
   <file>assets/icons/download.svg</file>
-  <file>assets/icons/egg.svg</file>
   <file>assets/icons/ellipsis.svg</file>
   <file>assets/icons/external-link.svg</file>
   <file>assets/icons/file-text.svg</file>
@@ -53,7 +53,6 @@
   <file>assets/icons/flip-horizontal-2.svg</file>
   <file>assets/icons/folder-plus.svg</file>
   <file>assets/icons/gauge.svg</file>
-  <file>assets/icons/gem.svg</file>
   <file>assets/icons/gift.svg</file>
   <file>assets/icons/git-commit-horizontal.svg</file>
   <file>assets/icons/github.svg</file>
@@ -70,8 +69,6 @@
   <file>assets/icons/info.svg</file>
   <file>assets/icons/italic.svg</file>
   <file>assets/icons/kanban.svg</file>
-  <file>assets/icons/key-round.svg</file>
-  <file>assets/icons/key.svg</file>
   <file>assets/icons/keyboard.svg</file>
   <file>assets/icons/languages.svg</file>
   <file>assets/icons/laptop.svg</file>
@@ -104,6 +101,8 @@
   <file>assets/icons/panels-top-left.svg</file>
   <file>assets/icons/pause.svg</file>
   <file>assets/icons/pencil.svg</file>
+  <file>assets/icons/pin-off.svg</file>
+  <file>assets/icons/pin.svg</file>
   <file>assets/icons/play.svg</file>
   <file>assets/icons/plug.svg</file>
   <file>assets/icons/plus.svg</file>
@@ -123,7 +122,6 @@
   <file>assets/icons/skip-forward.svg</file>
   <file>assets/icons/sliders-horizontal.svg</file>
   <file>assets/icons/smartphone.svg</file>
-  <file>assets/icons/sparkles.svg</file>
   <file>assets/icons/sprout.svg</file>
   <file>assets/icons/square-pen.svg</file>
   <file>assets/icons/stone.svg</file>

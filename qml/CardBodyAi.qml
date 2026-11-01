@@ -77,7 +77,7 @@ CardFrame {
 
             AppButton {
                 th: root.th
-                icon: root.busy ? "refresh-cw" : "sparkles"
+                icon: root.busy ? "refresh-cw" : "play"
                 text: root.busy ? "Thinking" : "Run"
                 variant: "solid"
                 enabledButton: !root.busy && root.prompt.trim() !== ""
