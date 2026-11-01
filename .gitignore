@@ -1,0 +1,8 @@
+/target
+*.AppImage
+*.deb
+*.rpm
+*.flatpak
+*.log
+.env
+.DS_Store

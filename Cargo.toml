@@ -1,0 +1,46 @@
+[package]
+name = "corcho"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT"
+description = "A futuristic canvas for personal development — Rust + Qt6 native rewrite"
+default-run = "corcho"
+
+[dependencies]
+cxx = "1.0"
+cxx-qt = "0.10"
+cxx-qt-lib = { version = "0.10", features = ["qt_full"] }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "process", "fs", "io-util"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
+futures-util = "0.3"
+notify = "8"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+semver = "1"
+uuid = { version = "1", features = ["v4"] }
+time = { version = "0.3", features = ["formatting", "macros"] }
+anyhow = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+base64 = "0.22"
+sha2 = "0.10"
+url = "2"
+open = "5"
+directories = "6"
+libc = "0.2"
+cpal = "0.16"
+
+[build-dependencies]
+cxx-qt-build = { version = "0.10" }
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true
