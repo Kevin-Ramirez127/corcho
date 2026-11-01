@@ -67,6 +67,27 @@ QMAKE=/usr/bin/qmake6 cargo run
 
 The build is Cargo-only; CMake is not required.
 
+Run the checks:
+
+```sh
+cargo fmt --check
+QMAKE=/usr/bin/qmake6 cargo clippy --all-targets -- -D warnings
+QMAKE=/usr/bin/qmake6 cargo test
+```
+
+The release binary is about 11 MB. The full implementation status, including
+known limits, is in [PLAN.md](PLAN.md#18-status).
+
+## MCP
+
+```sh
+corcho --mcp                              # stdio
+corcho --mcp-http 127.0.0.1:7411          # local HTTP, bearer token
+```
+
+The token is written to `~/.local/share/corcho/mcp.token` (0600). See
+[docs/MCP.md](docs/MCP.md) for tools, resources and prompts.
+
 ## Data
 
 `~/.local/share/corcho/workspace.json` holds the workspace, with `attachments/`,
