@@ -94,6 +94,11 @@ impl Adblock {
         tracing::info!("adblock hosts loaded: {}", self.hosts.len());
     }
 
+    pub fn hosts_json(&self) -> String {
+        let hosts: Vec<&String> = self.hosts.iter().collect();
+        serde_json::to_string(&hosts).unwrap_or_else(|_| "[]".into())
+    }
+
     pub fn blocked(&self, url: &str) -> bool {
         if !self.enabled {
             return false;

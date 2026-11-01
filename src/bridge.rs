@@ -295,6 +295,10 @@ pub mod qobject {
         fn adblock_check(self: &Self, url: &QString) -> bool;
 
         #[qinvokable]
+        #[cxx_name = "adblockHosts"]
+        fn adblock_hosts(self: &Self) -> QString;
+
+        #[qinvokable]
         #[cxx_name = "changelog"]
         fn changelog(self: &Self) -> QString;
 
@@ -1166,6 +1170,10 @@ impl qobject::AppController {
 
     pub fn adblock_check(&self, url: &QString) -> bool {
         self.core.lock().unwrap().adblock.blocked(&p(url))
+    }
+
+    pub fn adblock_hosts(&self) -> QString {
+        s(self.core.lock().unwrap().adblock.hosts_json())
     }
 
     pub fn changelog(&self) -> QString {

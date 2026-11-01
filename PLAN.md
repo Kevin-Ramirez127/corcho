@@ -422,11 +422,10 @@ Delivered in this repository:
 
 Known limits, deliberately documented rather than hidden:
 
-- Card parallax is a persisted setting; the canvas currently keeps cards in a
-  single plane, so the toggle has no visible effect yet.
+- Card parallax is a subtle pointer-driven tilt, not a depth-parallax plane.
 - Kanban moves use hover arrows instead of pointer drag-and-drop.
-- Website ad blocking is host-level for navigation plus a DOM cleanup pass,
-  not a full subresource interceptor.
+- Website ad blocking covers top-level navigation, `fetch`/XHR calls to known
+  hosts, and a DOM cleanup pass; it is not a full network interceptor.
 - AI key validation and model fetch use a short blocking call.
 - MCP SSE event subscriptions, the Unix-socket GUI transport and web-card tools
   that need QtWebEngine are not implemented; everything else is available over

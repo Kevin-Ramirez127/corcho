@@ -20,6 +20,8 @@ FocusScope {
     property bool cardHovered: false
     property bool menuHovered: false
     property bool resizeHovered: false
+    property real parallaxX: 0
+    property real parallaxY: 0
 
     x: card.x
     y: card.y
@@ -39,6 +41,16 @@ FocusScope {
     }
 
     onSettingsChanged: enter()
+
+    function updateParallax(px, py) {
+        if (!root.settings || !root.settings.card_parallax || root.settings.reduced_motion) {
+            parallaxX = 0;
+            parallaxY = 0;
+            return;
+        }
+        parallaxX = (px / Math.max(1, width) - 0.5) * -8;
+        parallaxY = (py / Math.max(1, height) - 0.5) * -8;
+    }
 
     onCardChanged: {
         if (!mover.active && !resizer.active) {
@@ -102,6 +114,7 @@ FocusScope {
         id: surface
         anchors.fill: parent
         radius: 14
+        transform: Translate { x: root.parallaxX; y: root.parallaxY }
         color: root.th.card
         border.width: root.selected ? 1.5 : 1
         border.color: root.selected ? root.th.accent : (root.cardHovered ? root.th.borderStrong : root.th.border)
@@ -122,6 +135,7 @@ FocusScope {
     Item {
         id: header
         visible: root.showChrome
+        transform: Translate { x: root.parallaxX; y: root.parallaxY }
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
@@ -234,6 +248,7 @@ FocusScope {
 
     Item {
         id: body
+        transform: Translate { x: root.parallaxX; y: root.parallaxY }
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: root.showChrome ? header.bottom : parent.top
@@ -288,7 +303,14 @@ FocusScope {
     }
 
     HoverHandler { id: hover
-        onHoveredChanged: root.cardHovered = hovered
+        onHoveredChanged: {
+            root.cardHovered = hovered;
+            if (!hovered) {
+                root.parallaxX = 0;
+                root.parallaxY = 0;
+            }
+        }
+        onPointChanged: root.updateParallax(point.position.x, point.position.y)
     }
 
     TapHandler {

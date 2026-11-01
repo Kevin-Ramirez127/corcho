@@ -155,8 +155,14 @@ CardFrame {
 
             onLoadingChanged: function (loadRequest) {
                 if (loadRequest.status === WebEngineView.LoadSucceededStatus) {
+                    var hosts = root.app.adblockHosts();
                     runJavaScript(
-                        "(function(){var sels=['[id^=google_ads]','[id^=div-gpt-ad]','[class*=sponsored]','iframe[src*=doubleclick]','iframe[src*=googlesyndication]'];" +
+                        "(function(){var blocked=" + hosts + ";" +
+                        "function hit(u){try{var h=new URL(u,location.href).hostname;return blocked.some(function(b){return h===b||h.endsWith('.'+b);});}catch(e){return false;}}" +
+                        "var f=window.fetch;window.fetch=function(u,o){var url=(typeof u==='string')?u:(u&&u.url)||'';if(hit(url))return Promise.reject(new Error('blocked by Corcho'));return f.apply(this,arguments);};" +
+                        "var xo=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,u){this.__blocked=hit(u);return xo.apply(this,arguments);};" +
+                        "var xs=XMLHttpRequest.prototype.send;XMLHttpRequest.prototype.send=function(){if(this.__blocked){this.abort();return;}return xs.apply(this,arguments);};" +
+                        "var sels=['[id^=google_ads]','[id^=div-gpt-ad]','[class*=sponsored]','iframe[src*=doubleclick]','iframe[src*=googlesyndication]'];" +
                         "sels.forEach(function(s){document.querySelectorAll(s).forEach(function(n){n.remove();});});})()"
                     );
                 }
