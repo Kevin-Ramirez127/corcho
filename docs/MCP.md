@@ -4,9 +4,10 @@ A single Model Context Protocol server that exposes **every** Corcho capability
 to an agent. The GUI and the MCP server are two clients of the same Rust core;
 neither holds state the other cannot reach.
 
-Transport: **stdio** for local agents, **Streamable HTTP** (JSON-RPC over POST +
-SSE) for remote/tooling. Protocol version negotiated at initialize; tools,
-resources, prompts and completions are advertised from one registry.
+Transport: **stdio is implemented** (`corcho --mcp`). **Streamable HTTP** (POST +
+SSE, bearer token) is designed below and remains the next transport step.
+Protocol version negotiated at initialize; tools, resources and prompts are
+advertised from one registry.
 
 ---
 
@@ -295,3 +296,43 @@ create and edit cards, run AI processors, and trigger sync/update actions turns
 Corcho into a programmable surface without scripting the GUI. Because every
 capability already lives in `Core`, the MCP layer is a thin, auditable adapter —
 not a second application.
+
+
+---
+
+## 10. Implementation status
+
+Implemented in `src/mcp.rs`, started with `corcho --mcp` (or `CORCHO_MCP=1`):
+
+- `initialize`, `ping`, `tools/list`, `tools/call`, `resources/list`,
+  `resources/read`, `prompts/list`, `prompts/get` over newline-delimited
+  JSON-RPC on stdio.
+- Tools: workspace get/export/import; grid list/get/create/rename/delete/
+  switch/move; card list/get/create/update/delete/duplicate/move/search;
+  settings get/set/batch; theme list/set; font list; powerbar search/run;
+  ai providers/complete; sync.now; git status/configure/sync; backup export/
+  import; update check/channel; app about/changelog; attachments list/read;
+  script run; mpris list/action; quit.
+- Resources: `corcho://workspace`, `corcho://grid/{id}`, `corcho://card/{id}`,
+  `corcho://settings` (secrets redacted), `corcho://themes`,
+  `corcho://changelog`.
+- Prompts: `organize-inbox`, `summarize-grid`, `weekly-review`.
+- Tests cover initialize/tools list, missing arguments, and the git merge.
+
+Example client config (opencode):
+
+```json
+{
+  "mcp": {
+    "corcho": {
+      "type": "local",
+      "command": ["corcho", "--mcp"],
+      "enabled": true
+    }
+  }
+}
+```
+
+Remaining from the design above: HTTP transport with token auth, event
+subscriptions, and the kind-specific convenience tools (checklist/kanban/
+whiteboard/pomodoro/web/website). All of those map onto the existing Core API.

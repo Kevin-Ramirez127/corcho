@@ -6,6 +6,7 @@ mod deeplink;
 mod gitsync;
 mod history;
 mod integrations;
+mod mcp;
 mod model;
 mod search;
 mod single_instance;
@@ -24,6 +25,13 @@ fn main() {
         .init();
 
     let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|a| a == "--mcp") || std::env::var("CORCHO_MCP").as_deref() == Ok("1") {
+        if let Err(err) = mcp::serve() {
+            eprintln!("mcp: {err}");
+            std::process::exit(1);
+        }
+        return;
+    }
     if single_instance::forward_if_running(&args) {
         return;
     }

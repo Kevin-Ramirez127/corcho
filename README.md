@@ -26,7 +26,9 @@ No Electron shell, no telemetry, no analytics.
   `backups/`.
 - Stable, beta and experimental update channels, MPRIS, scripts, launch at
   startup and a `corcho://` protocol handler. Every feature is free.
-- A full MCP server plan: [`docs/MCP.md`](docs/MCP.md).
+- A working **MCP server** over stdio (`corcho --mcp`) with workspace, grid,
+  card, settings, AI, git, sync, backup and update tools;
+  see [`docs/MCP.md`](docs/MCP.md).
 
 ## Palette
 
