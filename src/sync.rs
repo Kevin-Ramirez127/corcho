@@ -254,3 +254,60 @@ pub async fn drive_write(token: &str, bytes: &[u8]) -> Result<()> {
 fn urlencode(s: &str) -> String {
     url::form_urlencoded::byte_serialize(s.as_bytes()).collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::Workspace;
+    use crate::storage;
+
+    #[test]
+    fn pushes_then_pulls() {
+        let data = tempfile::tempdir().unwrap();
+        let cloud = tempfile::tempdir().unwrap();
+        let ws = Workspace::default();
+        storage::save_workspace(data.path(), &ws).unwrap();
+
+        let (status, adopt) = sync_folder(data.path(), cloud.path()).unwrap();
+        assert_eq!(status, "pushed");
+        assert!(adopt.is_none());
+        assert!(cloud.path().join(REMOTE_FILE).exists());
+
+        let (status, _) = sync_folder(data.path(), cloud.path()).unwrap();
+        assert_eq!(status, "up-to-date");
+    }
+
+    #[test]
+    fn newer_remote_wins_and_conflict_is_backed_up() {
+        let data = tempfile::tempdir().unwrap();
+        let cloud = tempfile::tempdir().unwrap();
+        let mut ws = Workspace::default();
+        storage::save_workspace(data.path(), &ws).unwrap();
+        sync_folder(data.path(), cloud.path()).unwrap();
+
+        // Change the local copy, then make the remote strictly newer.
+        ws.grids[0].name = "Local".into();
+        storage::save_workspace(data.path(), &ws).unwrap();
+        let mut remote_ws = ws.clone();
+        remote_ws.grids[0].name = "Remote".into();
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        std::fs::write(
+            cloud.path().join(REMOTE_FILE),
+            serde_json::to_vec_pretty(&remote_ws).unwrap(),
+        )
+        .unwrap();
+
+        let (status, adopt) = sync_folder(data.path(), cloud.path()).unwrap();
+        assert_eq!(status, "pulled");
+        assert_eq!(adopt.unwrap().grids[0].name, "Remote");
+        assert!(std::fs::read_dir(data.path().join("backups")).unwrap().next().is_some());
+    }
+
+    #[test]
+    fn pkce_pair_is_sane() {
+        let (verifier, challenge) = pkce_pair();
+        assert!(verifier.len() >= 43);
+        assert!(!challenge.is_empty());
+        assert_ne!(verifier, challenge);
+    }
+}

@@ -13,6 +13,7 @@ Item {
     signal edited(string value)
     signal accepted()
     signal keyPressed(var event)
+    signal committed(string value)
 
     implicitHeight: inputHeight
     implicitWidth: 240
@@ -44,7 +45,11 @@ Item {
             root.text = text;
             root.edited(text);
         }
-        onAccepted: root.accepted()
+        onAccepted: {
+            root.accepted();
+            root.committed(text);
+        }
+        onActiveFocusChanged: if (!activeFocus) root.committed(text)
         Keys.onPressed: function (event) { root.keyPressed(event); }
 
         Text {

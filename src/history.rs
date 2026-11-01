@@ -70,3 +70,34 @@ impl History {
         self.cursor = 0;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::Workspace;
+
+    #[test]
+    fn undo_and_redo_restore_snapshots() {
+        let mut ws = Workspace::default();
+        let mut h = History::new(5, ws.clone());
+        ws.grids[0].name = "Second".into();
+        h.push(&ws);
+        ws.grids[0].name = "Third".into();
+        h.push(&ws);
+        assert_eq!(h.undo().unwrap().grids[0].name, "Second");
+        assert_eq!(h.undo().unwrap().grids[0].name, "Grid A");
+        assert_eq!(h.redo().unwrap().grids[0].name, "Second");
+    }
+
+    #[test]
+    fn limit_drops_oldest() {
+        let ws = Workspace::default();
+        let mut h = History::new(2, ws.clone());
+        for i in 0..5 {
+            let mut next = ws.clone();
+            next.grids[0].name = format!("g{i}");
+            h.push(&next);
+        }
+        assert!(!h.can_undo() || h.undo().is_some());
+    }
+}

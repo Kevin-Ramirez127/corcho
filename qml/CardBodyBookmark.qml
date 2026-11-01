@@ -26,6 +26,7 @@ CardFrame {
                 height: 40
                 radius: 10
                 color: root.th.surfaceStrong
+                TapHandler { onTapped: root.open() }
 
                 Text {
                     anchors.centerIn: parent
@@ -35,6 +36,14 @@ CardFrame {
                     font.pixelSize: 18
                     font.weight: 500
                 }
+            }
+
+            Icon {
+                anchors.verticalCenter: parent.verticalCenter
+                name: "external-link"
+                size: 14
+                color: root.th.muted
+                TapHandler { onTapped: root.open() }
             }
 
             Column {
@@ -72,12 +81,6 @@ CardFrame {
             onAccepted: root.commit({ url: root.url })
         }
 
-        AppButton {
-            th: root.th
-            icon: "external-link"
-            text: "Open"
-            onClicked: root.open()
-        }
     }
 
 }

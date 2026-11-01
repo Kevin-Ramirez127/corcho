@@ -95,7 +95,7 @@ pub fn default_card_style(kind: &str) -> (f64, f64, &'static str, &'static str, 
     match kind {
         "note" => (384.0, 320.0, "#3d3f52", "file-text", ""),
         "website" => (512.0, 384.0, "#2f3b45", "globe", "Website"),
-        "bookmark" => (320.0, 128.0, "#2f3b45", "bookmark", "Bookmark"),
+        "bookmark" => (320.0, 160.0, "#2f3b45", "bookmark", "Bookmark"),
         "api" => (480.0, 320.0, "#2f3b45", "database", "API Data"),
         "ai" => (416.0, 288.0, "#3a3348", "cpu", "AI"),
         "script" => (416.0, 256.0, "#333a33", "terminal", "Script"),
@@ -479,4 +479,38 @@ pub fn fonts() -> serde_json::Value {
         {"id":"ocr-a","name":"OCR-A","family":"OCR A Std"},
         {"id":"open-dyslexic","name":"OpenDyslexic","family":"OpenDyslexic"}
     ])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_workspace_has_one_grid() {
+        let ws = Workspace::default();
+        assert_eq!(ws.grids.len(), 1);
+        assert_eq!(ws.grids[0].zoom, 1.0);
+        assert_eq!(ws.active_grid_id.as_deref(), Some(ws.grids[0].id.as_str()));
+    }
+
+    #[test]
+    fn card_roundtrips_with_flat_payload() {
+        let mut card = Card::new("website", 12.0, 24.0);
+        card.set("url", serde_json::json!("https://example.com"));
+        let raw = serde_json::to_string(&card).unwrap();
+        assert!(raw.contains("\"url\":\"https://example.com\""));
+        assert!(raw.contains("\"type\":\"website\""));
+        let back: Card = serde_json::from_str(&raw).unwrap();
+        assert_eq!(back.kind, "website");
+        assert_eq!(back.str_field("url", ""), "https://example.com");
+    }
+
+    #[test]
+    fn settings_use_camel_case_for_ai_keys() {
+        let s = Settings::default();
+        let v = serde_json::to_value(&s).unwrap();
+        assert!(v.get("aiProvider").is_some());
+        assert!(v.get("unlockedThemes").is_some());
+        assert!(v.get("launch_at_startup").is_some());
+    }
 }

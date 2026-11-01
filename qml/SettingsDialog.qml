@@ -492,6 +492,57 @@ Item {
                                 }
                             }
 
+                            Column {
+                                width: parent.width
+                                spacing: 8
+                                visible: root.val("theme", "corcho") === "custom"
+
+                                Text {
+                                    text: "Custom theme"
+                                    color: root.th.text2
+                                    font.family: root.th.fontFamily
+                                    font.pixelSize: 12
+                                }
+                                Flow {
+                                    width: parent.width
+                                    spacing: 8
+                                    Repeater {
+                                        model: [
+                                            { key: "background", label: "Background" },
+                                            { key: "surface", label: "Surface" },
+                                            { key: "accent", label: "Accent" },
+                                            { key: "text", label: "Text" }
+                                        ]
+                                        delegate: Row {
+                                            id: colorRow
+                                            required property var modelData
+                                            spacing: 6
+                                            Text {
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                text: colorRow.modelData.label
+                                                color: root.th.muted
+                                                font.family: root.th.fontFamily
+                                                font.pixelSize: 11
+                                            }
+                                            AppTextField {
+                                                width: 96
+                                                th: root.th
+                                                inputHeight: 30
+                                                text: {
+                                                    var c = root.val("customTheme", {});
+                                                    return c[colorRow.modelData.key] || "#121417";
+                                                }
+                                                onCommitted: function (value) {
+                                                    var c = Object.assign({}, root.val("customTheme", {}));
+                                                    c[colorRow.modelData.key] = value;
+                                                    root.set("customTheme", c);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
                             Item { width: 1; height: 8 }
 
                             SettingRow {
@@ -618,8 +669,33 @@ Item {
                             }
                             SettingRow {
                                 th: root.th
+                                title: "Google OAuth client ID"
+                                description: "From a Google Cloud OAuth desktop client."
+                                AppTextField {
+                                    width: 260
+                                    th: root.th
+                                    text: root.val("gdrive_client_id", "")
+                                    placeholder: "…apps.googleusercontent.com"
+                                    onCommitted: function (value) { root.set("gdrive_client_id", value); }
+                                }
+                            }
+                            SettingRow {
+                                th: root.th
+                                title: "Google OAuth client secret"
+                                description: "Optional for public desktop clients."
+                                AppTextField {
+                                    width: 260
+                                    th: root.th
+                                    password: true
+                                    text: root.val("gdrive_client_secret", "")
+                                    placeholder: "Client secret"
+                                    onCommitted: function (value) { root.set("gdrive_client_secret", value); }
+                                }
+                            }
+                            SettingRow {
+                                th: root.th
                                 title: "Google Drive"
-                                description: root.lic && root.val("gdrive_connected", false) ? (root.val("gdrive_email", "") || "Connected") : "Not connected"
+                                description: root.val("gdrive_connected", false) ? (root.val("gdrive_email", "") || "Connected") : "Not connected"
                                 AppButton {
                                     th: root.th
                                     icon: "cloud"
@@ -770,7 +846,7 @@ Item {
                                     th: root.th
                                     text: root.val("ai_local_server_url", "")
                                     placeholder: "http://127.0.0.1:8080/v1"
-                                    onEdited: function (value) { root.set("ai_local_server_url", value); }
+                                    onCommitted: function (value) { root.set("ai_local_server_url", value); }
                                 }
                             }
                             SettingRow {

@@ -232,3 +232,35 @@ pub fn list_attachments(data_dir: &Path) -> Vec<String> {
     out.sort();
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::{Card, Workspace};
+
+    #[test]
+    fn save_and_load_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut ws = Workspace::default();
+        ws.grids[0].cards.push(Card::new("note", 40.0, 60.0));
+        save_workspace(dir.path(), &ws).unwrap();
+        let loaded = load_workspace(dir.path()).unwrap();
+        assert_eq!(loaded.grids[0].cards.len(), 1);
+        assert_eq!(loaded.grids[0].cards[0].x, 40.0);
+    }
+
+    #[test]
+    fn suspicious_geometry_is_repaired() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut ws = Workspace::default();
+        let mut card = Card::new("note", 1.0e12, -1.0e12);
+        card.width = -4.0;
+        ws.grids[0].cards.push(card);
+        ws.grids[0].zoom = 0.0;
+        save_workspace(dir.path(), &ws).unwrap();
+        let loaded = load_workspace(dir.path()).unwrap();
+        assert_eq!(loaded.grids[0].zoom, 1.0);
+        assert!(loaded.grids[0].cards[0].x.is_finite());
+        assert!(loaded.grids[0].cards[0].width >= 80.0);
+    }
+}

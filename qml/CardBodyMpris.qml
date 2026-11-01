@@ -27,11 +27,12 @@ CardFrame {
         id: pollTimer
         interval: 1800
         repeat: true
-        running: root.visible
+        running: root.visible && root.app !== undefined
         onTriggered: root.poll()
     }
 
-    Component.onCompleted: poll()
+    onAppChanged: if (root.app) poll()
+    Component.onCompleted: if (root.app) poll()
 
     Column {
         anchors.fill: parent

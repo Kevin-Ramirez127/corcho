@@ -9,6 +9,11 @@ CardFrame {
     property bool blocking: false
     property string debugOutput: ""
 
+    onUrlChanged: {
+        if (root.url !== "" && webView && webView.url.toString() !== root.url)
+            webView.url = root.url;
+    }
+
     function normalize(value) {
         if (value === "") return "";
         if (!/^[a-zA-Z]+:/.test(value)) return "https://" + value;
@@ -65,7 +70,7 @@ CardFrame {
 
             AppTextField {
                 id: urlField
-                width: parent.width - 210
+                width: parent.width - 260
                 height: 30
                 inputHeight: 30
                 th: root.th
@@ -111,10 +116,26 @@ CardFrame {
             }
         }
 
-        WebEngineView {
-            id: webView
+        Item {
             width: parent.width
             height: parent.height - 36
+
+            Text {
+                anchors.centerIn: parent
+                visible: root.url === ""
+                width: parent.width - 48
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.WordWrap
+                text: "Enter a URL to load a website in its own session"
+                color: root.th.muted
+                font.family: root.th.fontFamily
+                font.pixelSize: 12
+            }
+
+        WebEngineView {
+            id: webView
+            anchors.fill: parent
+            visible: root.url !== ""
             profile: profile
             zoomFactor: 1.0
 
@@ -141,6 +162,7 @@ CardFrame {
                 }
             }
 
+        }
         }
     }
 

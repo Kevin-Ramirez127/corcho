@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Corcho
+Comment=A native canvas for personal development
+Exec=corcho %u
+Icon=corcho
+Terminal=false
+Categories=Utility;Office;
+MimeType=x-scheme-handler/corcho;
+StartupWMClass=corcho
+Keywords=canvas;notes;tasks;board;

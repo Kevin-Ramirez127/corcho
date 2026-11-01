@@ -1,0 +1,29 @@
+app-id: io.corcho.Corcho
+runtime: org.kde.Platform
+runtime-version: "6.8"
+sdk: org.kde.Sdk
+command: corcho
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --socket=pulseaudio
+  - --device=dri
+  - --share=network
+  - --filesystem=~/.local/share/corcho:create
+  - --filesystem=xdg-download
+  - --talk-name=org.mpris.MediaPlayer2.*
+modules:
+  - name: corcho
+    buildsystem: simple
+    build-commands:
+      - QMAKE=/usr/lib/qt6/bin/qmake cargo build --release --offline
+      - install -Dm755 target/release/corcho /app/bin/corcho
+      - install -Dm644 packaging/corcho.desktop /app/share/applications/io.corcho.Corcho.desktop
+      - install -Dm644 packaging/corcho.svg /app/share/icons/hicolor/scalable/apps/io.corcho.Corcho.svg
+    sources:
+      - type: dir
+        path: ../..
+      # Generate this file with:
+      #   flatpak-cargo-generator Cargo.lock -o packaging/flatpak/cargo-sources.json
+      - cargo-sources.json

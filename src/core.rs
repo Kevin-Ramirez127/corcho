@@ -522,7 +522,7 @@ fn populate_defaults(card: &mut Card, ws: &Workspace) {
         }
         "fragment" => {
             card.set("fragmentMode", json!("pop"));
-            card.set("accent", json!("#c9a86a"));
+            card.set("accent", json!("#d98e5c"));
             card.set("speed", json!("medium"));
         }
         "gridlink" => {

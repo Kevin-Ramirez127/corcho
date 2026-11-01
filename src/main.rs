@@ -1,5 +1,6 @@
 mod ai;
 mod audio;
+mod deeplink;
 mod bridge;
 mod core;
 mod history;
@@ -7,6 +8,7 @@ mod integrations;
 mod license;
 mod model;
 mod search;
+mod single_instance;
 mod storage;
 mod sync;
 mod updates;
@@ -20,6 +22,11 @@ fn main() {
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("corcho=info")),
         )
         .init();
+
+    let args: Vec<String> = std::env::args().collect();
+    if single_instance::forward_if_running(&args) {
+        return;
+    }
 
     let mut app = QGuiApplication::new();
     let mut engine = QQmlApplicationEngine::new();

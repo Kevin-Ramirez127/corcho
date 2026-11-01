@@ -22,7 +22,6 @@ Item {
         anchors.fill: parent
         radius: 8
         color: {
-            if (!root.enabledButton) return "transparent";
             if (root.variant === "solid") return root.isHovered ? Qt.lighter(root.th.accent, 1.06) : root.th.accent;
             if (root.variant === "danger") return root.isHovered ? Qt.rgba(0.86, 0.36, 0.36, 0.16) : "transparent";
             if (root.selected) return root.th.surfaceStrong;

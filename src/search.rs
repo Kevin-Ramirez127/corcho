@@ -71,3 +71,21 @@ fn snippet(text: &str, q: &str) -> serde_json::Value {
         json!({"before": "", "match": "", "after": ""})
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::{Card, Workspace};
+
+    #[test]
+    fn finds_cards_by_title_and_text() {
+        let mut ws = Workspace::default();
+        let mut card = Card::new("note", 0.0, 0.0);
+        card.title = "Weekly review".into();
+        card.text = "ship the canvas".into();
+        ws.grids[0].cards.push(card);
+        assert_eq!(search(&ws, "weekly").len(), 1);
+        assert_eq!(search(&ws, "canvas").len(), 1);
+        assert!(search(&ws, "nope").is_empty());
+    }
+}

@@ -88,6 +88,10 @@ pub mod qobject {
         fn boot(self: Pin<&mut Self>);
 
         #[qinvokable]
+        #[cxx_name = "handleDeepLink"]
+        fn handle_deep_link(self: Pin<&mut Self>, url: &QString);
+
+        #[qinvokable]
         #[cxx_name = "refresh"]
         fn refresh(self: Pin<&mut Self>);
 
@@ -391,15 +395,46 @@ impl qobject::AppController {
     }
 
     pub fn boot(mut self: Pin<&mut Self>) {
+        crate::deeplink::register(self.as_ref().qt_thread());
         self.as_mut().refresh_all();
         self.as_mut().set_status_text(s("Ready"));
+    }
+
+    pub fn handle_deep_link(mut self: Pin<&mut Self>, url: &QString) {
+        let raw = p(url);
+        let target = raw.strip_prefix("corcho://").unwrap_or(&raw);
+        let target = target.trim_end_matches('/');
+        let mut parts = target.splitn(2, '/');
+        let first = parts.next().unwrap_or("");
+        let second = parts.next();
+        let core_arc = self.as_ref().rust().core.clone();
+        {
+            let mut core = core_arc.lock().unwrap();
+            match (first, second) {
+                ("card", Some(id)) => {
+                    if let Some((grid, _)) = core.ws.card(id) {
+                        let grid_id = grid.id.clone();
+                        core.switch_grid(&grid_id);
+                    }
+                }
+                ("grid", Some(id)) => {
+                    core.switch_grid(id);
+                }
+                _ if !first.is_empty() => {
+                    core.switch_grid(first);
+                }
+                _ => {}
+            }
+        }
+        self.as_mut().refresh_all();
+        self.as_mut().toast(s(format!("Opened {raw}")));
     }
 
     pub fn refresh(mut self: Pin<&mut Self>) {
         self.as_mut().refresh_all();
     }
 
-    pub fn save_now(mut self: Pin<&mut Self>) {
+    pub fn save_now(self: Pin<&mut Self>) {
         let core_arc = self.as_ref().rust().core.clone();
         let mut core = core_arc.lock().unwrap();
         core.save_quiet();
@@ -568,7 +603,7 @@ impl qobject::AppController {
         ok
     }
 
-    pub fn set_view(mut self: Pin<&mut Self>, pan_x: f64, pan_y: f64, zoom: f64) {
+    pub fn set_view(self: Pin<&mut Self>, pan_x: f64, pan_y: f64, zoom: f64) {
         self.as_ref().rust().core.clone().lock().unwrap().set_view(pan_x, pan_y, zoom);
     }
 
@@ -870,7 +905,7 @@ impl qobject::AppController {
         self.as_mut().refresh_all();
     }
 
-    pub fn export_backup(mut self: Pin<&mut Self>, path: &QString) -> bool {
+    pub fn export_backup(self: Pin<&mut Self>, path: &QString) -> bool {
         let core_arc = self.as_ref().rust().core.clone();
         let mut core = core_arc.lock().unwrap();
         core.export_backup(&p(path)).is_ok()
