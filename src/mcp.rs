@@ -1,4 +1,8 @@
-use std::io::{BufRead, Write};
+use std::io::{BufRead, Read, Write};
+use std::net::{TcpListener, TcpStream};
+use std::path::Path;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use anyhow::{anyhow, Result};
 use serde_json::{json, Value};
@@ -30,6 +34,145 @@ pub fn serve() -> Result<()> {
             stdout.flush()?;
         }
     }
+    Ok(())
+}
+
+pub fn serve_http(addr: &str) -> Result<()> {
+    let core = Arc::new(Mutex::new(Core::boot()?));
+    let token = {
+        let core = core.lock().unwrap();
+        http_token(&core.data_dir)?
+    };
+    let listener = TcpListener::bind(addr)?;
+    eprintln!("corcho mcp http listening on http://{addr}");
+    eprintln!("bearer token: {token}");
+    for connection in listener.incoming() {
+        let Ok(stream) = connection else { continue };
+        let core = core.clone();
+        let token = token.clone();
+        std::thread::spawn(move || {
+            let _ = handle_http(stream, core, &token);
+        });
+    }
+    Ok(())
+}
+
+fn http_token(data_dir: &Path) -> Result<String> {
+    let path = data_dir.join("mcp.token");
+    if let Ok(existing) = std::fs::read_to_string(&path) {
+        let existing = existing.trim().to_string();
+        if !existing.is_empty() {
+            return Ok(existing);
+        }
+    }
+    let token = format!(
+        "{}{}",
+        uuid::Uuid::new_v4().simple(),
+        uuid::Uuid::new_v4().simple()
+    );
+    std::fs::write(&path, &token)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+    }
+    Ok(token)
+}
+
+fn handle_http(mut stream: TcpStream, core: Arc<Mutex<Core>>, token: &str) -> Result<()> {
+    stream.set_read_timeout(Some(Duration::from_secs(10)))?;
+    let mut data = Vec::new();
+    let mut buffer = [0u8; 4096];
+    let header_end = loop {
+        let read = stream.read(&mut buffer)?;
+        if read == 0 {
+            return Ok(());
+        }
+        data.extend_from_slice(&buffer[..read]);
+        if let Some(pos) = data.windows(4).position(|w| w == b"\r\n\r\n") {
+            break pos;
+        }
+        if data.len() > 1_000_000 {
+            return Ok(());
+        }
+    };
+
+    let headers = String::from_utf8_lossy(&data[..header_end]).to_string();
+    let mut lines = headers.lines();
+    let request_line = lines.next().unwrap_or("");
+    let mut parts = request_line.split_whitespace();
+    let method = parts.next().unwrap_or("");
+    let mut content_length = 0usize;
+    let mut authorization = String::new();
+    let mut origin = String::new();
+    for line in lines {
+        let mut pair = line.splitn(2, ':');
+        let key = pair.next().unwrap_or("").trim().to_ascii_lowercase();
+        let value = pair.next().unwrap_or("").trim().to_string();
+        if key == "content-length" {
+            content_length = value.parse().unwrap_or(0);
+        } else if key == "authorization" {
+            authorization = value;
+        } else if key == "origin" {
+            origin = value;
+        }
+    }
+
+    let body_start = header_end + 4;
+    while data.len() < body_start + content_length {
+        let read = stream.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        data.extend_from_slice(&buffer[..read]);
+    }
+
+    if method != "POST" {
+        return respond(
+            &mut stream,
+            "405 Method Not Allowed",
+            &json!({"error": "POST only"}),
+        );
+    }
+    if !origin.is_empty()
+        && !origin.starts_with("http://localhost")
+        && !origin.starts_with("http://127.0.0.1")
+    {
+        return respond(
+            &mut stream,
+            "403 Forbidden",
+            &json!({"error": "origin not allowed"}),
+        );
+    }
+    if authorization != format!("Bearer {token}") {
+        return respond(
+            &mut stream,
+            "401 Unauthorized",
+            &json!({"error": "missing bearer token"}),
+        );
+    }
+
+    let request: Value = serde_json::from_slice(&data[body_start..body_start + content_length])
+        .unwrap_or(Value::Null);
+    let response = {
+        let mut core = core.lock().map_err(|_| anyhow!("core lock"))?;
+        handle(&mut core, request)
+    };
+    match response {
+        Some(response) => respond(&mut stream, "200 OK", &response),
+        None => respond(&mut stream, "202 Accepted", &json!({})),
+    }
+}
+
+fn respond(stream: &mut TcpStream, status: &str, body: &Value) -> Result<()> {
+    let body = body.to_string();
+    let head = format!(
+        "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n",
+        body.len()
+    );
+    stream.write_all(head.as_bytes())?;
+    stream.write_all(body.as_bytes())?;
+    stream.flush()?;
     Ok(())
 }
 
@@ -463,6 +606,327 @@ fn call_tool(core: &mut Core, name: &str, args: &Value) -> Result<String> {
             let player = required(args, "player")?;
             let action = required(args, "action")?;
             Ok(integrations::mpris_action(&player, &action).to_string())
+        }
+        "note.append" => {
+            let id = required(args, "cardId")?;
+            let extra = text_arg(args, "text");
+            let card = core
+                .ws
+                .card(&id)
+                .map(|(_, c)| c.clone())
+                .ok_or_else(|| anyhow!("card not found"))?;
+            let text = format!("{}\n{}", card.text, extra);
+            core.update_card_json(&json!({"id": id, "text": text}).to_string());
+            Ok("appended".into())
+        }
+        "note.replace" => {
+            let id = required(args, "cardId")?;
+            let text = text_arg(args, "text");
+            core.update_card_json(&json!({"id": id, "text": text}).to_string());
+            Ok("replaced".into())
+        }
+        "checklist.add" => {
+            let id = required(args, "cardId")?;
+            let text = required(args, "text")?;
+            let mut card = core
+                .ws
+                .card(&id)
+                .map(|(_, c)| c.clone())
+                .ok_or_else(|| anyhow!("card not found"))?;
+            let mut items = card
+                .payload
+                .get("items")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+            items
+                .push(json!({"id": uuid::Uuid::new_v4().to_string(), "text": text, "done": false}));
+            card.set("items", json!(items));
+            core.update_card_json(&json!({"id": id, "payload": card.payload}).to_string());
+            Ok("added".into())
+        }
+        "checklist.update" => {
+            let id = required(args, "cardId")?;
+            let item_id = required(args, "itemId")?;
+            let mut card = core
+                .ws
+                .card(&id)
+                .map(|(_, c)| c.clone())
+                .ok_or_else(|| anyhow!("card not found"))?;
+            let mut items = card
+                .payload
+                .get("items")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+            for item in items.iter_mut() {
+                if item.get("id").and_then(|v| v.as_str()) == Some(&item_id) {
+                    if let Some(text) = args.get("text").and_then(|v| v.as_str()) {
+                        item["text"] = json!(text);
+                    }
+                    if let Some(done) = args.get("done").and_then(|v| v.as_bool()) {
+                        item["done"] = json!(done);
+                    }
+                }
+            }
+            card.set("items", json!(items));
+            core.update_card_json(&json!({"id": id, "payload": card.payload}).to_string());
+            Ok("updated".into())
+        }
+        "checklist.remove" => {
+            let id = required(args, "cardId")?;
+            let item_id = required(args, "itemId")?;
+            let mut card = core
+                .ws
+                .card(&id)
+                .map(|(_, c)| c.clone())
+                .ok_or_else(|| anyhow!("card not found"))?;
+            let items: Vec<Value> = card
+                .payload
+                .get("items")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|i| i.get("id").and_then(|v| v.as_str()) != Some(&item_id))
+                .collect();
+            card.set("items", json!(items));
+            core.update_card_json(&json!({"id": id, "payload": card.payload}).to_string());
+            Ok("removed".into())
+        }
+        "checklist.toggle" => {
+            let id = required(args, "cardId")?;
+            let item_id = required(args, "itemId")?;
+            let mut card = core
+                .ws
+                .card(&id)
+                .map(|(_, c)| c.clone())
+                .ok_or_else(|| anyhow!("card not found"))?;
+            let mut items = card
+                .payload
+                .get("items")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+            for item in items.iter_mut() {
+                if item.get("id").and_then(|v| v.as_str()) == Some(&item_id) {
+                    let done = item.get("done").and_then(|v| v.as_bool()).unwrap_or(false);
+                    item["done"] = json!(!done);
+                }
+            }
+            card.set("items", json!(items));
+            core.update_card_json(&json!({"id": id, "payload": card.payload}).to_string());
+            Ok("toggled".into())
+        }
+        "kanban.addItem" => {
+            let id = required(args, "cardId")?;
+            let column = required(args, "columnId")?;
+            let text = required(args, "text")?;
+            let mut card = core
+                .ws
+                .card(&id)
+                .map(|(_, c)| c.clone())
+                .ok_or_else(|| anyhow!("card not found"))?;
+            let mut columns = card
+                .payload
+                .get("columns")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+            for col in columns.iter_mut() {
+                if col.get("id").and_then(|v| v.as_str()) == Some(&column) {
+                    let items = col.get_mut("items").and_then(|v| v.as_array_mut());
+                    let entry = json!({"id": uuid::Uuid::new_v4().to_string(), "text": text});
+                    if let Some(items) = items {
+                        items.push(entry);
+                    }
+                }
+            }
+            card.set("columns", json!(columns));
+            core.update_card_json(&json!({"id": id, "payload": card.payload}).to_string());
+            Ok("added".into())
+        }
+        "kanban.moveItem" => {
+            let id = required(args, "cardId")?;
+            let from = required(args, "fromColumn")?;
+            let to = required(args, "toColumn")?;
+            let item = required(args, "itemId")?;
+            let mut card = core
+                .ws
+                .card(&id)
+                .map(|(_, c)| c.clone())
+                .ok_or_else(|| anyhow!("card not found"))?;
+            let mut columns = card
+                .payload
+                .get("columns")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+            let mut moved: Option<Value> = None;
+            for col in columns.iter_mut() {
+                if col.get("id").and_then(|v| v.as_str()) == Some(&from) {
+                    if let Some(items) = col.get_mut("items").and_then(|v| v.as_array_mut()) {
+                        if let Some(pos) = items
+                            .iter()
+                            .position(|i| i.get("id").and_then(|v| v.as_str()) == Some(&item))
+                        {
+                            moved = Some(items.remove(pos));
+                        }
+                    }
+                }
+            }
+            if let Some(entry) = moved {
+                for col in columns.iter_mut() {
+                    if col.get("id").and_then(|v| v.as_str()) == Some(&to) {
+                        if let Some(items) = col.get_mut("items").and_then(|v| v.as_array_mut()) {
+                            items.push(entry.clone());
+                        }
+                    }
+                }
+            }
+            card.set("columns", json!(columns));
+            core.update_card_json(&json!({"id": id, "payload": card.payload}).to_string());
+            Ok("moved".into())
+        }
+        "kanban.removeItem" => {
+            let id = required(args, "cardId")?;
+            let column = required(args, "columnId")?;
+            let item = required(args, "itemId")?;
+            let mut card = core
+                .ws
+                .card(&id)
+                .map(|(_, c)| c.clone())
+                .ok_or_else(|| anyhow!("card not found"))?;
+            let mut columns = card
+                .payload
+                .get("columns")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+            for col in columns.iter_mut() {
+                if col.get("id").and_then(|v| v.as_str()) == Some(&column) {
+                    if let Some(items) = col.get_mut("items").and_then(|v| v.as_array_mut()) {
+                        items.retain(|i| i.get("id").and_then(|v| v.as_str()) != Some(&item));
+                    }
+                }
+            }
+            card.set("columns", json!(columns));
+            core.update_card_json(&json!({"id": id, "payload": card.payload}).to_string());
+            Ok("removed".into())
+        }
+        "whiteboard.clear" => {
+            let id = required(args, "cardId")?;
+            core.update_card_json(&json!({"id": id, "payload": {"strokes": []}}).to_string());
+            Ok("cleared".into())
+        }
+        "whiteboard.stroke" => {
+            let id = required(args, "cardId")?;
+            let mut card = core
+                .ws
+                .card(&id)
+                .map(|(_, c)| c.clone())
+                .ok_or_else(|| anyhow!("card not found"))?;
+            let mut strokes = card
+                .payload
+                .get("strokes")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+            strokes.push(json!({
+                "color": args.get("color").cloned().unwrap_or(json!("#d98e5c")),
+                "width": args.get("width").cloned().unwrap_or(json!(3)),
+                "points": args.get("points").cloned().unwrap_or(json!([]))
+            }));
+            card.set("strokes", json!(strokes));
+            core.update_card_json(&json!({"id": id, "payload": card.payload}).to_string());
+            Ok("stroked".into())
+        }
+        "fragment.configure" => {
+            let id = required(args, "cardId")?;
+            let mut patch = serde_json::Map::new();
+            if let Some(mode) = args.get("mode").and_then(|v| v.as_str()) {
+                patch.insert("fragmentMode".into(), json!(mode));
+            }
+            if let Some(accent) = args.get("accent").and_then(|v| v.as_str()) {
+                patch.insert("accent".into(), json!(accent));
+            }
+            if let Some(speed) = args.get("speed").and_then(|v| v.as_str()) {
+                patch.insert("speed".into(), json!(speed));
+            }
+            core.update_card_json(&json!({"id": id, "payload": Value::Object(patch)}).to_string());
+            Ok("configured".into())
+        }
+        "gridlink.set" => {
+            let id = required(args, "cardId")?;
+            let target = required(args, "targetGridId")?;
+            core.update_card_json(
+                &json!({"id": id, "payload": {"targetGridId": target}}).to_string(),
+            );
+            Ok("linked".into())
+        }
+        "pomodoro.configure" => {
+            let id = required(args, "cardId")?;
+            let work = args
+                .get("workMinutes")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(25);
+            let brk = args
+                .get("breakMinutes")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(5);
+            core.update_card_json(
+                &json!({"id": id, "payload": {
+                    "workMinutes": work, "breakMinutes": brk,
+                    "phase": "work", "remaining": work * 60
+                }})
+                .to_string(),
+            );
+            Ok("configured".into())
+        }
+        "pomodoro.reset" => {
+            let id = required(args, "cardId")?;
+            core.update_card_json(
+                &json!({"id": id, "payload": {"phase": "work", "remaining": 1500}}).to_string(),
+            );
+            Ok("reset".into())
+        }
+        "api.fetch" => {
+            let id = required(args, "cardId")?;
+            let card = core
+                .ws
+                .card(&id)
+                .map(|(_, c)| c.clone())
+                .ok_or_else(|| anyhow!("card not found"))?;
+            let url = if text_arg(args, "url").is_empty() {
+                card.str_field("apiUrl", "")
+            } else {
+                text_arg(args, "url")
+            };
+            if url.is_empty() {
+                return Err(anyhow!("no apiUrl on the card"));
+            }
+            let method = if text_arg(args, "method").is_empty() {
+                card.str_field("method", "GET")
+            } else {
+                text_arg(args, "method")
+            };
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()?;
+            let client = reqwest::Client::new();
+            let request = match method.as_str() {
+                "POST" => client.post(&url),
+                "PUT" => client.put(&url),
+                "DELETE" => client.delete(&url),
+                _ => client.get(&url),
+            };
+            let response = runtime.block_on(request.send())?;
+            let status = response.status().as_u16();
+            let body = runtime.block_on(response.text())?;
+            core.update_card_json(
+                &json!({"id": id, "payload": {"lastBody": body, "status": status}}).to_string(),
+            );
+            Ok(body)
         }
         "dialog.open" => Err(anyhow!("dialog.open is GUI-only")),
         "quit" => {

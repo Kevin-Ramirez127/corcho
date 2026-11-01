@@ -4,10 +4,10 @@ A single Model Context Protocol server that exposes **every** Corcho capability
 to an agent. The GUI and the MCP server are two clients of the same Rust core;
 neither holds state the other cannot reach.
 
-Transport: **stdio is implemented** (`corcho --mcp`). **Streamable HTTP** (POST +
-SSE, bearer token) is designed below and remains the next transport step.
-Protocol version negotiated at initialize; tools, resources and prompts are
-advertised from one registry.
+Transports implemented: **stdio** (`corcho --mcp`) and **minimal HTTP**
+(`corcho --mcp-http 127.0.0.1:7411`) with a bearer token stored at
+`~/.local/share/corcho/mcp.token`. Protocol version is negotiated at
+initialize; tools, resources and prompts come from one registry.
 
 ---
 
@@ -43,7 +43,7 @@ Rules:
 | Mode | Command | Use |
 | --- | --- | --- |
 | stdio | `corcho --mcp` | Claude Desktop, opencode, local agents |
-| HTTP | `corcho --mcp-http 127.0.0.1:7411` | Remote tooling, multiple clients |
+| HTTP | `corcho --mcp-http 127.0.0.1:7411` | Remote tooling, multiple clients (bearer token) |
 | socket | `corcho --mcp-socket $XDG_RUNTIME_DIR/corcho.sock` | Drive a running GUI |
 
 HTTP requires a bearer token written to `~/.local/share/corcho/mcp.token`
@@ -309,15 +309,29 @@ Implemented in `src/mcp.rs`, started with `corcho --mcp` (or `CORCHO_MCP=1`):
   JSON-RPC on stdio.
 - Tools: workspace get/export/import; grid list/get/create/rename/delete/
   switch/move; card list/get/create/update/delete/duplicate/move/search;
-  settings get/set/batch; theme list/set; font list; powerbar search/run;
-  ai providers/complete; sync.now; git status/configure/sync; backup export/
-  import; update check/channel; app about/changelog; attachments list/read;
-  script run; mpris list/action; quit.
+  note append/replace; checklist add/update/remove/toggle; kanban add/move/
+  remove item; whiteboard clear/stroke; fragment configure; grid link set;
+  pomodoro configure/reset; api fetch; settings get/set/batch; theme list/set;
+  font list; powerbar search/run; ai providers/complete; sync.now; git status/
+  configure/sync; backup export/import; update check/channel; app about/
+  changelog; attachments list/read; script run; mpris list/action; quit.
 - Resources: `corcho://workspace`, `corcho://grid/{id}`, `corcho://card/{id}`,
   `corcho://settings` (secrets redacted), `corcho://themes`,
   `corcho://changelog`.
 - Prompts: `organize-inbox`, `summarize-grid`, `weekly-review`.
 - Tests cover initialize/tools list, missing arguments, and the git merge.
+
+HTTP requests need `Authorization: Bearer <token>`; the token is printed at
+startup and written to `~/.local/share/corcho/mcp.token` (0600). Bind is
+loopback by default. Example:
+
+```sh
+corcho --mcp-http 127.0.0.1:7411
+curl -H "Authorization: Bearer $(cat ~/.local/share/corcho/mcp.token)" \
+  -H 'content-type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"app.about","arguments":{}}}' \
+  http://127.0.0.1:7411/
+```
 
 Example client config (opencode):
 
@@ -333,6 +347,6 @@ Example client config (opencode):
 }
 ```
 
-Remaining from the design above: HTTP transport with token auth, event
-subscriptions, and the kind-specific convenience tools (checklist/kanban/
-whiteboard/pomodoro/web/website). All of those map onto the existing Core API.
+Remaining from the design above: event subscriptions (SSE), a Unix-socket
+transport for driving the live GUI, and web/website tools that require the
+GUI's QtWebEngine. All other categories are implemented.

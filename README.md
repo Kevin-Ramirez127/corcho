@@ -28,7 +28,8 @@ No Electron shell, no telemetry, no analytics.
   startup and a `corcho://` protocol handler. Every feature is free.
 - A working **MCP server** over stdio (`corcho --mcp`) with workspace, grid,
   card, settings, AI, git, sync, backup and update tools;
-  see [`docs/MCP.md`](docs/MCP.md).
+  see [`docs/MCP.md`](docs/MCP.md). Run `corcho --mcp` for stdio or
+  `corcho --mcp-http 127.0.0.1:7411` for local HTTP with a bearer token.
 
 ## Palette
 

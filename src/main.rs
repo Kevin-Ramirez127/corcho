@@ -25,6 +25,18 @@ fn main() {
         .init();
 
     let args: Vec<String> = std::env::args().collect();
+    let http_index = args.iter().position(|a| a == "--mcp-http");
+    if let Some(index) = http_index {
+        let addr = args
+            .get(index + 1)
+            .cloned()
+            .unwrap_or_else(|| "127.0.0.1:7411".to_string());
+        if let Err(err) = mcp::serve_http(&addr) {
+            eprintln!("mcp http: {err}");
+            std::process::exit(1);
+        }
+        return;
+    }
     if args.iter().any(|a| a == "--mcp") || std::env::var("CORCHO_MCP").as_deref() == Ok("1") {
         if let Err(err) = mcp::serve() {
             eprintln!("mcp: {err}");
