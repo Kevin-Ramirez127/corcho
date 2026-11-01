@@ -387,3 +387,49 @@ type, layout, details, visuals, motion.
 
 Acceptance: the checklist at the end of the skill is fully checked, and the
 screens look like Corcho specifically, not a generic dark app.
+
+---
+
+## 18. Status
+
+Delivered in this repository:
+
+- [x] Cargo-only `cxx-qt` build, Qt 6 QML shell, AppController bridge.
+- [x] Model, atomic JSON storage, snapshot undo/redo, search, tests.
+- [x] Infinite canvas: pan, zoom, snap, minimap, folders, grid links, lock,
+      spawn/ripple, reduced motion, culling.
+- [x] Thirteen card types, including website, API, AI, script, kanban,
+      whiteboard, pomodoro and MPRIS.
+- [x] Eight fragment modes with audio (Spectrum) and a 30 fps budget.
+- [x] Five AI providers plus local server, streaming, context, key validation.
+- [x] Isolated website sessions, host ad blocker, cookie panel, attack sim.
+- [x] Folder sync, Google Drive sync, git sync (any remote), conflict copies,
+      zip backup/restore, legacy import.
+- [x] Updates (stable/beta/experimental), MPRIS, scripts, launch at startup,
+      single instance, `corcho://` deep links.
+- [x] Powerbar, six settings tabs, 19 themes, custom theme editor, fonts,
+      onboarding, tutorials, changelog.
+- [x] Fully FOSS: no licensing, premium locks, premium icons or telemetry.
+- [x] Optimization pass: ListModel diffing, light card refresh, culling,
+      View state kept in memory, fragment timers stopped off-screen.
+- [x] Accessibility pass: WCAG/APCA targets, contrast test in `model.rs`,
+      focus rings, keyboard activation, `Accessible` names/roles.
+- [x] Unslop pass: 4 px rhythm, quiet chrome, one ember accent, one icon set,
+      no emoji, no gem/crown/key iconography, calm motion.
+- [x] MCP server: stdio and HTTP (bearer token), 60+ tools, resources, prompts.
+- [x] CI (fmt, clippy `-D warnings`, tests, release build), packaging recipes,
+      screenshots.
+
+Known limits, deliberately documented rather than hidden:
+
+- Card parallax is a persisted setting; the canvas currently keeps cards in a
+  single plane, so the toggle has no visible effect yet.
+- Kanban moves use hover arrows instead of pointer drag-and-drop.
+- Website ad blocking is host-level for navigation plus a DOM cleanup pass,
+  not a full subresource interceptor.
+- AI key validation and model fetch use a short blocking call.
+- MCP SSE event subscriptions, the Unix-socket GUI transport and web-card tools
+  that need QtWebEngine are not implemented; everything else is available over
+  stdio and HTTP.
+- AppImage/Flatpak manifests are recipes; they need `linuxdeploy`/`flatpak-builder`
+  on the build machine.
