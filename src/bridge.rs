@@ -1,5 +1,6 @@
 use core::pin::Pin;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
@@ -14,6 +15,8 @@ use crate::model;
 use crate::sync;
 use crate::theme;
 use crate::updates;
+
+static THEMES_DIRTY: AtomicBool = AtomicBool::new(true);
 
 fn runtime() -> &'static tokio::runtime::Runtime {
     static RT: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
@@ -561,6 +564,8 @@ impl Default for AppControllerRust {
 
 impl qobject::AppController {
     fn refresh_all(mut self: Pin<&mut Self>) {
+        let themes_dirty = THEMES_DIRTY.swap(false, Ordering::Relaxed);
+        let cached_themes = p(&self.as_ref().rust().themes_json);
         let (grids, cards, folders, calendar, settings, themes, active, pan, pany, zoom, upd, git) = {
             let core_arc = self.as_ref().rust().core.clone();
             let core = core_arc.lock().unwrap();
@@ -570,7 +575,11 @@ impl qobject::AppController {
                 core.folders_json(),
                 core.calendar_json(),
                 core.settings_json(),
-                core.themes_json(),
+                if themes_dirty {
+                    core.themes_json()
+                } else {
+                    cached_themes
+                },
                 core.active_grid_id(),
                 core.active_grid_view().0,
                 core.active_grid_view().1,
@@ -637,6 +646,7 @@ impl qobject::AppController {
                 std::thread::sleep(Duration::from_millis(120));
                 while rx.try_recv().is_ok() {}
                 if theme_file {
+                    THEMES_DIRTY.store(true, Ordering::Relaxed);
                     let _ = qt.queue(move |mut q| {
                         q.as_mut().refresh();
                     });

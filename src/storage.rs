@@ -90,11 +90,10 @@ pub fn save_workspace(data_dir: &Path, ws: &Workspace) -> Result<()> {
     ensure_dirs(data_dir)?;
     let path = workspace_path(data_dir);
     let tmp = path.with_extension("json.tmp");
-    let raw = serde_json::to_string_pretty(ws)?;
+    let raw = serde_json::to_string(ws)?;
     {
         let mut f = fs::File::create(&tmp)?;
         f.write_all(raw.as_bytes())?;
-        f.sync_all()?;
     }
     if path.exists() {
         let bak = path.with_extension("json.bak");
