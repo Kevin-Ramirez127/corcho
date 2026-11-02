@@ -1,6 +1,6 @@
 pkgbase = corcho-git
 	pkgdesc = A native grid workspace for notes, sites, tasks and calendars
-	pkgver = r12.73e7e6b
+	pkgver = r25.7b6ed3c
 	pkgrel = 1
 	url = https://github.com/emiliano-go/corcho
 	arch = x86_64
