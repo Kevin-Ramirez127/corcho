@@ -98,43 +98,43 @@ ApplicationWindow {
     function openCardMenu(card, px, py) {
         menuCard = card;
         var actions = [
-            { label: "Duplicate card", icon: "copy", action: "card-duplicate" },
-            { label: "Pin colour", icon: "palette", action: "card-color" },
-            { label: "Link date", icon: "calendar", action: "card-link-date" },
-            { label: card.locked ? "Unlock card" : "Lock card", icon: card.locked ? "unlock" : "lock", action: "card-lock" }
+            { label: "Duplicate card", icon: "copy", action: "card:duplicate" },
+            { label: "Pin colour", icon: "palette", action: "card:color" },
+            { label: "Link date", icon: "calendar", action: "card:link-date" },
+            { label: card.locked ? "Unlock card" : "Lock card", icon: card.locked ? "unlock" : "lock", action: "card:lock" }
         ];
         if (card.url)
-            actions.push({ label: "Open link", icon: "external-link", action: "card-open" });
+            actions.push({ label: "Open link", icon: "external-link", action: "card:open" });
         actions.push({ separator: true, label: "" });
         for (var i = 0; i < grids.length; i++) {
             if (grids[i].id === app.activeGridId) continue;
-            actions.push({ label: "Send to " + grids[i].name, icon: "arrow-right", action: "card-send:" + grids[i].id });
+            actions.push({ label: "Send to " + grids[i].name, icon: "arrow-right", action: "card:send:" + grids[i].id });
         }
         actions.push({ separator: true, label: "" });
-        actions.push({ label: "Delete card", icon: "trash-2", action: "card-delete", danger: true });
+        actions.push({ label: "Delete card", icon: "trash-2", action: "card:delete", danger: true });
         showMenu(px, py, actions);
     }
 
     function openGridMenu(grid, px, py) {
         menuGrid = grid;
         var actions = [
-            { label: "Rename grid", icon: "square-pen", action: "grid-rename" }
+            { label: "Rename grid", icon: "square-pen", action: "grid:rename" }
         ];
         for (var i = 0; i < folders.length; i++)
-            actions.push({ label: "Move to " + folders[i].name, icon: "folder-plus", action: "grid-move:" + folders[i].id });
-        actions.push({ label: "Move out of folder", icon: "folder", action: "grid-move:" });
+            actions.push({ label: "Move to " + folders[i].name, icon: "folder-plus", action: "grid:move:" + folders[i].id });
+        actions.push({ label: "Move out of folder", icon: "folder", action: "grid:move:" });
         actions.push({ separator: true, label: "" });
-        actions.push({ label: "Delete grid", icon: "trash-2", action: "grid-delete", danger: true });
+        actions.push({ label: "Delete grid", icon: "trash-2", action: "grid:delete", danger: true });
         showMenu(px, py, actions);
     }
 
     function openFolderMenu(folder, px, py) {
         menuFolder = folder;
         showMenu(px, py, [
-            { label: "Rename folder", icon: "square-pen", action: "folder-rename" },
-            { label: "Remove folder, keep grids", icon: "folder", action: "folder-delete-keep" },
+            { label: "Rename folder", icon: "square-pen", action: "folder:rename" },
+            { label: "Remove folder, keep grids", icon: "folder", action: "folder:delete-keep" },
             { separator: true, label: "" },
-            { label: "Remove folder and grids", icon: "trash-2", action: "folder-delete-all", danger: true }
+            { label: "Remove folder and grids", icon: "trash-2", action: "folder:delete-all", danger: true }
         ]);
     }
 
@@ -166,8 +166,8 @@ ApplicationWindow {
                 app.openExternal(menuCard.url);
             } else if (arg === "delete") {
                 app.deleteCard(menuCard.id);
-            } else if (action.indexOf("card-send:") === 0) {
-                app.sendCardToGrid(menuCard.id, arg);
+            } else if (arg.indexOf("send:") === 0) {
+                app.sendCardToGrid(menuCard.id, arg.slice(5));
             }
             return;
         }
@@ -178,8 +178,8 @@ ApplicationWindow {
                 prompt.open("Rename grid", menuGrid.name, "Grid name");
             } else if (arg === "delete") {
                 app.deleteGrid(menuGrid.id);
-            } else if (action.indexOf("grid-move:") === 0) {
-                app.moveGridToFolder(menuGrid.id, arg);
+            } else if (arg.indexOf("move:") === 0) {
+                app.moveGridToFolder(menuGrid.id, arg.slice(5));
             }
             return;
         }
