@@ -336,6 +336,9 @@ impl Core {
     }
 
     pub fn send_card_to_grid(&mut self, card_id: &str, grid_id: &str) -> bool {
+        if self.ws.grid(grid_id).is_none() {
+            return false;
+        }
         let Some(card) = self.ws.remove_card(card_id) else {
             return false;
         };
@@ -394,6 +397,7 @@ impl Core {
         if self.ws.active_grid_id.as_deref() == Some(id) {
             self.ws.active_grid_id = self.ws.grids.first().map(|g| g.id.clone());
         }
+        self.ws.prune_date_links();
         self.save_quiet();
         true
     }
@@ -431,6 +435,7 @@ impl Core {
             }
         }
         self.ws.folders.retain(|f| f.id != id);
+        self.ws.prune_date_links();
         if self.ws.grids.is_empty() {
             self.ws = {
                 let mut w = self.ws.clone();
@@ -602,6 +607,9 @@ impl Core {
     }
 
     pub fn delete_calendar(&mut self, id: &str) -> bool {
+        if self.ws.calendars.len() <= 1 {
+            return false;
+        }
         let Some(pos) = self.ws.calendars.iter().position(|c| c.id == id) else {
             return false;
         };
@@ -613,6 +621,17 @@ impl Core {
         self.ws
             .date_links
             .retain(|link| !link.calendar_ids.is_empty());
+        for grid in &mut self.ws.grids {
+            for card in &mut grid.cards {
+                if let Some(ids) = card
+                    .payload
+                    .get_mut("calendarIds")
+                    .and_then(|v| v.as_array_mut())
+                {
+                    ids.retain(|value| value.as_str() != Some(id));
+                }
+            }
+        }
         self.save_quiet();
         true
     }
@@ -815,6 +834,127 @@ pub fn merge_settings_value(settings: &mut Settings, value: &mut Value) {
     }
     if let Ok(next) = serde_json::from_value::<Settings>(base) {
         *settings = next;
+    }
+}
+
+fn file_kind(path: &std::path::Path) -> Option<&'static str> {
+    if path.is_dir() {
+        return Some("folder");
+    }
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    match ext.as_str() {
+        "png" | "jpg" | "jpeg" | "webp" | "gif" | "bmp" | "svg" => Some("image"),
+        "pdf" => Some("pdf"),
+        "md" | "markdown" => Some("markdown"),
+        _ => None,
+    }
+}
+
+fn file_icon(kind: &str) -> &'static str {
+    match kind {
+        "image" => "image",
+        "folder" => "folder-plus",
+        _ => "file-text",
+    }
+}
+
+impl Core {
+    pub fn pin_path(&mut self, path: &str, x: f64, y: f64, grid_id: Option<&str>) -> Result<Card> {
+        let canonical = std::fs::canonicalize(path)
+            .map_err(|err| anyhow::anyhow!("cannot open {path}: {err}"))?;
+        let kind = file_kind(&canonical).ok_or_else(|| {
+            anyhow::anyhow!("only image, PDF, Markdown files and folders can be pinned")
+        })?;
+        let name = canonical
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(path)
+            .to_string();
+        let (width, height) = match kind {
+            "image" => (420.0, 360.0),
+            "pdf" => (520.0, 640.0),
+            "markdown" => (480.0, 420.0),
+            _ => (420.0, 360.0),
+        };
+        self.checkpoint();
+        let mut card = Card::new("file", x, y);
+        card.width = width;
+        card.height = height;
+        card.icon = file_icon(kind).to_string();
+        card.title = name.clone();
+        card.set("path", json!(canonical.to_string_lossy()));
+        card.set("fileKind", json!(kind));
+        card.set("name", json!(name));
+        let target = grid_id
+            .map(str::to_string)
+            .unwrap_or_else(|| self.ws.active_grid_id.clone().unwrap_or_default());
+        let Some(grid) = self.ws.grid_mut(&target) else {
+            return Err(anyhow::anyhow!("grid not found"));
+        };
+        grid.cards.push(card.clone());
+        self.save_quiet();
+        Ok(card)
+    }
+
+    pub fn read_pinned_file(&self, path: &str) -> Result<String> {
+        let canonical = std::fs::canonicalize(path)?;
+        let ext = canonical
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        if ext != "md" && ext != "markdown" {
+            return Err(anyhow::anyhow!("only Markdown files can be read"));
+        }
+        let meta = std::fs::metadata(&canonical)?;
+        if meta.len() > 2 * 1024 * 1024 {
+            return Err(anyhow::anyhow!("Markdown file is too large"));
+        }
+        Ok(std::fs::read_to_string(canonical)?)
+    }
+
+    pub fn list_pinned_folder(&self, path: &str) -> Result<Value> {
+        let canonical = std::fs::canonicalize(path)?;
+        if !canonical.is_dir() {
+            return Err(anyhow::anyhow!("not a folder"));
+        }
+        let mut entries = Vec::new();
+        for entry in std::fs::read_dir(&canonical)?.flatten() {
+            let entry_path = entry.path();
+            let Some(kind) = file_kind(&entry_path) else {
+                continue;
+            };
+            let name = entry.file_name().to_string_lossy().to_string();
+            entries.push(json!({
+                "name": name,
+                "path": entry_path.to_string_lossy(),
+                "kind": kind,
+                "isDir": entry_path.is_dir()
+            }));
+            if entries.len() >= 200 {
+                break;
+            }
+        }
+        entries.sort_by(|a, b| {
+            let ad = a["isDir"].as_bool().unwrap_or(false);
+            let bd = b["isDir"].as_bool().unwrap_or(false);
+            bd.cmp(&ad).then_with(|| {
+                a["name"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_lowercase()
+                    .cmp(&b["name"].as_str().unwrap_or("").to_lowercase())
+            })
+        });
+        Ok(json!({
+            "path": canonical.to_string_lossy(),
+            "name": canonical.file_name().and_then(|n| n.to_str()).unwrap_or("Folder"),
+            "entries": entries
+        }))
     }
 }
 

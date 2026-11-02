@@ -85,6 +85,8 @@ ApplicationWindow {
             { label: "Add note", icon: "file-text", action: "create:note" },
             { label: "Add website", icon: "globe", action: "create:website" },
             { label: "Add bookmark", icon: "bookmark", action: "create:bookmark" },
+            { label: "Add file", icon: "file-text", action: "pick-file" },
+            { label: "Add folder", icon: "folder-plus", action: "pick-folder" },
             { label: "Add API data", icon: "database", action: "create:api" },
             { label: "Add AI node", icon: "cpu", action: "create:ai" },
             { label: "Add calendar", icon: "calendar", action: "create:calendar" },
@@ -160,6 +162,8 @@ ApplicationWindow {
         }
         if (action === "new-grid") { app.createGrid("New Grid"); return; }
         if (action === "new-folder") { app.createFolder("New Folder"); return; }
+        if (action === "pick-file") { pinFileDialog.open(); return; }
+        if (action === "pick-folder") { pinFolderDialog.open(); return; }
 
         if (kind === "card" && menuCard) {
             if (arg === "duplicate") app.duplicateCard(menuCard.id);
@@ -263,9 +267,18 @@ ApplicationWindow {
     Shortcut {
         sequence: "Escape"
         onActivated: {
-            if (launcher.opened) launcher.close();
+            if (gitWizard.opened) gitWizard.close();
+            else if (dateLinkDialog.opened) dateLinkDialog.close();
+            else if (calendarManager.opened) calendarManager.close();
+            else if (prompt.opened) prompt.close();
+            else if (contextMenu.visible) contextMenu.close();
+            else if (launcher.opened) launcher.close();
             else if (settingsDialog.opened) settingsDialog.closed();
-            else root.settingsOpen = false;
+            else if (onboarding.opened) {
+                root.onboardingDismissed = true;
+                onboarding.opened = false;
+                app.setSetting("onboarding_completed", "true");
+            } else root.settingsOpen = false;
         }
     }
 
@@ -480,6 +493,29 @@ ApplicationWindow {
                     }
                 }
             }
+        }
+    }
+
+    FileDialog {
+        id: pinFileDialog
+        title: "Pin an image, PDF or Markdown file"
+        nameFilters: [
+            "Images (*.png *.jpg *.jpeg *.webp *.gif *.bmp *.svg)",
+            "PDF (*.pdf)",
+            "Markdown (*.md *.markdown)"
+        ]
+        onAccepted: {
+            var result = String(root.app.pinPath(root.filePath(selectedFile), menuWorld.x, menuWorld.y, ""));
+            if (result.indexOf("error:") === 0) app.toast(result.slice(6));
+        }
+    }
+
+    FolderDialog {
+        id: pinFolderDialog
+        title: "Pin a folder"
+        onAccepted: {
+            var result = String(root.app.pinPath(root.filePath(selectedFolder), menuWorld.x, menuWorld.y, ""));
+            if (result.indexOf("error:") === 0) app.toast(result.slice(6));
         }
     }
 

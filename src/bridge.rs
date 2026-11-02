@@ -342,6 +342,28 @@ pub mod qobject {
         fn open_external(self: &Self, url: &QString);
 
         #[qinvokable]
+        #[cxx_name = "pinPath"]
+        fn pin_path(
+            self: Pin<&mut Self>,
+            path: &QString,
+            x: f64,
+            y: f64,
+            grid_id: &QString,
+        ) -> QString;
+
+        #[qinvokable]
+        #[cxx_name = "readPinnedFile"]
+        fn read_pinned_file(self: &Self, path: &QString) -> QString;
+
+        #[qinvokable]
+        #[cxx_name = "listPinnedFolder"]
+        fn list_pinned_folder(self: &Self, path: &QString) -> QString;
+
+        #[qinvokable]
+        #[cxx_name = "openPath"]
+        fn open_path(self: &Self, path: &QString);
+
+        #[qinvokable]
         #[cxx_name = "openThemesFolder"]
         fn open_themes_folder(self: &Self);
 
@@ -1587,6 +1609,51 @@ impl qobject::AppController {
 
     pub fn open_external(&self, url: &QString) {
         let _ = open::that(p(url));
+    }
+
+    pub fn pin_path(
+        mut self: Pin<&mut Self>,
+        path: &QString,
+        x: f64,
+        y: f64,
+        grid_id: &QString,
+    ) -> QString {
+        let grid = p(grid_id);
+        let result = {
+            let core_arc = self.as_ref().rust().core.clone();
+            let mut core = core_arc.lock().unwrap();
+            core.pin_path(
+                &p(path),
+                x,
+                y,
+                if grid.is_empty() { None } else { Some(&grid) },
+            )
+        };
+        self.as_mut().refresh_all();
+        match result {
+            Ok(card) => s(serde_json::to_string(&card).unwrap_or_default()),
+            Err(err) => s(format!("error:{err}")),
+        }
+    }
+
+    pub fn read_pinned_file(&self, path: &QString) -> QString {
+        let core = self.core.lock().unwrap();
+        match core.read_pinned_file(&p(path)) {
+            Ok(text) => s(text),
+            Err(err) => s(format!("error:{err}")),
+        }
+    }
+
+    pub fn list_pinned_folder(&self, path: &QString) -> QString {
+        let core = self.core.lock().unwrap();
+        match core.list_pinned_folder(&p(path)) {
+            Ok(value) => s(value.to_string()),
+            Err(err) => s(format!("error:{err}")),
+        }
+    }
+
+    pub fn open_path(&self, path: &QString) {
+        let _ = open::that(p(path));
     }
 
     pub fn open_themes_folder(&self) {

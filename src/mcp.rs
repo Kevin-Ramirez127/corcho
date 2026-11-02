@@ -1021,6 +1021,20 @@ fn call_tool(core: &mut Core, name: &str, args: &Value) -> Result<String> {
             core.update_card_json(&json!({"id": id, "locked": locked}).to_string());
             Ok("ok".into())
         }
+        "file.pin" => {
+            let path = required(args, "path")?;
+            validate_length(&path, 4096, "path")?;
+            let x = validate_coordinate(num_arg(args, "x", 64.0), "x")?;
+            let y = validate_coordinate(num_arg(args, "y", 64.0), "y")?;
+            let grid = text_arg(args, "gridId");
+            let card = core.pin_path(
+                &path,
+                x,
+                y,
+                if grid.is_empty() { None } else { Some(&grid) },
+            )?;
+            Ok(serde_json::to_string_pretty(&card)?)
+        }
         "card.search" => {
             let query = text_arg(args, "query");
             let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
@@ -2653,6 +2667,12 @@ fn tools() -> Vec<Value> {
         "Search cards and grids.",
         json!({"query":{"type":"string"},"limit":{"type":"integer"}}),
         vec!["query"],
+    );
+    add(
+        "file.pin",
+        "Pin an image, PDF, Markdown file or folder on the active grid.",
+        json!({"path":{"type":"string"},"gridId":{"type":"string"},"x":{"type":"number"},"y":{"type":"number"}}),
+        vec!["path"],
     );
     add(
         "settings.get",

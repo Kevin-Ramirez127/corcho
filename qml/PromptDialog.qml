@@ -16,6 +16,11 @@ Item {
     visible: opened
     z: 600
 
+    function close() {
+        opened = false;
+        cancelled();
+    }
+
     function open(titleText, initial, placeholderText) {
         title = titleText;
         value = initial;

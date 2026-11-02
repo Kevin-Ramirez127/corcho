@@ -82,6 +82,7 @@ Item {
         case "whiteboard": return "CardBodyWhiteboard.qml";
         case "pomodoro": return "CardBodyPomodoro.qml";
         case "mpris": return "CardBodyMpris.qml";
+        case "file": return "CardBodyFile.qml";
         default: return "CardBodyNote.qml";
         }
     }
