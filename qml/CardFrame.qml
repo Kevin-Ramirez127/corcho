@@ -335,4 +335,13 @@ FocusScope {
         acceptedButtons: Qt.LeftButton
         onTapped: root.selectRequested()
     }
+
+    TapHandler {
+        acceptedButtons: Qt.RightButton
+        onTapped: {
+            root.selectRequested();
+            var p = root.mapToItem(null, root.width - 20, 28);
+            root.menuRequested(root.card, p.x, p.y);
+        }
+    }
 }
