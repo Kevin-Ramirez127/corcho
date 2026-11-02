@@ -3847,6 +3847,32 @@ mod tests {
     }
 
     #[test]
+    fn file_pins_accept_only_supported_types() {
+        let (dir, mut core) = temp_core();
+        let markdown = dir.path().join("pinned.md");
+        std::fs::write(&markdown, "# Pinned").unwrap();
+        let ok = tool_call(
+            &mut core,
+            "file.pin",
+            json!({"path": markdown.to_string_lossy(), "x": 10, "y": 20}),
+        );
+        assert!(ok["result"].get("isError").is_none(), "{ok}");
+        let card: Value =
+            serde_json::from_str(ok["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+        assert_eq!(card["type"], "file");
+        assert_eq!(card["fileKind"], "markdown");
+
+        let text = dir.path().join("nope.txt");
+        std::fs::write(&text, "no").unwrap();
+        let bad = tool_call(
+            &mut core,
+            "file.pin",
+            json!({"path": text.to_string_lossy()}),
+        );
+        assert_eq!(bad["result"]["isError"], true);
+    }
+
+    #[test]
     fn css_theme_lifecycle() {
         let (_dir, mut core) = temp_core();
         let template = tool_call(&mut core, "theme.css.template", json!({}));
