@@ -302,7 +302,9 @@ impl Core {
                 card.set(k, v.clone());
             }
         }
-        self.ws.prune_date_links();
+        if !self.ws.date_links.is_empty() {
+            self.ws.prune_date_links();
+        }
         self.save_quiet();
         true
     }
