@@ -120,6 +120,8 @@ pub struct Grid {
     pub id: String,
     #[serde(default)]
     pub name: String,
+    #[serde(default = "default_grid_icon")]
+    pub icon: String,
     #[serde(default, rename = "folderId")]
     pub folder_id: Option<String>,
     #[serde(default)]
@@ -136,11 +138,16 @@ pub fn default_zoom() -> f64 {
     1.0
 }
 
+pub fn default_grid_icon() -> String {
+    "layout-grid".into()
+}
+
 impl Default for Grid {
     fn default() -> Self {
         Self {
             id: String::new(),
             name: String::new(),
+            icon: default_grid_icon(),
             folder_id: None,
             cards: Vec::new(),
             pan_x: 0.0,

@@ -73,6 +73,7 @@ include `expected_revision` for optimistic concurrency; a mismatch returns
 | `grid.get` | `gridId` | Grid + cards + view state |
 | `grid.create` | `name`, `folderId?` | New grid |
 | `grid.rename` | `gridId`, `name` | Rename |
+| `grid.setIcon` | `gridId`, `icon` (Lucide name or absolute `.svg` path) | Set grid icon |
 | `grid.delete` | `gridId` | Delete (refuses last grid) |
 | `grid.switch` | `gridId` | Change active grid |
 | `grid.reorder` | `gridId`, `beforeId?` | Reorder |
@@ -363,6 +364,7 @@ Implemented in `src/mcp.rs`, started with `corcho --mcp` or `corcho --mcp-http`:
   URL, not the live QtWebEngine profile or its cookies.
 - AI: providers, validateKey, setKey/clearKey, setModel, complete, models.local,
   card.run, stats.
+- Grids: create, rename, switch, move, reorder, delete, custom SVG icons.
 - Appearance: theme list/get/set/custom, CSS themes (template/get/set/delete), system/light/dark mode, font list/set, effects, audio volume.
 - Sync/data: sync status/configure/now, git status/configure/sync, backup
   export/import, data.setDir, attachments list/read/write/delete.

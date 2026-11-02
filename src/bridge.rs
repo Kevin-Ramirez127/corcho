@@ -186,6 +186,10 @@ pub mod qobject {
         fn rename_grid(self: Pin<&mut Self>, id: &QString, name: &QString) -> bool;
 
         #[qinvokable]
+        #[cxx_name = "setGridIcon"]
+        fn set_grid_icon(self: Pin<&mut Self>, id: &QString, icon: &QString) -> bool;
+
+        #[qinvokable]
         #[cxx_name = "deleteGrid"]
         fn delete_grid(self: Pin<&mut Self>, id: &QString) -> bool;
 
@@ -921,6 +925,16 @@ impl qobject::AppController {
         };
         self.as_mut().refresh_all();
         s(serde_json::to_string(&g).unwrap_or_default())
+    }
+
+    pub fn set_grid_icon(mut self: Pin<&mut Self>, id: &QString, icon: &QString) -> bool {
+        let ok = {
+            let core_arc = self.as_ref().rust().core.clone();
+            let mut core = core_arc.lock().unwrap();
+            core.set_grid_icon(&p(id), &p(icon))
+        };
+        self.as_mut().refresh_all();
+        ok
     }
 
     pub fn rename_grid(mut self: Pin<&mut Self>, id: &QString, name: &QString) -> bool {

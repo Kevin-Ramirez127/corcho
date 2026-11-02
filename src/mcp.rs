@@ -642,6 +642,21 @@ fn call_tool(core: &mut Core, name: &str, args: &Value) -> Result<String> {
             core.rename_grid(&id, &name);
             Ok("renamed".into())
         }
+        "grid.setIcon" => {
+            let id = required(args, "gridId")?;
+            let icon = required(args, "icon")?;
+            let lucide = icon
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+            if !(lucide || icon.to_ascii_lowercase().ends_with(".svg")) {
+                return Err(anyhow!("icon must be a lucide name or an .svg path"));
+            }
+            if core.set_grid_icon(&id, &icon) {
+                Ok("ok".into())
+            } else {
+                Err(anyhow!("grid not found"))
+            }
+        }
         "grid.delete" => {
             let id = required(args, "gridId")?;
             if core.delete_grid(&id) {
@@ -2572,6 +2587,12 @@ fn tools() -> Vec<Value> {
         "Delete a grid (not the last one).",
         json!({"gridId":{"type":"string"}}),
         vec!["gridId"],
+    );
+    add(
+        "grid.setIcon",
+        "Set a grid icon to a Lucide name or an absolute .svg path.",
+        json!({"gridId":{"type":"string"},"icon":{"type":"string"}}),
+        vec!["gridId", "icon"],
     );
     add(
         "grid.switch",

@@ -18,6 +18,7 @@ for Linux. No Electron shell, no telemetry, no analytics.
   and any other card, then filter the calendar view per calendar.
 - A dedicated Timbre card for noise and pure-tone audio, with volume, pitch
   and mix controls.
+- Custom SVG icons for every grid, plus a guided Git sync setup wizard.
 - Themes follow the system light/dark appearance, with a separate theme chosen
   for light and dark.
 - Five AI providers (Anthropic, OpenAI, Google, xAI and Mistral) plus a local

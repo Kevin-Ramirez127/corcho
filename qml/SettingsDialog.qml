@@ -14,6 +14,7 @@ Item {
     property string folderMessage: ""
 
     signal closed()
+    signal gitWizardRequested()
     property bool tabHovered: false
 
     anchors.fill: parent
@@ -773,6 +774,12 @@ Item {
                                 th: root.th
                                 title: "Git sync"
                                 description: "Keep the workspace in a Git repository on GitHub, Codeberg, GitLab or any remote."
+                                AppButton {
+                                    th: root.th
+                                    icon: "git-compare"
+                                    text: "Set up…"
+                                    onClicked: root.gitWizardRequested()
+                                }
                                 ToggleSwitch {
                                     th: root.th
                                     checked: root.val("git_sync_enabled", false)

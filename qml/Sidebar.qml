@@ -279,9 +279,9 @@ Item {
                 x: root.collapsed ? (row.width - width) / 2 : 20
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: root.th.space2
-                Icon {
+                GridIcon {
                     anchors.verticalCenter: parent.verticalCenter
-                    name: "layout-grid"
+                    icon: modelData.icon || "layout-grid"
                     size: root.th.iconBody
                     color: root.activeGridId === modelData.id ? root.th.accent : root.th.text2
                 }

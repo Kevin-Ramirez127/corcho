@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Window
+import QtQuick.Dialogs
 import Corcho 1.0
 
 ApplicationWindow {
@@ -22,6 +23,12 @@ ApplicationWindow {
 
     function parseJson(text, fallback) {
         try { return JSON.parse(text || ""); } catch (e) { return fallback; }
+    }
+
+    function filePath(url) {
+        var s = url.toString();
+        if (s.indexOf("file://") === 0) s = s.substring(7);
+        return decodeURIComponent(s);
     }
 
     readonly property var settings: parseJson(app.settingsJson, {})
@@ -118,7 +125,9 @@ ApplicationWindow {
     function openGridMenu(grid, px, py) {
         menuGrid = grid;
         var actions = [
-            { label: "Rename grid", icon: "square-pen", action: "grid:rename" }
+            { label: "Rename grid", icon: "square-pen", action: "grid:rename" },
+            { label: "Choose icon…", icon: "image", action: "grid:icon" },
+            { label: "Use default icon", icon: "layout-grid", action: "grid:icon-reset" }
         ];
         for (var i = 0; i < folders.length; i++)
             actions.push({ label: "Move to " + folders[i].name, icon: "folder-plus", action: "grid:move:" + folders[i].id });
@@ -176,6 +185,10 @@ ApplicationWindow {
             if (arg === "rename") {
                 renameTarget = { kind: "grid", id: menuGrid.id };
                 prompt.open("Rename grid", menuGrid.name, "Grid name");
+            } else if (arg === "icon") {
+                gridIconDialog.open();
+            } else if (arg === "icon-reset") {
+                app.setGridIcon(menuGrid.id, "layout-grid");
             } else if (arg === "delete") {
                 app.deleteGrid(menuGrid.id);
             } else if (arg.indexOf("move:") === 0) {
@@ -470,6 +483,13 @@ ApplicationWindow {
         }
     }
 
+    FileDialog {
+        id: gridIconDialog
+        title: "Choose a grid icon"
+        nameFilters: ["SVG images (*.svg)"]
+        onAccepted: if (menuGrid) root.app.setGridIcon(menuGrid.id, root.filePath(selectedFile))
+    }
+
     ContextMenu {
         id: contextMenu
         parent: root.contentItem
@@ -511,6 +531,12 @@ ApplicationWindow {
         onSettingsRequested: root.openSettings("general")
     }
 
+    GitSyncWizard {
+        id: gitWizard
+        app: app
+        th: root.th
+    }
+
     SettingsDialog {
         id: settingsDialog
         app: app
@@ -518,6 +544,7 @@ ApplicationWindow {
         opened: root.settingsOpen
         tab: root.settingsTab
         onClosed: root.settingsOpen = false
+        onGitWizardRequested: gitWizard.open()
     }
 
     Onboarding {

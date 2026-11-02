@@ -355,6 +355,20 @@ impl Core {
         g
     }
 
+    pub fn set_grid_icon(&mut self, id: &str, icon: &str) -> bool {
+        let icon = icon.trim();
+        if icon.is_empty() {
+            return false;
+        }
+        self.checkpoint();
+        let Some(grid) = self.ws.grid_mut(id) else {
+            return false;
+        };
+        grid.icon = icon.to_string();
+        self.save_quiet();
+        true
+    }
+
     pub fn rename_grid(&mut self, id: &str, name: &str) -> bool {
         self.checkpoint();
         let ok = if let Some(g) = self.ws.grid_mut(id) {
