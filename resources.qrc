@@ -144,4 +144,7 @@
   <file>assets/icons/zoom-in.svg</file>
   <file>assets/icons/zoom-out.svg</file>
 </qresource>
+<qresource prefix="/qt/qml/Corcho/qml">
+  <file alias="IconData.js">qml/IconData.js</file>
+</qresource>
 </RCC>
