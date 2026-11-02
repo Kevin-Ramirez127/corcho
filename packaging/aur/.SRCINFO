@@ -1,0 +1,23 @@
+pkgbase = corcho-git
+	pkgdesc = A native grid workspace for notes, sites, tasks and calendars
+	pkgver = r12.73e7e6b
+	pkgrel = 1
+	url = https://github.com/emiliano-go/corcho
+	arch = x86_64
+	arch = aarch64
+	license = MIT
+	makedepends = cargo
+	makedepends = rust
+	depends = alsa-lib
+	depends = hicolor-icon-theme
+	depends = qt6-base
+	depends = qt6-declarative
+	depends = qt6-svg
+	depends = qt6-webengine
+	optdepends = git: git sync to a remote
+	optdepends = playerctl: MPRIS media controls
+	optdepends = xdg-utils: open external links
+	provides = corcho
+	conflicts = corcho
+
+pkgname = corcho-git

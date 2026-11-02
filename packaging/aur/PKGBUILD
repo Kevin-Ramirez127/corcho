@@ -1,0 +1,61 @@
+# Local PKGBUILD for the current checkout. This is not intended for AUR
+# publication; it deliberately builds the working tree instead of a release
+# archive. Run it from this directory.
+pkgname=corcho-git
+pkgver=r12.73e7e6b
+pkgrel=1
+pkgdesc="A native grid workspace for notes, sites, tasks and calendars"
+arch=('x86_64' 'aarch64')
+url="https://github.com/emiliano-go/corcho"
+license=('MIT')
+depends=(
+  'alsa-lib'
+  'hicolor-icon-theme'
+  'qt6-base'
+  'qt6-declarative'
+  'qt6-svg'
+  'qt6-webengine'
+)
+makedepends=('cargo' 'rust')
+optdepends=(
+  'git: git sync to a remote'
+  'playerctl: MPRIS media controls'
+  'xdg-utils: open external links'
+)
+provides=('corcho')
+conflicts=('corcho')
+source=()
+sha256sums=()
+
+pkgver() {
+  cd "$startdir/../.."
+  printf 'r%s.%s' "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
+}
+
+prepare() {
+  mkdir -p "$srcdir/corcho"
+  (
+    cd "$startdir/../.."
+    tar --exclude=.git --exclude=target \
+        --exclude=packaging/aur/pkg --exclude=packaging/aur/src \
+        -cf - .
+  ) | tar -xf - -C "$srcdir/corcho"
+}
+
+build() {
+  cd "$srcdir/corcho"
+  QMAKE=/usr/bin/qmake6 cargo build --release --locked
+}
+
+check() {
+  cd "$srcdir/corcho"
+  QMAKE=/usr/bin/qmake6 cargo test --locked
+}
+
+package() {
+  cd "$srcdir/corcho"
+  install -Dm755 target/release/corcho "$pkgdir/usr/bin/corcho"
+  install -Dm644 packaging/corcho.desktop "$pkgdir/usr/share/applications/corcho.desktop"
+  install -Dm644 packaging/corcho.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/corcho.svg"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
