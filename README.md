@@ -11,9 +11,9 @@ for Linux. No Electron shell, no telemetry, no analytics.
 ## Features
 
 - Infinite grid with pan, zoom, snapping, a minimap and undo/redo.
-- Fourteen card types: note, website, bookmark, API data, AI node, script,
-  calendar, timbre, grid portal, checklist, kanban, whiteboard, pomodoro and
-  now playing.
+- Fifteen card types: note, website, bookmark, API data, AI node, script,
+  calendar, timbre, grid portal, checklist, kanban, whiteboard, pomodoro,
+  now playing and pinned files/folders.
 - Multi-calendar planning: add reminders, link dates from kanban, checklists
   and any other card, then filter the calendar view per calendar.
 - A dedicated Timbre card for noise and pure-tone audio, with volume, pitch
