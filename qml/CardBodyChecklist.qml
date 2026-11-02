@@ -38,6 +38,7 @@ CardFrame {
     }
 
     function toggle(index) {
+        if (index < 0 || index >= items.length) return;
         var next = items.slice();
         next[index] = { id: next[index].id, text: next[index].text, done: !next[index].done };
         items = next;
@@ -45,6 +46,7 @@ CardFrame {
     }
 
     function remove(index) {
+        if (index < 0 || index >= items.length) return;
         var next = items.slice();
         next.splice(index, 1);
         items = next;
@@ -182,10 +184,6 @@ CardFrame {
             font.pixelSize: root.th.fontSizeSmall
             clip: true
             onAccepted: {
-                root.addItem(text);
-                text = "";
-            }
-            Keys.onReturnPressed: {
                 root.addItem(text);
                 text = "";
             }

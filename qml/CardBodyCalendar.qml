@@ -9,7 +9,15 @@ CardFrame {
     }
     readonly property var calendars: calendarData.calendars || []
     readonly property var links: calendarData.dateLinks || []
-    readonly property string todayKey: dateKey(new Date().getFullYear(), new Date().getMonth(), new Date().getDate())
+    property date clock: new Date()
+    readonly property string todayKey: dateKey(clock.getFullYear(), clock.getMonth(), clock.getDate())
+
+    Timer {
+        interval: 60000
+        running: true
+        repeat: true
+        onTriggered: root.clock = new Date()
+    }
 
     property int viewYear: (card.viewYear !== undefined) ? card.viewYear : new Date().getFullYear()
     property int viewMonth: (card.viewMonth !== undefined) ? card.viewMonth : new Date().getMonth()

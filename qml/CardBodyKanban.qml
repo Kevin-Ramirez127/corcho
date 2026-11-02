@@ -47,6 +47,8 @@ CardFrame {
     }
 
     function moveTo(colIndex, itemIndex, targetCol) {
+        if (colIndex < 0 || colIndex >= columns.length) return;
+        if (itemIndex < 0 || itemIndex >= columns[colIndex].items.length) return;
         if (targetCol === colIndex || targetCol < 0 || targetCol >= columns.length) return;
         var next = JSON.parse(JSON.stringify(columns));
         var item = next[colIndex].items.splice(itemIndex, 1)[0];
@@ -55,6 +57,8 @@ CardFrame {
     }
 
     function move(colIndex, itemIndex, dir) {
+        if (colIndex < 0 || colIndex >= columns.length) return;
+        if (itemIndex < 0 || itemIndex >= columns[colIndex].items.length) return;
         var next = JSON.parse(JSON.stringify(columns));
         var target = colIndex + dir;
         if (target < 0 || target >= next.length) return;
@@ -64,6 +68,8 @@ CardFrame {
     }
 
     function remove(colIndex, itemIndex) {
+        if (colIndex < 0 || colIndex >= columns.length) return;
+        if (itemIndex < 0 || itemIndex >= columns[colIndex].items.length) return;
         var next = JSON.parse(JSON.stringify(columns));
         next[colIndex].items.splice(itemIndex, 1);
         persist(next);
@@ -81,7 +87,8 @@ CardFrame {
                 required property var modelData
                 required property int index
 
-                width: (parent.width - 20) / 3
+                width: (parent.width - root.th.spaceSnug * Math.max(0, root.columns.length - 1))
+                       / Math.max(1, root.columns.length)
                 height: parent.height
 
                 Rectangle {
@@ -211,10 +218,6 @@ CardFrame {
                         font.pixelSize: root.th.fontSizeSmall
                         clip: true
                         onAccepted: {
-                            root.addItem(column.index, text);
-                            text = "";
-                        }
-                        Keys.onReturnPressed: {
                             root.addItem(column.index, text);
                             text = "";
                         }

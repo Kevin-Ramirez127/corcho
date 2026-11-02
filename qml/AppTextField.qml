@@ -18,7 +18,7 @@ Item {
     Accessible.role: Accessible.EditableText
     Accessible.name: root.placeholder
 
-    implicitHeight: root.th.controlHeight
+    implicitHeight: root.inputHeight
     implicitWidth: 240
 
     Rectangle {

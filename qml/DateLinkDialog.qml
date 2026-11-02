@@ -102,7 +102,10 @@ Item {
         }
         var ids = JSON.stringify(selectedCalendarIds);
         if (linkId !== "") {
-            root.app.updateDateLink(linkId, selectedDate, ids, title);
+            if (!root.app.updateDateLink(linkId, selectedDate, ids, title)) {
+                errorText = "Could not save this reminder.";
+                return;
+            }
         } else {
             var result = String(root.app.addDateLink(sourceCardId, sourceItemId, selectedDate, ids, title));
             if (result.indexOf("error:") === 0) {

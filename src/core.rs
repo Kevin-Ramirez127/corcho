@@ -683,13 +683,13 @@ impl Core {
     }
 
     pub fn delete_date_link(&mut self, id: &str) -> bool {
-        let before = self.ws.date_links.len();
-        self.ws.date_links.retain(|link| link.id != id);
-        let removed = self.ws.date_links.len() != before;
-        if removed {
-            self.save_quiet();
+        if !self.ws.date_links.iter().any(|link| link.id == id) {
+            return false;
         }
-        removed
+        self.checkpoint();
+        self.ws.date_links.retain(|link| link.id != id);
+        self.save_quiet();
+        true
     }
 
     pub fn set_calendar_month(&mut self, card_id: &str, year: i64, month: i64) -> bool {
