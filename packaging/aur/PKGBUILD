@@ -2,7 +2,7 @@
 # publication; it deliberately builds the working tree instead of a release
 # archive. Run it from this directory.
 pkgname=corcho-git
-pkgver=r25.7b6ed3c
+pkgver=r27.666a006
 pkgrel=1
 pkgdesc="A native grid workspace for notes, sites, tasks and calendars"
 arch=('x86_64' 'aarch64')
@@ -45,7 +45,7 @@ prepare() {
 
 build() {
   cd "$srcdir/corcho"
-  CARGO_PROFILE_RELEASE_LTO=false QMAKE=/usr/bin/qmake6 cargo build --release --locked
+  LDFLAGS= CARGO_PROFILE_RELEASE_LTO=false QMAKE=/usr/bin/qmake6 cargo build --release --locked
 }
 
 check() {
