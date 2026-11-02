@@ -108,7 +108,6 @@ FocusScope {
             width: root.width,
             height: root.height
         }));
-        app.saveNow();
     }
 
     Rectangle {
