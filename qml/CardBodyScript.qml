@@ -8,7 +8,9 @@ CardFrame {
     property bool ok: true
 
     function run() {
-        var result = JSON.parse(root.app.runScript(root.script));
+        var result;
+        try { result = JSON.parse(root.app.runScript(root.script)); }
+        catch (e) { result = { ok: false, error: String(e) }; }
         root.ok = !!result.ok;
         root.output = result.ok
             ? "exit " + result.code + "  ·  " + result.ms + "ms\n\n" + (result.stdout || "") + (result.stderr || "")

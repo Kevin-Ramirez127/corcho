@@ -14,7 +14,14 @@ CardFrame {
         busy = true;
         status = "Fetching";
         var xhr = new XMLHttpRequest();
-        xhr.open(method, apiUrl);
+        try {
+            xhr.open(method, apiUrl);
+        } catch (e) {
+            busy = false;
+            status = "Invalid URL";
+            lastBody = String(e);
+            return;
+        }
         xhr.onreadystatechange = function () {
             if (xhr.readyState !== XMLHttpRequest.DONE) return;
             busy = false;
@@ -52,6 +59,7 @@ CardFrame {
                 placeholder: "https://api.example.com/data"
                 inputHeight: 34
                 onEdited: function (value) { root.apiUrl = value; }
+                onCommitted: function (value) { root.apiUrl = value; root.commit({ apiUrl: value, method: root.method }); }
                 onAccepted: root.fetch()
             }
 

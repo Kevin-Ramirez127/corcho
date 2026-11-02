@@ -75,7 +75,10 @@ CardFrame {
             placeholder: "https://"
             inputHeight: 32
             onEdited: function (value) { root.url = value; }
-            onAccepted: root.commit({ url: root.url })
+            onCommitted: function (value) {
+                root.url = value;
+                root.commit({ url: value });
+            }
         }
 
     }
