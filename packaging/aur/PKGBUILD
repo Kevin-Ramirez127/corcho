@@ -10,13 +10,14 @@ url="https://github.com/emiliano-go/corcho"
 license=('MIT')
 depends=(
   'alsa-lib'
+  'gcc-libs'
   'hicolor-icon-theme'
   'qt6-base'
   'qt6-declarative'
   'qt6-svg'
   'qt6-webengine'
 )
-makedepends=('cargo' 'rust')
+makedepends=('cargo' 'rust' 'cmake' 'ninja' 'pkgconf')
 optdepends=(
   'git: git sync to a remote'
   'playerctl: MPRIS media controls'
