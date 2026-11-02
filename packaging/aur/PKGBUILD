@@ -2,7 +2,7 @@
 # publication; it deliberately builds the working tree instead of a release
 # archive. Run it from this directory.
 pkgname=corcho-git
-pkgver=r29.84becc3
+pkgver=r30.acbbc97
 pkgrel=1
 pkgdesc="A native grid workspace for notes, sites, tasks and calendars"
 arch=('x86_64' 'aarch64')
