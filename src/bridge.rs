@@ -588,18 +588,31 @@ impl qobject::AppController {
                 core.git.status_json(),
             )
         };
-        self.as_mut().set_grids_json(s(grids));
-        self.as_mut().set_cards_json(s(cards));
-        self.as_mut().set_folders_json(s(folders));
-        self.as_mut().set_calendar_json(s(calendar));
-        self.as_mut().set_settings_json(s(settings));
-        self.as_mut().set_themes_json(s(themes));
-        self.as_mut().set_active_grid_id(s(active));
-        self.as_mut().set_pan_x(pan);
-        self.as_mut().set_pan_y(pany);
-        self.as_mut().set_zoom(zoom);
-        self.as_mut().set_update_json(s(upd));
-        self.as_mut().set_git_json(s(git));
+        macro_rules! set_str {
+            ($get:ident, $set:ident, $value:expr) => {
+                if p(&self.as_ref().rust().$get) != $value {
+                    self.as_mut().$set(s($value));
+                }
+            };
+        }
+        set_str!(grids_json, set_grids_json, grids);
+        set_str!(cards_json, set_cards_json, cards);
+        set_str!(folders_json, set_folders_json, folders);
+        set_str!(calendar_json, set_calendar_json, calendar);
+        set_str!(settings_json, set_settings_json, settings);
+        set_str!(themes_json, set_themes_json, themes);
+        set_str!(active_grid_id, set_active_grid_id, active);
+        if (self.as_ref().rust().pan_x - pan).abs() > f64::EPSILON {
+            self.as_mut().set_pan_x(pan);
+        }
+        if (self.as_ref().rust().pan_y - pany).abs() > f64::EPSILON {
+            self.as_mut().set_pan_y(pany);
+        }
+        if (self.as_ref().rust().zoom - zoom).abs() > f64::EPSILON {
+            self.as_mut().set_zoom(zoom);
+        }
+        set_str!(update_json, set_update_json, upd);
+        set_str!(git_json, set_git_json, git);
     }
 
     pub fn boot(mut self: Pin<&mut Self>) {
