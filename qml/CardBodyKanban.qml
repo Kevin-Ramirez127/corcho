@@ -3,6 +3,25 @@ import QtQuick
 CardFrame {
     id: root
 
+    readonly property var links: {
+        try { return (JSON.parse(root.app.calendarJson).dateLinks || []); }
+        catch (e) { return []; }
+    }
+
+    function linkFor(itemId) {
+        for (var i = 0; i < links.length; i++)
+            if (links[i].sourceCardId === root.card.id && links[i].sourceItemId === itemId)
+                return links[i];
+        return null;
+    }
+
+    function shortDate(key) {
+        var p = key.split("-");
+        if (p.length !== 3) return key;
+        var d = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+        return d.toLocaleDateString(Qt.locale(), "MMM d");
+    }
+
     property var columns: {
         var c = card.columns ? card.columns : [];
         if (c.length === 0) {
@@ -53,8 +72,7 @@ CardFrame {
     Row {
         id: columnsRow
         anchors.fill: parent
-        spacing: 10
-
+        spacing: root.th.spaceSnug
         Repeater {
             model: root.columns
 
@@ -68,24 +86,22 @@ CardFrame {
 
                 Rectangle {
                     anchors.fill: parent
-                    radius: 10
+                    radius: root.th.radiusMenu
                     color: root.th.surface
-                    border.width: 1
+                    border.width: root.th.borderWidth
                     border.color: root.th.border
                 }
 
                 Column {
                     anchors.fill: parent
                     anchors.margins: 8
-                    spacing: 6
-
+                    spacing: root.th.space2
                     Text {
                         text: modelData.title
                         color: root.th.text2
                         font.family: root.th.fontFamily
-                        font.pixelSize: 11
-                        font.weight: 500
-                        font.letterSpacing: 0.4
+                        font.pixelSize: root.th.fontSizeSmall
+                        font.weight: root.th.fontWeightMedium
                     }
 
                     ListView {
@@ -93,7 +109,7 @@ CardFrame {
                         width: parent.width
                         height: parent.height - 48
                         clip: true
-                        spacing: 4
+                        spacing: root.th.space1
                         model: modelData.items
 
                         delegate: Item {
@@ -101,13 +117,14 @@ CardFrame {
                             required property var modelData
                             required property int index
                             property bool hoveredNow: false
+                            readonly property var link: root.linkFor(modelData.id)
 
                             width: columnList.width
                             height: 34
 
                             Rectangle {
                                 anchors.fill: parent
-                                radius: 6
+                                radius: root.th.radiusKeycap
                                 color: kanbanItem.hoveredNow ? root.th.hover : root.th.surfaceStrong
                             }
 
@@ -120,7 +137,7 @@ CardFrame {
                                 text: modelData.text
                                 color: root.th.text
                                 font.family: root.th.fontFamily
-                                font.pixelSize: 12
+                                font.pixelSize: root.th.fontSizeSmall
                                 elide: Text.ElideRight
                                 wrapMode: Text.Wrap
                                 maximumLineCount: 2
@@ -130,25 +147,51 @@ CardFrame {
                                 anchors.right: parent.right
                                 anchors.rightMargin: 4
                                 anchors.verticalCenter: parent.verticalCenter
-                                spacing: 4
-                                opacity: kanbanItem.hoveredNow ? 1 : 0
-
+                                spacing: root.th.space1
+                                Text {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    visible: kanbanItem.link !== null
+                                    text: kanbanItem.link ? root.shortDate(kanbanItem.link.date) : ""
+                                    color: root.th.accent
+                                    font.family: root.th.fontFamily
+                                    font.pixelSize: root.th.fontSizeMicro
+                                }
                                 Icon {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    name: "calendar"
+                                    size: root.th.iconSmall
+                                    color: kanbanItem.link !== null ? root.th.accent : root.th.muted
+                                    opacity: (kanbanItem.link !== null || kanbanItem.hoveredNow) ? 1 : 0
+                                    TapHandler {
+                                        onTapped: root.dateLinkRequested(
+                                            root.card.id,
+                                            modelData.id,
+                                            kanbanItem.link ? kanbanItem.link.id : "",
+                                            kanbanItem.link ? kanbanItem.link.date : "")
+                                    }
+                                }
+                                Icon {
+                                    anchors.verticalCenter: parent.verticalCenter
                                     name: "chevron-left"
-                                    size: 11
+                                    size: root.th.iconSmall
                                     color: root.th.muted
+                                    opacity: kanbanItem.hoveredNow ? 1 : 0
                                     TapHandler { onTapped: root.move(column.index, index, -1) }
                                 }
                                 Icon {
+                                    anchors.verticalCenter: parent.verticalCenter
                                     name: "chevron-right"
-                                    size: 11
+                                    size: root.th.iconSmall
                                     color: root.th.muted
+                                    opacity: kanbanItem.hoveredNow ? 1 : 0
                                     TapHandler { onTapped: root.move(column.index, index, 1) }
                                 }
                                 Icon {
+                                    anchors.verticalCenter: parent.verticalCenter
                                     name: "x"
-                                    size: 11
+                                    size: root.th.iconSmall
                                     color: root.th.muted
+                                    opacity: kanbanItem.hoveredNow ? 1 : 0
                                     TapHandler { onTapped: root.remove(column.index, index) }
                                 }
                             }
@@ -165,7 +208,7 @@ CardFrame {
                         height: 24
                         color: root.th.text
                         font.family: root.th.fontFamily
-                        font.pixelSize: 12
+                        font.pixelSize: root.th.fontSizeSmall
                         clip: true
                         onAccepted: {
                             root.addItem(column.index, text);

@@ -8,7 +8,7 @@ Item {
     property string description: ""
     default property alias control: slot.data
 
-    implicitHeight: Math.max(44, textColumn.implicitHeight + 12)
+    implicitHeight: Math.max(48, textColumn.implicitHeight + 16)
     implicitWidth: 480
     width: parent ? parent.width : implicitWidth
 
@@ -16,17 +16,16 @@ Item {
         id: textColumn
         anchors.left: parent.left
         anchors.right: slot.left
-        anchors.rightMargin: 20
+        anchors.rightMargin: 24
         anchors.verticalCenter: parent.verticalCenter
-        spacing: 2
-
+        spacing: root.th.space1
         Text {
             width: parent.width
             text: root.title
             color: root.th.text
             font.family: root.th.fontFamily
-            font.pixelSize: 13
-            font.weight: 500
+            font.pixelSize: root.th.fontSizeBody
+            font.weight: root.th.fontWeightMedium
             wrapMode: Text.WordWrap
         }
         Text {
@@ -35,7 +34,7 @@ Item {
             text: root.description
             color: root.th.muted
             font.family: root.th.fontFamily
-            font.pixelSize: 12
+            font.pixelSize: root.th.fontSizeSmall
             wrapMode: Text.WordWrap
             lineHeight: 1.25
         }
@@ -45,6 +44,6 @@ Item {
         id: slot
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
-        spacing: 8
+        spacing: root.th.space2
     }
 }

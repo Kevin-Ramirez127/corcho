@@ -284,7 +284,7 @@ fn urlencode(s: &str) -> String {
 }
 
 pub fn system_prompt() -> String {
-    "You are the AI processor inside Corcho, a personal-development canvas. \
+    "You are the AI node inside Corcho, a personal-development canvas. \
      Be concise, concrete and useful. Return only the requested content."
         .into()
 }

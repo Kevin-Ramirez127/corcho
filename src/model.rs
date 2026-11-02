@@ -1,9 +1,9 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 
 #[allow(dead_code)]
 pub const CARD_KINDS: &[&str] = &[
@@ -13,8 +13,9 @@ pub const CARD_KINDS: &[&str] = &[
     "api",
     "ai",
     "script",
-    "fragment",
-    "gridlink",
+    "calendar",
+    "timbre",
+    "portal",
     "checklist",
     "kanban",
     "whiteboard",
@@ -102,8 +103,9 @@ pub fn default_card_style(kind: &str) -> (f64, f64, &'static str, &'static str, 
         "api" => (480.0, 320.0, "#2f3b45", "database", "API Data"),
         "ai" => (416.0, 288.0, "#3a3348", "cpu", "AI"),
         "script" => (416.0, 256.0, "#333a33", "terminal", "Script"),
-        "fragment" => (320.0, 320.0, "#33333a", "aperture", ""),
-        "gridlink" => (288.0, 128.0, "#323a3d", "arrow-right-circle", "Grid Link"),
+        "calendar" => (448.0, 460.0, "#343a3d", "calendar", "Calendar"),
+        "timbre" => (320.0, 260.0, "#3d3436", "audio-lines", "Timbre"),
+        "portal" => (288.0, 128.0, "#323a3d", "arrow-right-circle", "Grid Portal"),
         "checklist" => (352.0, 320.0, "#353a33", "list-checks", "Checklist"),
         "kanban" => (416.0, 320.0, "#33384a", "kanban", "Kanban"),
         "whiteboard" => (416.0, 320.0, "#333333", "pencil", "Whiteboard"),
@@ -183,6 +185,9 @@ fn t() -> bool {
 #[serde(default)]
 pub struct Settings {
     pub theme: String,
+    pub theme_mode: String,
+    pub theme_light: String,
+    pub theme_dark: String,
     pub font: String,
     pub grid_opacity: f64,
     pub minimap_display: String,
@@ -198,7 +203,7 @@ pub struct Settings {
     pub show_card_tooltips: bool,
     pub ad_blocker: bool,
     pub undo_steps: usize,
-    pub powerbar_shortcut: String,
+    pub launcher_shortcut: String,
     pub launch_at_startup: bool,
     pub show_changelog: bool,
     pub update_mode: String,
@@ -226,12 +231,12 @@ pub struct Settings {
     pub onboarding_completed: bool,
     pub card_tutorial_completed: bool,
     pub context_tutorial_completed: bool,
-    pub fragment_tutorial_completed: bool,
-    pub powerbar_tutorial_completed: bool,
+    pub launcher_tutorial_completed: bool,
     #[serde(rename = "customTheme")]
     pub custom_theme: Option<CustomTheme>,
     pub last_seen_version: Option<String>,
     pub debug_mode: bool,
+    pub allow_scripts: bool,
     pub reduced_motion: bool,
     pub data_dir: Option<String>,
     pub git_sync_enabled: bool,
@@ -246,6 +251,9 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             theme: "corcho".into(),
+            theme_mode: "system".into(),
+            theme_light: "paper".into(),
+            theme_dark: "corcho".into(),
             font: "inter".into(),
             grid_opacity: 0.6,
             minimap_display: "always".into(),
@@ -253,15 +261,15 @@ impl Default for Settings {
             trackpad_pan: t(),
             grid_magnetic: t(),
             spawn_animations: t(),
-            card_parallax: t(),
-            grid_ripple: t(),
+            card_parallax: false,
+            grid_ripple: false,
             hardware_acceleration: t(),
             master_volume: 50,
             link_behavior: "integrated".into(),
             show_card_tooltips: t(),
             ad_blocker: false,
             undo_steps: 20,
-            powerbar_shortcut: "CmdOrCtrl+K".into(),
+            launcher_shortcut: "CmdOrCtrl+K".into(),
             launch_at_startup: false,
             show_changelog: t(),
             update_mode: "check".into(),
@@ -286,11 +294,11 @@ impl Default for Settings {
             onboarding_completed: false,
             card_tutorial_completed: false,
             context_tutorial_completed: false,
-            fragment_tutorial_completed: false,
-            powerbar_tutorial_completed: false,
+            launcher_tutorial_completed: false,
             custom_theme: None,
             last_seen_version: None,
             debug_mode: false,
+            allow_scripts: false,
             reduced_motion: false,
             data_dir: None,
             git_sync_enabled: false,
@@ -304,8 +312,66 @@ impl Default for Settings {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CalendarDef {
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub color: String,
+}
+
+impl CalendarDef {
+    pub fn new(name: &str, color: &str) -> Self {
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: name.to_string(),
+            color: color.to_string(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DateLink {
+    pub id: String,
+    #[serde(default)]
+    pub calendar_ids: Vec<String>,
+    pub date: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub source_card_id: Option<String>,
+    #[serde(default)]
+    pub source_item_id: Option<String>,
+}
+
+impl DateLink {
+    pub fn new(date: &str, calendar_ids: Vec<String>, title: &str) -> Self {
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            calendar_ids,
+            date: date.to_string(),
+            title: title.to_string(),
+            source_card_id: None,
+            source_item_id: None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Workspace {
     pub version: u32,
+    #[serde(default)]
+    pub revision: u64,
+    #[serde(default)]
+    pub viewport_width: f64,
+    #[serde(default)]
+    pub viewport_height: f64,
+    #[serde(default)]
+    pub calendars: Vec<CalendarDef>,
+    #[serde(default, rename = "dateLinks")]
+    pub date_links: Vec<DateLink>,
     pub grids: Vec<Grid>,
     pub folders: Vec<Folder>,
     pub settings: Settings,
@@ -321,6 +387,11 @@ impl Default for Workspace {
         };
         Self {
             version: SCHEMA_VERSION,
+            revision: 0,
+            viewport_width: 0.0,
+            viewport_height: 0.0,
+            calendars: vec![CalendarDef::new("Personal", "#d98e5c")],
+            date_links: Vec::new(),
             active_grid_id: Some(grid.id.clone()),
             grids: vec![grid],
             folders: Vec::new(),
@@ -395,6 +466,70 @@ impl Workspace {
         f
     }
 
+    /// Upgrade older workspaces in place. Returns true when anything changed.
+    pub fn migrate(&mut self) -> bool {
+        let mut changed = false;
+        if self.version < SCHEMA_VERSION {
+            self.version = SCHEMA_VERSION;
+            changed = true;
+        }
+        for grid in &mut self.grids {
+            let before = grid.cards.len();
+            grid.cards.retain(|card| card.kind != "aura");
+            if grid.cards.len() != before {
+                changed = true;
+            }
+        }
+        if self.calendars.is_empty() {
+            self.calendars.push(CalendarDef::new("Personal", "#d98e5c"));
+            changed = true;
+        }
+        changed | self.prune_date_links()
+    }
+
+    /// Drop date links whose source card or source item no longer exists.
+    pub fn prune_date_links(&mut self) -> bool {
+        let mut valid: HashMap<String, HashSet<String>> = HashMap::new();
+        for grid in &self.grids {
+            for card in &grid.cards {
+                let mut items = HashSet::new();
+                if let Some(list) = card.payload.get("items").and_then(|v| v.as_array()) {
+                    for item in list {
+                        if let Some(id) = item.get("id").and_then(|v| v.as_str()) {
+                            items.insert(id.to_string());
+                        }
+                    }
+                }
+                if let Some(columns) = card.payload.get("columns").and_then(|v| v.as_array()) {
+                    for column in columns {
+                        if let Some(list) = column.get("items").and_then(|v| v.as_array()) {
+                            for item in list {
+                                if let Some(id) = item.get("id").and_then(|v| v.as_str()) {
+                                    items.insert(id.to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+                valid.insert(card.id.clone(), items);
+            }
+        }
+        let before = self.date_links.len();
+        self.date_links.retain(|link| {
+            let Some(card_id) = link.source_card_id.as_deref() else {
+                return true;
+            };
+            let Some(items) = valid.get(card_id) else {
+                return false;
+            };
+            match link.source_item_id.as_deref() {
+                Some(item_id) => items.contains(item_id),
+                None => true,
+            }
+        });
+        self.date_links.len() != before
+    }
+
     #[allow(dead_code)]
     pub fn total_cards(&self) -> usize {
         self.grids.iter().map(|g| g.cards.len()).sum()
@@ -451,24 +586,25 @@ pub fn models_by_provider() -> serde_json::Value {
 pub fn themes() -> serde_json::Value {
     serde_json::json!([
         {"id":"corcho","name":"Corcho","bg":"#121417","surface":"#1b1e23","accent":"#d98e5c","text":"#ece7de","builtin":true},
-        {"id":"orion","name":"Orion","bg":"#16171f","surface":"#1e1f2b","accent":"#7aa2f7","text":"#d7d9e6","builtin":true},
-        {"id":"cryo","name":"Cryo","bg":"#f5f7fa","surface":"#ffffff","accent":"#3b6ea5","text":"#20242c","builtin":true,"light":true},
+        {"id":"trellis","name":"Trellis","bg":"#16171f","surface":"#1e1f2b","accent":"#7aa2f7","text":"#d7d9e6","builtin":true},
+        {"id":"chalk","name":"Chalk","bg":"#f5f7fa","surface":"#ffffff","accent":"#3b6ea5","text":"#20242c","builtin":true,"light":true},
         {"id":"high-contrast","name":"High Contrast","bg":"#000000","surface":"#0a0a0a","accent":"#00ff00","text":"#ffffff","builtin":true},
-        {"id":"aurora","name":"Aurora","bg":"#232830","surface":"#2c333d","accent":"#88c0d0","text":"#e3e8ee","builtin":true},
-        {"id":"afterglow","name":"Afterglow","bg":"#1a1423","surface":"#241b31","accent":"#e08b7a","text":"#ece2e6","builtin":true},
-        {"id":"stardust","name":"Stardust","bg":"#0a1628","surface":"#122238","accent":"#0891b2","text":"#dbe7f0","builtin":true},
-        {"id":"helios","name":"Helios","bg":"#0a0a0a","surface":"#141414","accent":"#bfa450","text":"#ece7d8","builtin":true},
-        {"id":"nova-x","name":"Graphite","bg":"#0f0f0f","surface":"#191919","accent":"#f0f0f0","text":"#ededed","builtin":true},
+        {"id":"rift","name":"Rift","bg":"#232830","surface":"#2c333d","accent":"#88c0d0","text":"#e3e8ee","builtin":true},
+        {"id":"cinder","name":"Cinder","bg":"#1a1423","surface":"#241b31","accent":"#e08b7a","text":"#ece2e6","builtin":true},
+        {"id":"tidepool","name":"Tidepool","bg":"#0a1628","surface":"#122238","accent":"#0891b2","text":"#dbe7f0","builtin":true},
+        {"id":"saffron","name":"Saffron","bg":"#0a0a0a","surface":"#141414","accent":"#bfa450","text":"#ece7d8","builtin":true},
+        {"id":"graphite","name":"Graphite","bg":"#0f0f0f","surface":"#191919","accent":"#f0f0f0","text":"#ededed","builtin":true},
         {"id":"obsidian","name":"Obsidian","bg":"#0a0a0a","surface":"#121212","accent":"#a78bfa","text":"#ece9f6","builtin":true},
         {"id":"monokai","name":"Monokai","bg":"#22221d","surface":"#2b2b25","accent":"#f92672","text":"#ecebdc","builtin":true},
         {"id":"alpine","name":"Alpine","bg":"#f8fafc","surface":"#ffffff","accent":"#3b82f6","text":"#1e293b","builtin":true,"light":true},
-        {"id":"fog","name":"Fog","bg":"#f1f5f9","surface":"#ffffff","accent":"#5b6472","text":"#27303b","builtin":true,"light":true},
+        {"id":"overcast","name":"Overcast","bg":"#f1f5f9","surface":"#ffffff","accent":"#5b6472","text":"#27303b","builtin":true,"light":true},
         {"id":"blueprint","name":"Blueprint","bg":"#eff6ff","surface":"#ffffff","accent":"#1d4ed8","text":"#1e2a45","builtin":true,"light":true},
         {"id":"solarized-dark","name":"Solarized Dark","bg":"#002b36","surface":"#073642","accent":"#2aa198","text":"#d6e2e3","builtin":true},
         {"id":"gruvbox","name":"Gruvbox","bg":"#282828","surface":"#35302a","accent":"#fe8019","text":"#ebdbb2","builtin":true},
+        {"id":"paper","name":"Paper","bg":"#f7f4ee","surface":"#fdfbf7","accent":"#a0522d","text":"#1f1b16","builtin":true,"light":true},
         {"id":"custom","name":"Custom","bg":"#121214","surface":"#1b1b1f","accent":"#c9a86a","text":"#e8e8ea","builtin":false},
-        {"id":"pulsar","name":"Pulsar","bg":"#0a0910","surface":"#141320","accent":"#b24aff","text":"#eae4f5","builtin":false},
-        {"id":"plasma","name":"Plasma","bg":"#0b0608","surface":"#180d12","accent":"#ff2d2d","text":"#f4e3e3","builtin":false}
+        {"id":"voltage","name":"Voltage","bg":"#0a0910","surface":"#141320","accent":"#b24aff","text":"#eae4f5","builtin":false},
+        {"id":"vermilion","name":"Vermilion","bg":"#0b0608","surface":"#180d12","accent":"#ff2d2d","text":"#f4e3e3","builtin":false}
     ])
 }
 
@@ -496,6 +632,36 @@ mod tests {
     use super::*;
 
     #[test]
+    fn icon_data_covers_every_bundled_icon() {
+        let js = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/qml/IconData.js"))
+            .unwrap();
+        let dir = std::fs::read_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/icons")).unwrap();
+        for entry in dir.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("svg") {
+                continue;
+            }
+            let stem = path.file_stem().unwrap().to_string_lossy();
+            assert!(
+                js.contains(&format!("\"{stem}\"")),
+                "missing icon data for {stem}"
+            );
+        }
+    }
+
+    #[test]
+    fn migration_drops_aura_cards_and_adds_default_calendar() {
+        let mut ws = Workspace::default();
+        ws.calendars.clear();
+        ws.grids[0].cards.push(Card::new("aura", 0.0, 0.0));
+        ws.grids[0].cards.push(Card::new("note", 0.0, 0.0));
+        assert!(ws.migrate());
+        assert!(ws.grids[0].cards.iter().all(|card| card.kind != "aura"));
+        assert_eq!(ws.calendars.len(), 1);
+        assert_eq!(ws.version, SCHEMA_VERSION);
+    }
+
+    #[test]
     fn default_workspace_has_one_grid() {
         let ws = Workspace::default();
         assert_eq!(ws.grids.len(), 1);
@@ -521,6 +687,22 @@ mod tests {
         let v = serde_json::to_value(&s).unwrap();
         assert!(v.get("aiProvider").is_some());
         assert!(v.get("launch_at_startup").is_some());
+    }
+
+    #[test]
+    fn themes_follow_system_by_default() {
+        let s = Settings::default();
+        assert_eq!(s.theme_mode, "system");
+        assert_eq!(s.theme_light, "paper");
+        assert_eq!(s.theme_dark, "corcho");
+        let themes = themes();
+        let paper = themes
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["id"] == "paper")
+            .unwrap();
+        assert_eq!(paper["light"], true);
     }
 }
 

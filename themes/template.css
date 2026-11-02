@@ -1,0 +1,249 @@
+/* Corcho theme template.
+ * Copy this file to <data>/themes/<id>.css, edit any token, and select
+ * the theme in Settings > Appearance. Every reported token is listed here.
+ * Values use CSS custom properties; QML does not run selectors.
+ */
+
+:root {
+  /* Identity */
+  --theme-id: my-theme;
+  --theme-name: My Theme;
+  --theme-light: false;
+
+  /* Window and canvas background */
+  --bg: #121417;
+  /* Sidebar background */
+  --sidebar: #202329;
+  /* Panels and dialogs */
+  --surface: #1b1e23;
+  /* Card surface */
+  --card: #2b2e34;
+  /* Raised controls and selected rows */
+  --surface-strong: #3a3e46;
+  /* Menus and popovers */
+  --menu: #2b2e34;
+  /* Text field background */
+  --input: #1b1e2322;
+  /* Hover background */
+  --hover: #1b1e232e;
+  /* Default border */
+  --border: #1b1e2317;
+  /* Hover and focus border */
+  --border-strong: #1b1e2329;
+  /* Primary text */
+  --text: #ece7de;
+  /* Secondary text */
+  --text-2: #ebe7dedb;
+  /* Muted text and icons */
+  --muted: #ece7dea8;
+  /* Accent color */
+  --accent: #d98e5c;
+  /* Solid button background */
+  --accent-button: #d98e5c;
+  /* Accent-colored text */
+  --accent-text: #e7a97f;
+  /* Text on accent backgrounds */
+  --accent-ink: #171717;
+  /* Errors and destructive actions */
+  --danger: #d97a72;
+  /* Success state */
+  --success: #7fae83;
+  /* Text selection */
+  --selection: #d98e5c59;
+  /* Focus ring */
+  --focus: #d98e5c;
+  /* Modal scrim */
+  --overlay: #0000008c;
+  /* Shadow color */
+  --shadow: #00000040;
+  /* Calendar today highlight */
+  --calendar-today: #d98e5c29;
+  /* UI font family */
+  --font-family: Inter;
+  /* Monospace font family */
+  --font-mono: JetBrains Mono;
+  /* Caption text size */
+  --font-size-caption: 10px;
+  /* Small text size */
+  --font-size-small: 12px;
+  /* Body text size */
+  --font-size-body: 14px;
+  /* Subtitle text size */
+  --font-size-subtitle: 15px;
+  /* Title text size */
+  --font-size-title: 16px;
+  /* Page and card title size */
+  --font-size-page: 18px;
+  /* Large display text */
+  --font-size-large: 22px;
+  /* Hero display text */
+  --font-size-display: 32px;
+  /* Regular font weight */
+  --font-weight-regular: 400;
+  /* Medium font weight */
+  --font-weight-medium: 500;
+  /* Semibold font weight */
+  --font-weight-semibold: 600;
+  /* Tight line height */
+  --line-height-tight: 1.2;
+  /* Normal line height */
+  --line-height-normal: 1.35;
+  /* No space */
+  --space-0: 0px;
+  /* Extra small gap */
+  --space-1: 4px;
+  /* Small gap */
+  --space-2: 8px;
+  /* Snug gap */
+  --space-snug: 10px;
+  /* Medium gap */
+  --space-3: 12px;
+  /* Default gap */
+  --space-4: 16px;
+  /* Large gap */
+  --space-5: 24px;
+  /* Section gap */
+  --space-6: 32px;
+  /* Page gap */
+  --space-7: 40px;
+  /* Hero gap */
+  --space-8: 48px;
+  /* Hairline gap */
+  --space-half: 2px;
+  /* Tight gap */
+  --space-tight: 5px;
+  /* Compact gap */
+  --space-compact: 6px;
+  /* Micro text size */
+  --font-size-micro: 9px;
+  /* Oversized display text */
+  --font-size-huge: 40px;
+  /* Hairline radius */
+  --radius-line: 1px;
+  /* Hairline corner */
+  --radius-hairline: 2px;
+  /* Small corner */
+  --radius-small: 3px;
+  /* Micro corner */
+  --radius-micro: 4px;
+  /* Dot corner */
+  --radius-dot: 5px;
+  /* Loose corner */
+  --radius-loose: 7px;
+  /* Badge corner */
+  --radius-badge: 9px;
+  /* Wide corner */
+  --radius-wide: 11px;
+  /* Large panel corner */
+  --radius-large: 24px;
+  /* Fully transparent */
+  --opacity-none: 0.0;
+  /* Emphasized decoration opacity */
+  --opacity-emphasis: 0.65;
+  /* Buttons and inputs */
+  --radius-control: 8px;
+  /* Cards */
+  --radius-card: 14px;
+  /* Panels and dialogs */
+  --radius-panel: 16px;
+  /* Menus and popovers */
+  --radius-menu: 10px;
+  /* Pills and toggles */
+  --radius-pill: 999px;
+  /* Keyboard keycaps */
+  --radius-keycap: 6px;
+  /* Default border width */
+  --border-width: 1;
+  /* Emphasized border width */
+  --border-width-strong: 1.5;
+  /* Focus border width */
+  --border-width-focus: 1.5;
+  /* Small icon */
+  --icon-small: 14px;
+  /* Default icon */
+  --icon-body: 16px;
+  /* Large icon */
+  --icon-large: 20px;
+  /* Page mark */
+  --icon-page: 32px;
+  /* Default control height */
+  --control-height: 36px;
+  /* Compact control height */
+  --control-height-small: 30px;
+  /* Top bar height */
+  --topbar-height: 56px;
+  /* Status bar height */
+  --statusbar-height: 32px;
+  /* Expanded sidebar width */
+  --sidebar-width: 256px;
+  /* Collapsed sidebar width */
+  --sidebar-collapsed-width: 64px;
+  /* Sidebar brand row height */
+  --sidebar-header-height: 40px;
+  /* Sidebar grid row height */
+  --sidebar-row-height: 36px;
+  /* Card title row height */
+  --card-header-height: 48px;
+  /* Minimum card width */
+  --card-min-width: 180px;
+  /* Minimum card height */
+  --card-min-height: 120px;
+  /* Menu row height */
+  --menu-item-height: 36px;
+  /* Minimum menu width */
+  --menu-min-width: 220px;
+  /* Maximum menu height */
+  --menu-max-height: 420px;
+  /* Colour swatch size */
+  --swatch-size: 16px;
+  /* Keyboard keycap height */
+  --keycap-height: 22px;
+  /* Toggle switch width */
+  --switch-width: 40px;
+  /* Toggle switch height */
+  --switch-height: 24px;
+  /* Toggle switch thumb size */
+  --switch-thumb: 18px;
+  /* Launcher maximum width */
+  --launcher-max-width: 680px;
+  /* Launcher height */
+  --launcher-height: 440px;
+  /* Launcher top offset */
+  --launcher-top-margin: 96px;
+  /* Minimap width */
+  --minimap-width: 176px;
+  /* Minimap height */
+  --minimap-height: 112px;
+  /* Canvas snap and dot spacing */
+  --grid-step: 32px;
+  /* Canvas dot radius */
+  --grid-dot-size: 1.1;
+  /* Canvas dot opacity */
+  --grid-dot-opacity: 0.09;
+  /* Card parallax distance */
+  --parallax-distance: 8;
+  /* Fast transition (ms) */
+  --motion-fast: 110ms;
+  /* Normal transition (ms) */
+  --motion-normal: 140ms;
+  /* Slow transition (ms) */
+  --motion-slow: 180ms;
+  /* Card spawn animation (ms) */
+  --motion-spawn: 180ms;
+  /* Grid ripple animation (ms) */
+  --motion-ripple: 420ms;
+  /* Standard easing curve */
+  --easing-standard: OutCubic;
+  /* Disabled control opacity */
+  --opacity-disabled: 0.45;
+  /* Faint decoration opacity */
+  --opacity-faint: 0.35;
+  /* Medium decoration opacity */
+  --opacity-medium: 0.6;
+  /* Shadow blur radius */
+  --shadow-blur: 24;
+  /* Shadow vertical offset */
+  --shadow-offset-y: 8;
+  /* Shadow opacity */
+  --shadow-opacity: 0.25;
+}

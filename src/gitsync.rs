@@ -376,6 +376,26 @@ pub fn merge_workspaces(local: &Workspace, remote: &Workspace) -> Workspace {
         }
     }
 
+    for remote_calendar in &remote.calendars {
+        if !merged
+            .calendars
+            .iter()
+            .any(|calendar| calendar.id == remote_calendar.id)
+        {
+            merged.calendars.push(remote_calendar.clone());
+        }
+    }
+
+    for remote_link in &remote.date_links {
+        if !merged
+            .date_links
+            .iter()
+            .any(|link| link.id == remote_link.id)
+        {
+            merged.date_links.push(remote_link.clone());
+        }
+    }
+
     if merged
         .active_grid_id
         .as_ref()
@@ -387,6 +407,7 @@ pub fn merge_workspaces(local: &Workspace, remote: &Workspace) -> Workspace {
     if merged.grids.is_empty() {
         merged = remote.clone();
     }
+    merged.migrate();
     merged
 }
 

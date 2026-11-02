@@ -5,9 +5,10 @@ use serde_json::{json, Value};
 
 use crate::history::History;
 use crate::integrations::Adblock;
-use crate::model::{Card, Folder, Grid, Settings, Workspace};
+use crate::model::{CalendarDef, Card, DateLink, Folder, Grid, Settings, Workspace};
 use crate::search;
 use crate::storage;
+use crate::theme;
 
 pub struct Core {
     pub data_dir: PathBuf,
@@ -17,6 +18,7 @@ pub struct Core {
     pub git: crate::gitsync::GitSync,
     pub update: crate::updates::UpdateState,
     pub last_saved: Option<std::time::Instant>,
+    pub last_file_mtime: Option<std::time::SystemTime>,
 }
 
 impl Core {
@@ -44,6 +46,10 @@ impl Core {
             }
         }
         git.start_worker(default_dir.clone());
+        let last_file_mtime = storage::workspace_path(&default_dir)
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok();
 
         let mut core = Self {
             data_dir: default_dir,
@@ -53,6 +59,7 @@ impl Core {
             git,
             update: crate::updates::UpdateState::default(),
             last_saved: None,
+            last_file_mtime,
         };
         core.adblock.set_enabled(core.ws.settings.ad_blocker);
         core.adblock.load_lists(&core.data_dir);
@@ -69,12 +76,18 @@ impl Core {
             git: crate::gitsync::GitSync::default(),
             update: crate::updates::UpdateState::default(),
             last_saved: None,
+            last_file_mtime: None,
         }
     }
 
     pub fn save(&mut self) -> Result<()> {
+        self.ws.revision = self.ws.revision.saturating_add(1);
         storage::save_workspace(&self.data_dir, &self.ws)?;
         self.last_saved = Some(std::time::Instant::now());
+        self.last_file_mtime = storage::workspace_path(&self.data_dir)
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok();
         self.git.mark_dirty();
         Ok(())
     }
@@ -83,7 +96,25 @@ impl Core {
         self.ws = storage::load_workspace(&self.data_dir)?;
         self.history.reset(&self.ws);
         self.adblock.set_enabled(self.ws.settings.ad_blocker);
+        self.last_file_mtime = storage::workspace_path(&self.data_dir)
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok();
         Ok(())
+    }
+
+    /// Reload when another process (typically the GUI or another MCP client)
+    /// has written the workspace since this Core last loaded or saved it.
+    pub fn reload_if_changed(&mut self) -> Result<bool> {
+        let mtime = storage::workspace_path(&self.data_dir)
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok();
+        if mtime.is_some() && mtime != self.last_file_mtime {
+            self.reload_from_disk()?;
+            return Ok(true);
+        }
+        Ok(false)
     }
 
     pub fn git_config(&self) -> crate::gitsync::GitConfig {
@@ -142,6 +173,10 @@ impl Core {
         serde_json::to_string(&self.ws.settings).unwrap_or_else(|_| "{}".into())
     }
 
+    pub fn themes_json(&self) -> String {
+        theme::themes_json(&self.data_dir).to_string()
+    }
+
     pub fn active_grid_id(&self) -> String {
         self.ws.active_grid_id.clone().unwrap_or_default()
     }
@@ -159,6 +194,47 @@ impl Core {
             g.pan_y = pan_y;
             g.zoom = zoom.clamp(0.2, 3.0);
         }
+    }
+
+    pub fn set_viewport(&mut self, width: f64, height: f64) {
+        if width <= 0.0 || height <= 0.0 {
+            return;
+        }
+        if (self.ws.viewport_width - width).abs() > 0.5
+            || (self.ws.viewport_height - height).abs() > 0.5
+        {
+            self.ws.viewport_width = width;
+            self.ws.viewport_height = height;
+            self.save_quiet();
+        }
+    }
+
+    /// The world-space rectangle currently visible in the canvas.
+    pub fn world_frame(
+        &self,
+        grid_id: Option<&str>,
+        width: Option<f64>,
+        height: Option<f64>,
+    ) -> Option<(String, f64, f64, f64, f64)> {
+        let grid = match grid_id {
+            Some(id) => self.ws.grid(id)?,
+            None => self.ws.active_grid()?,
+        };
+        let zoom = grid.zoom.clamp(0.2, 3.0);
+        let w = width.filter(|v| *v > 0.0).unwrap_or(self.ws.viewport_width);
+        let h = height
+            .filter(|v| *v > 0.0)
+            .unwrap_or(self.ws.viewport_height);
+        if w <= 0.0 || h <= 0.0 {
+            return None;
+        }
+        Some((
+            grid.id.clone(),
+            -grid.pan_x / zoom,
+            -grid.pan_y / zoom,
+            w / zoom,
+            h / zoom,
+        ))
     }
 
     pub fn switch_grid(&mut self, id: &str) -> bool {
@@ -226,6 +302,7 @@ impl Core {
                 card.set(k, v.clone());
             }
         }
+        self.ws.prune_date_links();
         self.save_quiet();
         true
     }
@@ -234,6 +311,7 @@ impl Core {
         self.checkpoint();
         let removed = self.ws.remove_card(id).is_some();
         if removed {
+            self.ws.prune_date_links();
             self.save_quiet();
         }
         removed
@@ -388,6 +466,13 @@ impl Core {
         let Ok(value) = serde_json::from_str::<Value>(value_json) else {
             return false;
         };
+        let known = serde_json::to_value(&self.ws.settings)
+            .ok()
+            .and_then(|v| v.as_object().map(|o| o.contains_key(key)))
+            .unwrap_or(false);
+        if !known {
+            return false;
+        }
         let mut extra = serde_json::Map::new();
         extra.insert(key.to_string(), value);
         let mut value = Value::Object(extra);
@@ -413,6 +498,213 @@ impl Core {
 
     pub fn search_json(&self, query: &str) -> String {
         serde_json::to_string(&search::search(&self.ws, query)).unwrap_or_else(|_| "[]".into())
+    }
+
+    pub fn calendar_json(&self) -> String {
+        let links: Vec<Value> = self
+            .ws
+            .date_links
+            .iter()
+            .filter_map(|link| self.resolve_date_link(link))
+            .collect();
+        json!({
+            "calendars": self.ws.calendars,
+            "dateLinks": links
+        })
+        .to_string()
+    }
+
+    fn resolve_date_link(&self, link: &DateLink) -> Option<Value> {
+        let mut title = link.title.clone();
+        let mut source_kind = None;
+        let mut done = false;
+        if let Some(card_id) = link.source_card_id.as_deref() {
+            let (_, card) = self.ws.card(card_id)?;
+            source_kind = Some(card.kind.clone());
+            if let Some(item_id) = link.source_item_id.as_deref() {
+                let (item_title, item_done) = find_item(card, item_id)?;
+                if !item_title.is_empty() {
+                    title = item_title;
+                }
+                done = item_done;
+            } else if !card.title.is_empty() {
+                title = card.title.clone();
+            }
+        }
+        Some(json!({
+            "id": link.id,
+            "calendarIds": link.calendar_ids,
+            "date": link.date,
+            "title": title,
+            "sourceCardId": link.source_card_id,
+            "sourceItemId": link.source_item_id,
+            "sourceKind": source_kind,
+            "done": done
+        }))
+    }
+
+    pub fn calendar_agenda(&self, from: &str, to: &str, calendar_ids: &[String]) -> Vec<Value> {
+        self.ws
+            .date_links
+            .iter()
+            .filter(|link| link.date.as_str() >= from && link.date.as_str() <= to)
+            .filter(|link| {
+                calendar_ids.is_empty()
+                    || link
+                        .calendar_ids
+                        .iter()
+                        .any(|id| calendar_ids.iter().any(|wanted| wanted == id))
+            })
+            .filter_map(|link| self.resolve_date_link(link))
+            .collect()
+    }
+
+    pub fn add_calendar(&mut self, name: &str, color: &str) -> CalendarDef {
+        self.checkpoint();
+        let calendar = CalendarDef::new(name, color);
+        self.ws.calendars.push(calendar.clone());
+        self.save_quiet();
+        calendar
+    }
+
+    pub fn update_calendar(&mut self, id: &str, name: Option<&str>, color: Option<&str>) -> bool {
+        if !self.ws.calendars.iter().any(|c| c.id == id) {
+            return false;
+        }
+        self.checkpoint();
+        let Some(calendar) = self.ws.calendars.iter_mut().find(|c| c.id == id) else {
+            return false;
+        };
+        if let Some(name) = name {
+            calendar.name = name.to_string();
+        }
+        if let Some(color) = color {
+            calendar.color = color.to_string();
+        }
+        self.save_quiet();
+        true
+    }
+
+    pub fn delete_calendar(&mut self, id: &str) -> bool {
+        let Some(pos) = self.ws.calendars.iter().position(|c| c.id == id) else {
+            return false;
+        };
+        self.checkpoint();
+        self.ws.calendars.remove(pos);
+        for link in &mut self.ws.date_links {
+            link.calendar_ids.retain(|calendar_id| calendar_id != id);
+        }
+        self.ws
+            .date_links
+            .retain(|link| !link.calendar_ids.is_empty());
+        self.save_quiet();
+        true
+    }
+
+    pub fn add_date_link(
+        &mut self,
+        calendar_ids: Vec<String>,
+        date: &str,
+        title: &str,
+        source_card_id: Option<String>,
+        source_item_id: Option<String>,
+    ) -> Result<DateLink> {
+        if !valid_date(date) {
+            return Err(anyhow::anyhow!("date must be YYYY-MM-DD"));
+        }
+        if calendar_ids.is_empty() {
+            return Err(anyhow::anyhow!("at least one calendar is required"));
+        }
+        for id in &calendar_ids {
+            if !self.ws.calendars.iter().any(|c| &c.id == id) {
+                return Err(anyhow::anyhow!("calendar not found: {id}"));
+            }
+        }
+        if let Some(card_id) = source_card_id.as_deref() {
+            let (_, card) = self
+                .ws
+                .card(card_id)
+                .ok_or_else(|| anyhow::anyhow!("card not found"))?;
+            if let Some(item_id) = source_item_id.as_deref() {
+                if find_item(card, item_id).is_none() {
+                    return Err(anyhow::anyhow!("item not found"));
+                }
+            }
+        }
+        self.checkpoint();
+        let mut link = DateLink::new(date, calendar_ids, title);
+        link.source_card_id = source_card_id;
+        link.source_item_id = source_item_id;
+        self.ws.date_links.push(link.clone());
+        self.save_quiet();
+        Ok(link)
+    }
+
+    pub fn update_date_link(
+        &mut self,
+        id: &str,
+        calendar_ids: Option<Vec<String>>,
+        date: Option<&str>,
+        title: Option<&str>,
+    ) -> Result<bool> {
+        if let Some(date) = date {
+            if !valid_date(date) {
+                return Err(anyhow::anyhow!("date must be YYYY-MM-DD"));
+            }
+        }
+        if let Some(ids) = calendar_ids.as_ref() {
+            if ids.is_empty() {
+                return Err(anyhow::anyhow!("at least one calendar is required"));
+            }
+            for id in ids {
+                if !self.ws.calendars.iter().any(|c| &c.id == id) {
+                    return Err(anyhow::anyhow!("calendar not found: {id}"));
+                }
+            }
+        }
+        if !self.ws.date_links.iter().any(|l| l.id == id) {
+            return Ok(false);
+        }
+        self.checkpoint();
+        let Some(link) = self.ws.date_links.iter_mut().find(|l| l.id == id) else {
+            return Ok(false);
+        };
+        if let Some(ids) = calendar_ids {
+            link.calendar_ids = ids;
+        }
+        if let Some(date) = date {
+            link.date = date.to_string();
+        }
+        if let Some(title) = title {
+            link.title = title.to_string();
+        }
+        self.save_quiet();
+        Ok(true)
+    }
+
+    pub fn delete_date_link(&mut self, id: &str) -> bool {
+        let before = self.ws.date_links.len();
+        self.ws.date_links.retain(|link| link.id != id);
+        let removed = self.ws.date_links.len() != before;
+        if removed {
+            self.save_quiet();
+        }
+        removed
+    }
+
+    pub fn set_calendar_month(&mut self, card_id: &str, year: i64, month: i64) -> bool {
+        if !(1970..=3000).contains(&year) || !(0..=11).contains(&month) {
+            return false;
+        }
+        self.update_card_json(
+            &json!({"id": card_id, "payload": {"viewYear": year, "viewMonth": month}}).to_string(),
+        )
+    }
+
+    pub fn calendar_today(&mut self, card_id: &str) -> bool {
+        let now =
+            time::OffsetDateTime::now_local().unwrap_or_else(|_| time::OffsetDateTime::now_utc());
+        self.set_calendar_month(card_id, now.year() as i64, now.month() as i64 - 1)
     }
 
     pub fn export_backup(&mut self, dest: &str) -> Result<()> {
@@ -450,7 +742,7 @@ impl Core {
     }
 
     pub fn command(&mut self, id: &str) -> Value {
-        tracing::info!("powerbar command: {id}");
+        tracing::info!("launcher command: {id}");
         match id {
             "create-note" => self.spawn("note").map(card_json).unwrap_or(Value::Null),
             "create-website" => self.spawn("website").map(card_json).unwrap_or(Value::Null),
@@ -458,7 +750,8 @@ impl Core {
             "create-api" => self.spawn("api").map(card_json).unwrap_or(Value::Null),
             "create-ai" => self.spawn("ai").map(card_json).unwrap_or(Value::Null),
             "create-script" => self.spawn("script").map(card_json).unwrap_or(Value::Null),
-            "create-fragment" => self.spawn("fragment").map(card_json).unwrap_or(Value::Null),
+            "create-calendar" => self.spawn("calendar").map(card_json).unwrap_or(Value::Null),
+            "create-timbre" => self.spawn("timbre").map(card_json).unwrap_or(Value::Null),
             "create-checklist" => self
                 .spawn("checklist")
                 .map(card_json)
@@ -488,8 +781,7 @@ impl Core {
         s.onboarding_completed = false;
         s.card_tutorial_completed = false;
         s.context_tutorial_completed = false;
-        s.fragment_tutorial_completed = false;
-        s.powerbar_tutorial_completed = false;
+        s.launcher_tutorial_completed = false;
         self.save_quiet();
     }
 }
@@ -538,12 +830,15 @@ fn populate_defaults(card: &mut Card, ws: &Workspace) {
             card.set("script", json!(""));
             card.set("lastOutput", json!(""));
         }
-        "fragment" => {
-            card.set("fragmentMode", json!("pop"));
-            card.set("accent", json!("#d98e5c"));
-            card.set("speed", json!("medium"));
+        "calendar" => {
+            card.set("calendarIds", json!([]));
         }
-        "gridlink" => {
+        "timbre" => {
+            card.set("volume", json!(0.35));
+            card.set("toneFreq", json!(220.0));
+            card.set("toneMix", json!(0.4));
+        }
+        "portal" => {
             card.set("targetGridId", json!(""));
         }
         "checklist" => {
@@ -579,10 +874,54 @@ fn populate_defaults(card: &mut Card, ws: &Workspace) {
 }
 
 #[allow(dead_code)]
-pub fn now_iso() -> String {
-    time::OffsetDateTime::now_utc()
-        .replace_nanosecond(0)
-        .unwrap_or_else(|_| time::OffsetDateTime::now_utc())
-        .format(&time::format_description::well_known::Rfc3339)
-        .unwrap_or_default()
+fn find_item(card: &Card, item_id: &str) -> Option<(String, bool)> {
+    if let Some(items) = card.payload.get("items").and_then(|v| v.as_array()) {
+        for item in items {
+            if item.get("id").and_then(|v| v.as_str()) == Some(item_id) {
+                let text = item
+                    .get("text")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let done = item.get("done").and_then(|v| v.as_bool()).unwrap_or(false);
+                return Some((text, done));
+            }
+        }
+    }
+    if let Some(columns) = card.payload.get("columns").and_then(|v| v.as_array()) {
+        for column in columns {
+            let column_done = column.get("id").and_then(|v| v.as_str()) == Some("done");
+            if let Some(items) = column.get("items").and_then(|v| v.as_array()) {
+                for item in items {
+                    if item.get("id").and_then(|v| v.as_str()) == Some(item_id) {
+                        let text = item
+                            .get("text")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        return Some((text, column_done));
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+pub fn valid_date(value: &str) -> bool {
+    let parts: Vec<&str> = value.split('-').collect();
+    if parts.len() != 3 || parts[0].len() != 4 || parts[1].len() != 2 || parts[2].len() != 2 {
+        return false;
+    }
+    let (Ok(year), Ok(month), Ok(day)) = (
+        parts[0].parse::<i32>(),
+        parts[1].parse::<u8>(),
+        parts[2].parse::<u8>(),
+    ) else {
+        return false;
+    };
+    let Ok(month) = time::Month::try_from(month) else {
+        return false;
+    };
+    time::Date::from_calendar_date(year, month, day).is_ok()
 }

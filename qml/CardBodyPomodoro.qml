@@ -62,37 +62,35 @@ CardFrame {
 
     Column {
         anchors.fill: parent
-        spacing: 10
-
+        spacing: root.th.spaceSnug
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
             text: root.phase === "work" ? "Focus" : "Break"
             color: root.th.text2
             font.family: root.th.fontFamily
-            font.pixelSize: 11
-            font.weight: 500
+            font.pixelSize: root.th.fontSizeSmall
+            font.weight: root.th.fontWeightMedium
         }
 
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
             text: root.clockText(root.remaining)
             color: root.th.text
-            font.family: "JetBrains Mono"
-            font.pixelSize: 40
-            font.weight: 500
+            font.family: root.th.fontMono
+            font.pixelSize: root.th.fontSizeHuge
+            font.weight: root.th.fontWeightMedium
         }
 
         Row {
             anchors.horizontalCenter: parent.horizontalCenter
-            spacing: 8
-
+            spacing: root.th.space2
             Repeater {
                 model: Math.max(1, root.sessions)
                 delegate: Rectangle {
                     required property int index
                     width: 6
                     height: 6
-                    radius: 3
+                    radius: root.th.radiusSmall
                     color: index < root.sessions ? root.th.accent : root.th.surfaceStrong
                 }
             }
@@ -100,8 +98,7 @@ CardFrame {
 
         Row {
             anchors.horizontalCenter: parent.horizontalCenter
-            spacing: 8
-
+            spacing: root.th.space2
             AppButton {
                 th: root.th
                 icon: root.running ? "pause" : "play"

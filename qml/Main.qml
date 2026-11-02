@@ -12,7 +12,7 @@ ApplicationWindow {
     minimumWidth: 900
     minimumHeight: 600
     title: "Corcho"
-    color: "#121214"
+    color: root.th.bg
 
     FontLoader { id: fontRegular; source: "qrc:/assets/fonts/inter_regular.ttf" }
     FontLoader { id: fontMedium; source: "qrc:/assets/fonts/inter_medium.ttf" }
@@ -37,95 +37,18 @@ ApplicationWindow {
         return null;
     }
 
-    readonly property var themeDef: {
-        var id = settings.theme || "corcho";
-        if (id === "custom" && settings.customTheme) {
-            return {
-                id: "custom",
-                name: "Custom",
-                bg: settings.customTheme.background,
-                surface: settings.customTheme.surface,
-                accent: settings.customTheme.accent,
-                text: settings.customTheme.text,
-                light: false
-            };
-        }
-        for (var i = 0; i < themes.length; i++)
-            if (themes[i].id === id) return themes[i];
-        return themes.length > 0 ? themes[0] : { bg: "#121214", surface: "#1b1b1f", accent: "#e0a48f", text: "#f0eee7" };
+    readonly property bool systemDark: Application.styleHints.colorScheme !== Qt.Light
+    readonly property var th: parseJson(appearance.tokensJson, {})
+
+    AppearanceController { id: appearance }
+
+    function refreshAppearance() {
+        appearance.refresh(app.settingsJson, app.themesJson, app.fontsJson, systemDark);
     }
 
-    readonly property var th: buildTheme(themeDef)
+    onSystemDarkChanged: refreshAppearance()
 
-    function channelLin(c) {
-        return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
-    }
-    function relLum(c) {
-        return 0.2126 * channelLin(c.r) + 0.7152 * channelLin(c.g) + 0.0722 * channelLin(c.b);
-    }
-    function contrastRatio(a, b) {
-        var la = relLum(a), lb = relLum(b);
-        var hi = Math.max(la, lb), lo = Math.min(la, lb);
-        return (hi + 0.05) / (lo + 0.05);
-    }
-    function withAlpha(c, alpha) {
-        return Qt.rgba(c.r, c.g, c.b, alpha);
-    }
-
-    function buildTheme(def) {
-        var isLight = def.light === true;
-        var bg = def.bg || "#121214";
-        var surface = def.surface || "#1b1b1f";
-        var accent = def.accent || "#e0a48f";
-        var text = def.text || "#f0eee7";
-        var tc = Qt.color(text);
-        var ac = Qt.color(accent);
-        var darkInk = Qt.color("#171717");
-        var lightInk = Qt.color("#f7f4ec");
-        var cd = contrastRatio(ac, darkInk);
-        var cl = contrastRatio(ac, lightInk);
-        var ink = cd >= cl ? "#171717" : "#f7f4ec";
-        var buttonAccent = accent;
-        if (Math.max(cd, cl) < 4.5) {
-            buttonAccent = ink === "#171717" ? Qt.lighter(accent, 1.2) : Qt.darker(accent, 1.2);
-        }
-        var accentText = isLight ? Qt.darker(accent, 1.3) : Qt.lighter(accent, 1.15);
-
-        var family = "Inter";
-        var fid = settings.font || "inter";
-        for (var i = 0; i < fonts.length; i++) {
-            if (fonts[i].id === fid) {
-                family = fonts[i].family || Qt.application.font.family;
-                break;
-            }
-        }
-
-        return {
-            isLight: isLight,
-            bg: bg,
-            sidebar: isLight ? Qt.darker(bg, 1.03) : Qt.lighter(bg, 1.12),
-            surface: surface,
-            card: isLight ? Qt.darker(surface, 1.02) : Qt.lighter(surface, 1.10),
-            surfaceStrong: isLight ? Qt.darker(surface, 1.06) : Qt.lighter(surface, 1.28),
-            menu: isLight ? Qt.darker(surface, 1.02) : Qt.lighter(surface, 1.18),
-            input: Qt.rgba(tc.r, tc.g, tc.b, isLight ? 0.04 : 0.05),
-            hover: Qt.rgba(tc.r, tc.g, tc.b, isLight ? 0.05 : 0.06),
-            border: Qt.rgba(tc.r, tc.g, tc.b, isLight ? 0.14 : 0.13),
-            borderStrong: Qt.rgba(tc.r, tc.g, tc.b, isLight ? 0.26 : 0.24),
-            text: text,
-            text2: withAlpha(tc, isLight ? 0.80 : 0.86),
-            muted: withAlpha(tc, isLight ? 0.72 : 0.66),
-            accent: accent,
-            accentButton: buttonAccent,
-            accentText: accentText,
-            accentInk: ink,
-            danger: "#d97a72",
-            success: "#7fae83",
-            fontFamily: family
-        };
-    }
-
-    property bool powerbarOpen: false
+    property bool launcherOpen: false
     property bool settingsOpen: false
     property string settingsTab: "general"
     property bool onboardingOpen: false
@@ -156,15 +79,16 @@ ApplicationWindow {
             { label: "Add website", icon: "globe", action: "create:website" },
             { label: "Add bookmark", icon: "bookmark", action: "create:bookmark" },
             { label: "Add API data", icon: "database", action: "create:api" },
-            { label: "Add AI processor", icon: "cpu", action: "create:ai" },
-            { label: "Add fragment", icon: "aperture", action: "create:fragment" },
+            { label: "Add AI node", icon: "cpu", action: "create:ai" },
+            { label: "Add calendar", icon: "calendar", action: "create:calendar" },
+            { label: "Add timbre", icon: "audio-lines", action: "create:timbre" },
             { label: "Add script", icon: "terminal", action: "create:script" },
             { label: "Add checklist", icon: "list-checks", action: "create:checklist" },
             { label: "Add kanban", icon: "kanban", action: "create:kanban" },
             { label: "Add whiteboard", icon: "pencil", action: "create:whiteboard" },
             { label: "Add pomodoro", icon: "timer", action: "create:pomodoro" },
             { label: "Add now playing", icon: "music-2", action: "create:mpris" },
-            { label: "Add grid link", icon: "arrow-right", action: "create:gridlink" },
+            { label: "Add grid portal", icon: "arrow-right", action: "create:portal" },
             { separator: true, label: "" },
             { label: "New grid", icon: "layout-grid", action: "new-grid" },
             { label: "New folder", icon: "folder-plus", action: "new-folder" }
@@ -175,7 +99,8 @@ ApplicationWindow {
         menuCard = card;
         var actions = [
             { label: "Duplicate card", icon: "copy", action: "card-duplicate" },
-            { label: "Change color", icon: "palette", action: "card-color" },
+            { label: "Pin colour", icon: "palette", action: "card-color" },
+            { label: "Link date", icon: "calendar", action: "card-link-date" },
             { label: card.locked ? "Unlock card" : "Lock card", icon: card.locked ? "unlock" : "lock", action: "card-lock" }
         ];
         if (card.url)
@@ -230,9 +155,11 @@ ApplicationWindow {
         if (kind === "card" && menuCard) {
             if (arg === "duplicate") app.duplicateCard(menuCard.id);
             else if (arg === "color") {
-                var colors = ["#e0a48f", "#c9a86a", "#7aa2f7", "#86b78a", "#b48ae0", "#d97a72", "#5aa8a0", "#8d8d97"];
+                var colors = ["#d98e5c", "#c9a86a", "#7aa2f7", "#86b78a", "#5aa8a0", "#d97a72", "#8d8d97"];
                 var at = colors.indexOf(menuCard.color);
                 app.updateCard(JSON.stringify({ id: menuCard.id, color: colors[(at + 1) % colors.length] }));
+            } else if (arg === "link-date") {
+                dateLinkDialog.openFor(menuCard.id, "", "", "");
             } else if (arg === "lock") {
                 app.updateCard(JSON.stringify({ id: menuCard.id, locked: !menuCard.locked }));
             } else if (arg === "open") {
@@ -284,13 +211,17 @@ ApplicationWindow {
         function onToast(message) { toastHost.show("info", message); }
         function onNotice(kind, message) { toastHost.show(kind, message); }
         function onSettingsJsonChanged() {
+            root.refreshAppearance();
             if (!onboardingDismissed && root.settings && root.settings.onboarding_completed === false && root.visible)
                 onboarding.open();
         }
+        function onThemesJsonChanged() { root.refreshAppearance() }
+        function onFontsJsonChanged() { root.refreshAppearance() }
     }
 
     Component.onCompleted: {
         app.boot();
+        root.refreshAppearance();
         onboardingTimer.start();
     }
 
@@ -303,7 +234,14 @@ ApplicationWindow {
         }
     }
 
-    Shortcut { sequences: ["Ctrl+K"]; onActivated: powerbar.open() }
+    Timer {
+        interval: 1500
+        running: true
+        repeat: true
+        onTriggered: root.app.reloadIfChanged()
+    }
+
+    Shortcut { sequences: ["Ctrl+K"]; onActivated: launcher.open() }
     Shortcut { sequences: ["Ctrl+,"]; onActivated: root.openSettings("general") }
     Shortcut { sequences: ["Ctrl+Z"]; onActivated: app.undo() }
     Shortcut { sequence: "Ctrl+Shift+Z"; onActivated: app.redo() }
@@ -312,7 +250,7 @@ ApplicationWindow {
     Shortcut {
         sequence: "Escape"
         onActivated: {
-            if (powerbar.opened) powerbar.close();
+            if (launcher.opened) launcher.close();
             else if (settingsDialog.opened) settingsDialog.closed();
             else root.settingsOpen = false;
         }
@@ -335,7 +273,7 @@ ApplicationWindow {
             onNewGridRequested: app.createGrid("New Grid")
             onNewFolderRequested: app.createFolder("New Folder")
             onSettingsRequested: root.openSettings("general")
-            onPowerbarRequested: powerbar.open()
+            onToggleCollapsed: root.sidebarCollapsed = !root.sidebarCollapsed
             onGridMenuRequested: function (grid, x, y) { root.openGridMenu(grid, x, y) }
             onFolderMenuRequested: function (folder, x, y) { root.openFolderMenu(folder, x, y) }
         }
@@ -347,43 +285,29 @@ ApplicationWindow {
             Rectangle {
                 id: topbar
                 width: parent.width
-                height: 54
+                height: root.th.topbarHeight
                 color: root.th.bg
 
                 Rectangle {
                     anchors.bottom: parent.bottom
                     width: parent.width
-                    height: 1
+                    height: root.th.borderWidth
                     color: root.th.border
                 }
 
                 Row {
                     anchors.left: parent.left
-                    anchors.leftMargin: 18
+                    anchors.leftMargin: root.th.space5
                     anchors.verticalCenter: parent.verticalCenter
-                    spacing: 10
-
-                    Item {
-                        width: 28
-                        height: 28
-                        visible: root.sidebarCollapsed
-                        Icon {
-                            anchors.centerIn: parent
-                            name: "panel-left"
-                            size: 15
-                            color: root.th.text2
-                        }
-                        TapHandler { onTapped: root.sidebarCollapsed = false }
-                    }
-
+                    spacing: root.th.space3
                     TextInput {
                         id: gridTitle
                         width: Math.min(360, Math.max(80, contentWidth + 8))
                         text: root.activeGrid ? root.activeGrid.name : ""
                         color: root.th.text
                         font.family: root.th.fontFamily
-                        font.pixelSize: 17
-                        font.weight: 500
+                        font.pixelSize: root.th.fontSizePage
+                        font.weight: root.th.fontWeightMedium
                         selectionColor: root.th.accent
                         onEditingFinished: {
                             if (root.activeGrid && text.trim() !== "") app.renameGrid(root.activeGrid.id, text.trim());
@@ -395,22 +319,21 @@ ApplicationWindow {
                         visible: root.width > 860
                         text: root.cards.length + (root.cards.length === 1 ? " card" : " cards")
                         color: root.th.muted
-                        font.family: "JetBrains Mono"
-                        font.pixelSize: 11
+                        font.family: root.th.fontMono
+                        font.pixelSize: root.th.fontSizeSmall
                     }
                 }
 
                 Row {
                     anchors.right: parent.right
-                    anchors.rightMargin: 18
+                    anchors.rightMargin: root.th.space5
                     anchors.verticalCenter: parent.verticalCenter
-                    spacing: 8
-
+                    spacing: root.th.space2
                     AppButton {
                         th: root.th
                         icon: "search"
-                        text: root.width > 1180 ? "Powerbar" : ""
-                        onClicked: powerbar.open()
+                        text: root.width > 1180 ? "Launcher" : ""
+                        onClicked: launcher.open()
                     }
 
                     Item { width: 6; height: 1; visible: root.width > 980 }
@@ -419,7 +342,7 @@ ApplicationWindow {
                         visible: root.width > 980
                         anchors.verticalCenter: parent.verticalCenter
                         name: "zoom-out"
-                        size: 15
+                        size: root.th.iconBody
                         color: root.th.text2
                         TapHandler { onTapped: root.zoomBy(0.9) }
                     }
@@ -428,14 +351,14 @@ ApplicationWindow {
                         visible: root.width > 980
                         text: Math.round(app.zoom * 100) + "%"
                         color: root.th.text2
-                        font.family: "JetBrains Mono"
-                        font.pixelSize: 11
+                        font.family: root.th.fontMono
+                        font.pixelSize: root.th.fontSizeSmall
                     }
                     Icon {
                         anchors.verticalCenter: parent.verticalCenter
                         visible: root.width > 980
                         name: "zoom-in"
-                        size: 15
+                        size: root.th.iconBody
                         color: root.th.text2
                         TapHandler { onTapped: root.zoomBy(1.1) }
                     }
@@ -443,7 +366,7 @@ ApplicationWindow {
                         anchors.verticalCenter: parent.verticalCenter
                         visible: root.width > 980
                         name: "maximize"
-                        size: 14
+                        size: root.th.iconBody
                         color: root.th.muted
                         TapHandler { onTapped: root.zoomBy(1.0 / app.zoom) }
                     }
@@ -474,6 +397,10 @@ ApplicationWindow {
                 settings: root.settings
                 cards: root.cards
                 onMenuRequested: function (card, x, y) { root.openCardMenu(card, x, y) }
+                onDateLinkRequested: function (cardId, itemId, linkId, date) {
+                    dateLinkDialog.openFor(cardId, itemId, linkId, date);
+                }
+                onCalendarManagerRequested: calendarManager.open()
                 onBackgroundMenuRequested: function (gx, gy, wx, wy) { root.openCreateMenu(gx, gy, wx, wy) }
                 onCreateRequested: function (wx, wy) { app.createCard("note", wx, wy) }
             }
@@ -481,43 +408,62 @@ ApplicationWindow {
             Rectangle {
                 id: statusbar
                 width: parent.width
-                height: 26
+                height: root.th.statusbarHeight
                 color: root.th.bg
 
                 Rectangle {
                     anchors.top: parent.top
                     width: parent.width
-                    height: 1
+                    height: root.th.borderWidth
                     color: root.th.border
                 }
 
-                Text {
+                Row {
                     anchors.left: parent.left
-                    anchors.leftMargin: 18
+                    anchors.leftMargin: root.th.space5
                     anchors.verticalCenter: parent.verticalCenter
-                    text: "Double-click to create · Ctrl+K Powerbar · Ctrl+Z Undo"
-                    color: root.th.muted
-                    font.family: root.th.fontFamily
-                    font.pixelSize: 10
+                    spacing: root.th.space2
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: "Double-click to create"
+                        color: root.th.muted
+                        font.family: root.th.fontFamily
+                        font.pixelSize: root.th.fontSizeSmall
+                    }
+                    Keycap { th: root.th; text: "Ctrl K" }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: "Launcher"
+                        color: root.th.muted
+                        font.family: root.th.fontFamily
+                        font.pixelSize: root.th.fontSizeSmall
+                    }
+                    Keycap { th: root.th; text: "Ctrl Z" }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: "Undo"
+                        color: root.th.muted
+                        font.family: root.th.fontFamily
+                        font.pixelSize: root.th.fontSizeSmall
+                    }
                 }
 
                 Row {
                     anchors.right: parent.right
-                    anchors.rightMargin: 18
+                    anchors.rightMargin: root.th.space5
                     anchors.verticalCenter: parent.verticalCenter
-                    spacing: 10
-
+                    spacing: root.th.spaceSnug
                     Text {
                         text: app.syncing ? "Syncing" : ""
-                        color: root.th.accentText
+                        color: root.th.text2
                         font.family: root.th.fontFamily
-                        font.pixelSize: 10
+                        font.pixelSize: root.th.fontSizeSmall
                     }
                     Text {
                         text: "v" + app.version
                         color: root.th.muted
-                        font.family: "JetBrains Mono"
-                        font.pixelSize: 10
+                        font.family: root.th.fontMono
+                        font.pixelSize: root.th.fontSizeSmall
                     }
                 }
             }
@@ -544,8 +490,22 @@ ApplicationWindow {
         onCancelled: {}
     }
 
-    Powerbar {
-        id: powerbar
+    DateLinkDialog {
+        id: dateLinkDialog
+        parent: root.contentItem
+        th: root.th
+        app: app
+    }
+
+    CalendarManagerDialog {
+        id: calendarManager
+        parent: root.contentItem
+        th: root.th
+        app: app
+    }
+
+    Launcher {
+        id: launcher
         app: app
         th: root.th
         onSettingsRequested: root.openSettings("general")

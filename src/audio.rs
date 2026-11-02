@@ -2,8 +2,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
-#[derive(Clone, Copy)]
 struct Synth {
+    owner: Option<String>,
     active: bool,
     gain: f32,
     target_gain: f32,
@@ -17,6 +17,7 @@ struct Synth {
 impl Default for Synth {
     fn default() -> Self {
         Self {
+            owner: None,
             active: false,
             gain: 0.0,
             target_gain: 0.0,
@@ -84,9 +85,10 @@ fn ensure_stream() -> Result<(), String> {
     Ok(())
 }
 
-pub fn start(volume: f32, tone_freq: f32, tone_mix: f32) -> Result<(), String> {
+pub fn start(owner: &str, volume: f32, tone_freq: f32, tone_mix: f32) -> Result<(), String> {
     {
         let mut s = state().lock().map_err(|_| "audio lock".to_string())?;
+        s.owner = Some(owner.to_string());
         s.active = true;
         s.target_gain = 1.0;
         s.volume = volume.clamp(0.0, 1.0);
@@ -96,10 +98,12 @@ pub fn start(volume: f32, tone_freq: f32, tone_mix: f32) -> Result<(), String> {
     ensure_stream()
 }
 
-pub fn stop() {
+pub fn stop(owner: &str) {
     if let Ok(mut s) = state().lock() {
-        s.active = false;
-        s.target_gain = 0.0;
+        if s.owner.as_deref() == Some(owner) {
+            s.active = false;
+            s.target_gain = 0.0;
+        }
     }
 }
 

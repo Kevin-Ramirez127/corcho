@@ -18,8 +18,7 @@ CardFrame {
 
     Column {
         anchors.fill: parent
-        spacing: 8
-
+        spacing: root.th.space2
         TextEdit {
             id: editor
             width: parent.width
@@ -27,8 +26,8 @@ CardFrame {
             text: root.script
             color: root.th.text
             selectionColor: root.th.accent
-            font.family: "JetBrains Mono"
-            font.pixelSize: 12
+            font.family: root.th.fontMono
+            font.pixelSize: root.th.fontSizeSmall
             wrapMode: TextEdit.Wrap
             selectByMouse: true
             clip: true
@@ -39,8 +38,8 @@ CardFrame {
                 visible: editor.text.length === 0
                 text: "/bin/sh script"
                 color: root.th.muted
-                font.family: "JetBrains Mono"
-                font.pixelSize: 12
+                font.family: root.th.fontMono
+                font.pixelSize: root.th.fontSizeSmall
             }
         }
 
@@ -60,8 +59,8 @@ CardFrame {
             readOnly: true
             selectByMouse: true
             color: root.ok ? root.th.text2 : root.th.danger
-            font.family: "JetBrains Mono"
-            font.pixelSize: 11
+            font.family: root.th.fontMono
+            font.pixelSize: root.th.fontSizeSmall
             wrapMode: TextEdit.WrapAnywhere
             clip: true
 
@@ -71,7 +70,7 @@ CardFrame {
                 text: "Output appears here"
                 color: root.th.muted
                 font.family: root.th.fontFamily
-                font.pixelSize: 12
+                font.pixelSize: root.th.fontSizeSmall
             }
         }
     }

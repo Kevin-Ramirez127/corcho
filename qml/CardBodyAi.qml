@@ -45,8 +45,7 @@ CardFrame {
 
     Column {
         anchors.fill: parent
-        spacing: 8
-
+        spacing: root.th.space2
         TextEdit {
             id: promptEdit
             width: parent.width
@@ -55,7 +54,7 @@ CardFrame {
             color: root.th.text
             selectionColor: root.th.accent
             font.family: root.th.fontFamily
-            font.pixelSize: 12
+            font.pixelSize: root.th.fontSizeSmall
             wrapMode: TextEdit.Wrap
             selectByMouse: true
             clip: true
@@ -67,14 +66,13 @@ CardFrame {
                 text: "Prompt"
                 color: root.th.muted
                 font.family: root.th.fontFamily
-                font.pixelSize: 12
+                font.pixelSize: root.th.fontSizeSmall
             }
         }
 
         Row {
             width: parent.width
-            spacing: 8
-
+            spacing: root.th.space2
             AppButton {
                 th: root.th
                 icon: root.busy ? "refresh-cw" : "play"
@@ -91,8 +89,8 @@ CardFrame {
                     return (s.aiModel && s.aiModel[p]) ? s.aiModel[p] : p;
                 }
                 color: root.th.muted
-                font.family: "JetBrains Mono"
-                font.pixelSize: 11
+                font.family: root.th.fontMono
+                font.pixelSize: root.th.fontSizeSmall
             }
         }
 
@@ -110,7 +108,7 @@ CardFrame {
             selectByMouse: true
             color: root.errorText !== "" ? root.th.danger : root.th.text2
             font.family: root.th.fontFamily
-            font.pixelSize: 12
+            font.pixelSize: root.th.fontSizeSmall
             wrapMode: TextEdit.Wrap
             clip: true
 
@@ -120,7 +118,7 @@ CardFrame {
                 text: "Output appears here"
                 color: root.th.muted
                 font.family: root.th.fontFamily
-                font.pixelSize: 12
+                font.pixelSize: root.th.fontSizeSmall
             }
         }
     }

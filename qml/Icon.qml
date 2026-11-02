@@ -1,11 +1,11 @@
 import QtQuick
-import QtQuick.Effects
+import "IconData.js" as IconData
 
 Item {
     id: root
 
     property string name: "square"
-    property color color: "#f0eee7"
+    property color color: "#d98e5c"
     property int size: 18
     property real stroke: 1.5
 
@@ -13,21 +13,20 @@ Item {
     implicitHeight: size
     Accessible.ignored: true
 
-    Image {
-        id: source
-        anchors.fill: parent
-        source: "qrc:/assets/icons/" + root.name + ".svg"
-        sourceSize: Qt.size(root.size * 2, root.size * 2)
-        fillMode: Image.PreserveAspectFit
-        smooth: true
-        visible: false
+    readonly property string sourceUrl: {
+        var c = root.color;
+        function hex(v) {
+            var s = Math.round(Math.max(0, Math.min(255, v * 255))).toString(16);
+            return s.length < 2 ? "0" + s : s;
+        }
+        return IconData.source(root.name, "#" + hex(c.r) + hex(c.g) + hex(c.b));
     }
 
-    MultiEffect {
+    Image {
         anchors.fill: parent
-        source: source
-        colorization: 1.0
-        colorizationColor: root.color
+        source: root.sourceUrl
+        sourceSize: Qt.size(root.size * 2, root.size * 2)
+        fillMode: Image.PreserveAspectFit
         smooth: true
     }
 }

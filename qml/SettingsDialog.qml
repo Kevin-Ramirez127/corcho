@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Dialogs
 
 Item {
@@ -56,7 +57,24 @@ Item {
         if (provider() === "local") out = [{ value: val("aiModel", {}).local || "", label: "Select a model" }];
         return out;
     }
-    function setTheme(id) { set("theme", id); }
+    function themeDefById(id) {
+        if (id === "custom") {
+            var c = val("customTheme", null);
+            if (c) return { id: "custom", name: "Custom", bg: c.background, surface: c.surface, accent: c.accent, text: c.text };
+        }
+        for (var i = 0; i < themeList.length; i++)
+            if (themeList[i].id === id) return themeList[i];
+        return { id: "corcho", name: "Corcho", bg: "#121417", surface: "#1b1e23", accent: "#d98e5c", text: "#ece7de" };
+    }
+    function lightThemes() {
+        return themeList.filter(function (t) { return t.light === true || t.id === "custom"; });
+    }
+    function darkThemes() {
+        return themeList.filter(function (t) { return t.light !== true || t.id === "custom"; });
+    }
+    function systemIsDark() {
+        return Application.styleHints.colorScheme !== Qt.Light;
+    }
     function validateKey() {
         keyStatus = "Checking…";
         app.aiValidate(provider(), keyField);
@@ -98,29 +116,27 @@ Item {
     Rectangle {
         id: panel
         width: Math.min(920, root.width - 64)
-        height: Math.min(680, root.height - 64)
+        height: Math.min(760, root.height - 64)
         anchors.centerIn: parent
-        radius: 16
+        radius: root.th.radiusPanel
         color: root.th.menu
-        border.width: 1
+        border.width: root.th.borderWidth
         border.color: root.th.border
 
         Row {
             anchors.fill: parent
-            anchors.margins: 14
-            spacing: 14
-
+            anchors.margins: 16
+            spacing: root.th.space4
             Rectangle {
-                width: 196
+                width: 200
                 height: parent.height
-                radius: 12
+                radius: root.th.radiusCard
                 color: root.th.sidebar
 
                 Column {
                     anchors.fill: parent
-                    anchors.margins: 12
-                    spacing: 4
-
+                    anchors.margins: 16
+                    spacing: root.th.space1
                     Repeater {
                         model: [
                             { id: "general", label: "General", icon: "settings" },
@@ -137,23 +153,22 @@ Item {
                             required property var modelData
                             property bool hoveredNow: false
                             width: parent.width
-                            height: 34
+                            height: 36
 
                             Rectangle {
                                 anchors.fill: parent
-                                radius: 8
+                                radius: root.th.radiusControl
                                 color: root.tab === modelData.id ? root.th.surfaceStrong : (tabItem.hoveredNow ? root.th.hover : "transparent")
                             }
                             Row {
                                 anchors.left: parent.left
-                                anchors.leftMargin: 10
+                                anchors.leftMargin: 12
                                 anchors.verticalCenter: parent.verticalCenter
-                                spacing: 9
-
+                                spacing: root.th.space2
                                 Icon {
                                     anchors.verticalCenter: parent.verticalCenter
                                     name: modelData.icon
-                                    size: 14
+                                    size: root.th.iconBody
                                     color: root.tab === modelData.id ? root.th.accent : root.th.text2
                                 }
                                 Text {
@@ -161,7 +176,7 @@ Item {
                                     text: modelData.label
                                     color: root.tab === modelData.id ? root.th.text : root.th.text2
                                     font.family: root.th.fontFamily
-                                    font.pixelSize: 13
+                                    font.pixelSize: root.th.fontSizeBody
                                 }
                             }
                             HoverHandler { id: tabHover
@@ -174,27 +189,26 @@ Item {
             }
 
             Column {
-                width: parent.width - 210
+                width: parent.width - 216
                 height: parent.height
-                spacing: 10
-
+                spacing: root.th.space3
                 Row {
                     width: parent.width
-                    height: 34
+                    height: 40
 
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
                         text: ({ general: "General", interface: "Interface", appearance: "Appearance", data: "Data", ai: "AI", security: "Security", about: "About" })[root.tab]
                         color: root.th.text
                         font.family: root.th.fontFamily
-                        font.pixelSize: 16
-                        font.weight: 500
+                        font.pixelSize: root.th.fontSizePage
+                        font.weight: root.th.fontWeightMedium
                     }
                     Item { width: parent.width - 70; height: 1 }
                     Icon {
                         anchors.verticalCenter: parent.verticalCenter
                         name: "x"
-                        size: 16
+                        size: root.th.iconBody
                         color: root.th.muted
                         TapHandler { onTapped: root.closed() }
                     }
@@ -202,7 +216,7 @@ Item {
 
                 Flickable {
                     width: parent.width
-                    height: parent.height - 40
+                    height: parent.height - 44
                     clip: true
                     contentHeight: content.height
                     boundsBehavior: Flickable.StopAtBounds
@@ -210,12 +224,11 @@ Item {
                     Column {
                         id: content
                         width: parent.width
-                        spacing: 2
-
+                        spacing: root.th.space1
                         // ── General ─────────────────────────────────────────
                         Column {
                             width: parent.width
-                            spacing: 2
+                            spacing: root.th.space1
                             visible: root.tab === "general"
 
                             SettingRow {
@@ -312,21 +325,15 @@ Item {
                                     width: 28
                                     text: root.val("undo_steps", 20)
                                     color: root.th.muted
-                                    font.family: "JetBrains Mono"
-                                    font.pixelSize: 11
+                                    font.family: root.th.fontMono
+                                    font.pixelSize: root.th.fontSizeSmall
                                 }
                             }
                             SettingRow {
                                 th: root.th
-                                title: "Powerbar shortcut"
+                                title: "Launcher shortcut"
                                 description: "Spawn the command palette from anywhere."
-                                Text {
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    text: "Ctrl + K"
-                                    color: root.th.text2
-                                    font.family: "JetBrains Mono"
-                                    font.pixelSize: 11
-                                }
+                                Keycap { th: root.th; text: "Ctrl K" }
                             }
                             SettingRow {
                                 th: root.th
@@ -344,7 +351,7 @@ Item {
                         // ── Interface ───────────────────────────────────────
                         Column {
                             width: parent.width
-                            spacing: 2
+                            spacing: root.th.space1
                             visible: root.tab === "interface"
 
                             SettingRow {
@@ -428,88 +435,121 @@ Item {
                         // ── Appearance ──────────────────────────────────────
                         Column {
                             width: parent.width
-                            spacing: 2
+                            spacing: root.th.space1
                             visible: root.tab === "appearance"
 
                             SettingRow {
                                 th: root.th
-                                title: "Theme"
-                                description: "One accent, quiet chrome."
-                                Text {
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    text: root.val("theme", "corcho")
-                                    color: root.th.muted
-                                    font.family: "JetBrains Mono"
-                                    font.pixelSize: 11
+                                title: "Appearance"
+                                description: root.val("theme_mode", "system") === "system"
+                                    ? ("Following system: " + (root.systemIsDark() ? "dark" : "light"))
+                                    : "Choose a light or dark theme manually."
+                                SelectField {
+                                    width: 170
+                                    th: root.th
+                                    value: root.val("theme_mode", "system")
+                                    options: [
+                                        { value: "system", label: "System" },
+                                        { value: "light", label: "Light" },
+                                        { value: "dark", label: "Dark" }
+                                    ]
+                                    onSelected: function (value) { root.set("theme_mode", value); }
                                 }
                             }
 
-                            Flow {
-                                width: parent.width
-                                spacing: 8
-
-                                Repeater {
-                                    model: root.themeList
-
-                                    delegate: Item {
-                                        required property var modelData
-                                        width: 84
-                                        height: 62
-
-                                        Rectangle {
-                                            anchors.fill: parent
-                                            radius: 10
-                                            color: modelData.bg
-                                            border.width: root.val("theme", "corcho") === modelData.id ? 2 : 1
-                                            border.color: root.val("theme", "corcho") === modelData.id ? root.th.accent : root.th.border
-
-                                            Rectangle {
-                                                x: 10
-                                                y: 10
-                                                width: 26
-                                                height: 8
-                                                radius: 4
-                                                color: modelData.accent
-                                            }
-                                            Rectangle {
-                                                x: 10
-                                                y: 24
-                                                width: 52
-                                                height: 5
-                                                radius: 2
-                                                color: modelData.text
-                                                opacity: 0.7
-                                            }
-                                            Text {
-                                                anchors.left: parent.left
-                                                anchors.leftMargin: 10
-                                                anchors.bottom: parent.bottom
-                                                anchors.bottomMargin: 8
-                                                text: modelData.name
-                                                color: modelData.text
-                                                font.family: root.th.fontFamily
-                                                font.pixelSize: 10
-                                            }
-                                        }
-                                        TapHandler { onTapped: root.setTheme(modelData.id) }
+                            SettingRow {
+                                th: root.th
+                                title: "Light theme"
+                                description: "Used when the system is light or the mode is Light."
+                                SelectField {
+                                    width: 150
+                                    th: root.th
+                                    value: root.val("theme_light", "paper")
+                                    options: root.lightThemes().map(function (t) { return { value: t.id, label: t.name }; })
+                                    onSelected: function (value) { root.set("theme_light", value); }
+                                }
+                                Rectangle {
+                                    width: 48
+                                    height: 32
+                                    radius: root.th.radiusControl
+                                    color: root.themeDefById(root.val("theme_light", "paper")).bg
+                                    border.width: root.th.borderWidth
+                                    border.color: root.th.border
+                                    Rectangle {
+                                        x: 6; y: 6; width: 14; height: 4; radius: 2
+                                        color: root.themeDefById(root.val("theme_light", "paper")).accent
                                     }
+                                    Rectangle {
+                                        x: 6; y: 15; width: 28; height: 3; radius: 1.5
+                                        color: root.themeDefById(root.val("theme_light", "paper")).text
+                                        opacity: root.th.opacityEmphasis
+                                    }
+                                }
+                            }
+
+                            SettingRow {
+                                th: root.th
+                                title: "Dark theme"
+                                description: "Used when the system is dark or the mode is Dark."
+                                SelectField {
+                                    width: 150
+                                    th: root.th
+                                    value: root.val("theme_dark", "corcho")
+                                    options: root.darkThemes().map(function (t) { return { value: t.id, label: t.name }; })
+                                    onSelected: function (value) { root.set("theme_dark", value); }
+                                }
+                                Rectangle {
+                                    width: 48
+                                    height: 32
+                                    radius: root.th.radiusControl
+                                    color: root.themeDefById(root.val("theme_dark", "corcho")).bg
+                                    border.width: root.th.borderWidth
+                                    border.color: root.th.border
+                                    Rectangle {
+                                        x: 6; y: 6; width: 14; height: 4; radius: 2
+                                        color: root.themeDefById(root.val("theme_dark", "corcho")).accent
+                                    }
+                                    Rectangle {
+                                        x: 6; y: 15; width: 28; height: 3; radius: 1.5
+                                        color: root.themeDefById(root.val("theme_dark", "corcho")).text
+                                        opacity: root.th.opacityEmphasis
+                                    }
+                                }
+                            }
+
+                            SettingRow {
+                                th: root.th
+                                title: "CSS themes"
+                                description: "Drop .css themes in the themes folder, or start from the full template."
+                                AppButton {
+                                    th: root.th
+                                    icon: "folder-plus"
+                                    text: "Folder"
+                                    onClicked: root.app.openThemesFolder()
+                                }
+                                AppButton {
+                                    th: root.th
+                                    icon: "file-text"
+                                    text: "Template"
+                                    onClicked: root.app.createThemeFromTemplate()
                                 }
                             }
 
                             Column {
                                 width: parent.width
-                                spacing: 8
-                                visible: root.val("theme", "corcho") === "custom"
+                                spacing: root.th.space2
+                                visible: root.val("theme_light", "paper") === "custom"
+                                    || root.val("theme_dark", "corcho") === "custom"
 
                                 Text {
                                     text: "Custom theme"
                                     color: root.th.text2
                                     font.family: root.th.fontFamily
-                                    font.pixelSize: 12
+                                    font.pixelSize: root.th.fontSizeSmall
                                 }
                                 Flow {
                                     width: parent.width
-                                    spacing: 8
+                                    spacing: root.th.space2
                                     Repeater {
                                         model: [
                                             { key: "background", label: "Background" },
@@ -520,13 +560,13 @@ Item {
                                         delegate: Row {
                                             id: colorRow
                                             required property var modelData
-                                            spacing: 6
+                                            spacing: root.th.spaceCompact
                                             Text {
                                                 anchors.verticalCenter: parent.verticalCenter
                                                 text: colorRow.modelData.label
                                                 color: root.th.muted
                                                 font.family: root.th.fontFamily
-                                                font.pixelSize: 11
+                                                font.pixelSize: root.th.fontSizeSmall
                                             }
                                             AppTextField {
                                                 width: 96
@@ -626,7 +666,7 @@ Item {
                         // ── Data ────────────────────────────────────────────
                         Column {
                             width: parent.width
-                            spacing: 2
+                            spacing: root.th.space1
                             visible: root.tab === "data"
 
                             SettingRow {
@@ -848,7 +888,7 @@ Item {
                                 visible: root.folderMessage !== ""
                                 color: root.th.muted
                                 font.family: root.th.fontFamily
-                                font.pixelSize: 11
+                                font.pixelSize: root.th.fontSizeSmall
                                 wrapMode: Text.WordWrap
                             }
                         }
@@ -856,7 +896,7 @@ Item {
                         // ── AI ──────────────────────────────────────────────
                         Column {
                             width: parent.width
-                            spacing: 2
+                            spacing: root.th.space1
                             visible: root.tab === "ai"
 
                             SettingRow {
@@ -981,8 +1021,8 @@ Item {
                                         } catch (e) { return "0"; }
                                     }
                                     color: root.th.text
-                                    font.family: "JetBrains Mono"
-                                    font.pixelSize: 12
+                                    font.family: root.th.fontMono
+                                    font.pixelSize: root.th.fontSizeSmall
                                 }
                             }
                         }
@@ -990,7 +1030,7 @@ Item {
                         // ── Security ────────────────────────────────────────
                         Column {
                             width: parent.width
-                            spacing: 2
+                            spacing: root.th.space1
                             visible: root.tab === "security"
 
                             SettingRow {
@@ -1009,15 +1049,15 @@ Item {
                                 color: root.th.text2
                                 text: "How your data is stored"
                                 font.family: root.th.fontFamily
-                                font.pixelSize: 13
-                                font.weight: 500
+                                font.pixelSize: root.th.fontSizeBody
+                                font.weight: root.th.fontWeightMedium
                             }
                             Text {
                                 width: parent.width
                                 color: root.th.muted
                                 text: "Grids, cards and attachments stay on this device unless Cloud Sync is on. API keys are stored locally and are never synced. AI prompts go directly to the provider you choose. Websites run in an isolated session per card and cannot read your other websites, local files, or Corcho data."
                                 font.family: root.th.fontFamily
-                                font.pixelSize: 12
+                                font.pixelSize: root.th.fontSizeSmall
                                 wrapMode: Text.WordWrap
                                 lineHeight: 1.35
                             }
@@ -1027,7 +1067,7 @@ Item {
                                 color: root.th.muted
                                 text: "Corcho sends no telemetry. There is no analytics client and no remote logging."
                                 font.family: root.th.fontFamily
-                                font.pixelSize: 12
+                                font.pixelSize: root.th.fontSizeSmall
                                 wrapMode: Text.WordWrap
                                 lineHeight: 1.35
                             }
@@ -1036,19 +1076,19 @@ Item {
                         // ── About ───────────────────────────────────────────
                         Column {
                             width: parent.width
-                            spacing: 6
+                            spacing: root.th.spaceCompact
                             visible: root.tab === "about"
 
                             SettingRow {
                                 th: root.th
                                 title: "Corcho"
-                                description: "A futuristic canvas for personal development."
+                                description: "Notes, sites, tasks and calendars on one infinite grid."
                                 Text {
                                     anchors.verticalCenter: parent.verticalCenter
                                     text: "v" + root.app.version
                                     color: root.th.text2
-                                    font.family: "JetBrains Mono"
-                                    font.pixelSize: 11
+                                    font.family: root.th.fontMono
+                                    font.pixelSize: root.th.fontSizeSmall
                                 }
                             }
                             SettingRow {
@@ -1068,25 +1108,25 @@ Item {
                                 text: root.app.changelog()
                                 color: root.th.muted
                                 font.family: root.th.fontFamily
-                                font.pixelSize: 12
+                                font.pixelSize: root.th.fontSizeSmall
                                 wrapMode: Text.WordWrap
                                 lineHeight: 1.35
                             }
                             Row {
-                                spacing: 14
+                                spacing: root.th.space4
                                 topPadding: 10
                                 Text {
                                     text: "Project"
                                     color: root.th.accentText
                                     font.family: root.th.fontFamily
-                                    font.pixelSize: 12
+                                    font.pixelSize: root.th.fontSizeSmall
                                     TapHandler { onTapped: root.app.openExternal("https://github.com/emiliano-go/repo") }
                                 }
                                 Text {
                                     text: "Privacy"
                                     color: root.th.accentText
                                     font.family: root.th.fontFamily
-                                    font.pixelSize: 12
+                                    font.pixelSize: root.th.fontSizeSmall
                                     TapHandler { onTapped: root.app.openExternal("https://sfg545.dev/orchard") }
                                 }
                             }

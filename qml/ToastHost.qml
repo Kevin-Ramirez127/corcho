@@ -7,8 +7,8 @@ Item {
 
     anchors.right: parent.right
     anchors.bottom: parent.bottom
-    anchors.rightMargin: 20
-    anchors.bottomMargin: 20
+    anchors.rightMargin: 24
+    anchors.bottomMargin: 24
     width: 340
     height: column.height
     z: 500
@@ -22,8 +22,7 @@ Item {
     Column {
         id: column
         width: parent.width
-        spacing: 8
-
+        spacing: root.th.space2
         Repeater {
             model: model
 
@@ -34,23 +33,21 @@ Item {
                 required property string message
 
                 width: column.width
-                height: Math.max(40, label.implicitHeight + 20)
-                radius: 10
+                height: Math.max(44, label.implicitHeight + 24)
+                radius: root.th.radiusCard
                 color: root.th.menu
-                border.width: 1
+                border.width: root.th.borderWidth
                 border.color: kind.indexOf("error") >= 0 ? root.th.danger : root.th.border
-                opacity: 0
-
+                opacity: root.th.opacityNone
                 Row {
                     anchors.fill: parent
                     anchors.leftMargin: 12
                     anchors.rightMargin: 12
-                    spacing: 9
-
+                    spacing: root.th.space2
                     Icon {
                         anchors.verticalCenter: parent.verticalCenter
                         name: toast.kind.indexOf("error") >= 0 ? "triangle-alert" : "info"
-                        size: 15
+                        size: root.th.iconBody
                         color: toast.kind.indexOf("error") >= 0 ? root.th.danger : root.th.accent
                     }
                     Text {
@@ -60,7 +57,7 @@ Item {
                         text: toast.message
                         color: root.th.text
                         font.family: root.th.fontFamily
-                        font.pixelSize: 12
+                        font.pixelSize: root.th.fontSizeSmall
                         wrapMode: Text.WordWrap
                     }
                 }
@@ -69,7 +66,7 @@ Item {
                     running: true
                     from: 0
                     to: 1
-                    duration: 140
+                    duration: root.th.motionNormal
                 }
 
                 Timer {
@@ -84,7 +81,7 @@ Item {
                     target: toast
                     property: "opacity"
                     to: 0
-                    duration: 180
+                    duration: root.th.motionSlow
                     onFinished: if (toast.index < model.count) model.remove(toast.index)
                 }
             }

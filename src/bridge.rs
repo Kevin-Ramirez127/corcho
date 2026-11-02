@@ -12,6 +12,7 @@ use crate::core::Core;
 use crate::integrations;
 use crate::model;
 use crate::sync;
+use crate::theme;
 use crate::updates;
 
 fn runtime() -> &'static tokio::runtime::Runtime {
@@ -46,6 +47,7 @@ pub mod qobject {
         #[qproperty(QString, grids_json, cxx_name = "gridsJson")]
         #[qproperty(QString, cards_json, cxx_name = "cardsJson")]
         #[qproperty(QString, folders_json, cxx_name = "foldersJson")]
+        #[qproperty(QString, calendar_json, cxx_name = "calendarJson")]
         #[qproperty(QString, settings_json, cxx_name = "settingsJson")]
         #[qproperty(QString, active_grid_id, cxx_name = "activeGridId")]
         #[qproperty(f64, pan_x, cxx_name = "panX")]
@@ -103,6 +105,10 @@ pub mod qobject {
         fn refresh(self: Pin<&mut Self>);
 
         #[qinvokable]
+        #[cxx_name = "reloadIfChanged"]
+        fn reload_if_changed(self: Pin<&mut Self>) -> bool;
+
+        #[qinvokable]
         #[cxx_name = "saveNow"]
         fn save_now(self: Pin<&mut Self>);
 
@@ -113,6 +119,48 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "updateCard"]
         fn update_card(self: Pin<&mut Self>, json: &QString) -> bool;
+
+        #[qinvokable]
+        #[cxx_name = "createCalendar"]
+        fn create_calendar(self: Pin<&mut Self>, name: &QString, color: &QString) -> QString;
+
+        #[qinvokable]
+        #[cxx_name = "updateCalendar"]
+        fn update_calendar(
+            self: Pin<&mut Self>,
+            id: &QString,
+            name: &QString,
+            color: &QString,
+        ) -> bool;
+
+        #[qinvokable]
+        #[cxx_name = "deleteCalendar"]
+        fn delete_calendar(self: Pin<&mut Self>, id: &QString) -> bool;
+
+        #[qinvokable]
+        #[cxx_name = "addDateLink"]
+        fn add_date_link(
+            self: Pin<&mut Self>,
+            source_card_id: &QString,
+            source_item_id: &QString,
+            date: &QString,
+            calendar_ids_json: &QString,
+            title: &QString,
+        ) -> QString;
+
+        #[qinvokable]
+        #[cxx_name = "updateDateLink"]
+        fn update_date_link(
+            self: Pin<&mut Self>,
+            link_id: &QString,
+            date: &QString,
+            calendar_ids_json: &QString,
+            title: &QString,
+        ) -> bool;
+
+        #[qinvokable]
+        #[cxx_name = "deleteDateLink"]
+        fn delete_date_link(self: Pin<&mut Self>, link_id: &QString) -> bool;
 
         #[qinvokable]
         #[cxx_name = "deleteCard"]
@@ -177,6 +225,10 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "setView"]
         fn set_view(self: Pin<&mut Self>, pan_x: f64, pan_y: f64, zoom: f64);
+
+        #[qinvokable]
+        #[cxx_name = "setViewport"]
+        fn set_viewport(self: Pin<&mut Self>, width: f64, height: f64);
 
         #[qinvokable]
         fn undo(self: Pin<&mut Self>) -> bool;
@@ -283,6 +335,14 @@ pub mod qobject {
         fn open_external(self: &Self, url: &QString);
 
         #[qinvokable]
+        #[cxx_name = "openThemesFolder"]
+        fn open_themes_folder(self: &Self);
+
+        #[qinvokable]
+        #[cxx_name = "createThemeFromTemplate"]
+        fn create_theme_from_template(self: Pin<&mut Self>) -> QString;
+
+        #[qinvokable]
         #[cxx_name = "setLaunchAtStartup"]
         fn set_launch_at_startup(self: Pin<&mut Self>, enabled: bool) -> bool;
 
@@ -291,12 +351,12 @@ pub mod qobject {
         fn reset_tutorials(self: Pin<&mut Self>);
 
         #[qinvokable]
-        #[cxx_name = "spectrumStart"]
-        fn spectrum_start(self: &Self, volume: f64, tone_freq: f64, tone_mix: f64);
+        #[cxx_name = "timbreStart"]
+        fn timbre_start(self: &Self, card_id: &QString, volume: f64, tone_freq: f64, tone_mix: f64);
 
         #[qinvokable]
-        #[cxx_name = "spectrumStop"]
-        fn spectrum_stop(self: &Self);
+        #[cxx_name = "timbreStop"]
+        fn timbre_stop(self: &Self, card_id: &QString);
 
         #[qinvokable]
         #[cxx_name = "adblockCheck"]
@@ -315,6 +375,132 @@ pub mod qobject {
     }
 
     impl cxx_qt::Threading for AppController {}
+
+    extern "RustQt" {
+        #[qobject]
+        #[qml_element]
+        #[qproperty(QString, tokens_json, cxx_name = "tokensJson")]
+        #[qproperty(QString, mode, cxx_name = "mode")]
+        #[qproperty(QString, light_theme, cxx_name = "lightTheme")]
+        #[qproperty(QString, dark_theme, cxx_name = "darkTheme")]
+        #[qproperty(QString, active_theme, cxx_name = "activeTheme")]
+        #[qproperty(bool, system_dark, cxx_name = "systemDark")]
+        type AppearanceController = super::AppearanceControllerRust;
+
+        #[qinvokable]
+        #[cxx_name = "refresh"]
+        fn refresh(
+            self: Pin<&mut Self>,
+            settings_json: &QString,
+            themes_json: &QString,
+            fonts_json: &QString,
+            system_dark: bool,
+        );
+    }
+}
+
+pub struct AppearanceControllerRust {
+    tokens_json: QString,
+    mode: QString,
+    light_theme: QString,
+    dark_theme: QString,
+    active_theme: QString,
+    system_dark: bool,
+}
+
+impl Default for AppearanceControllerRust {
+    fn default() -> Self {
+        let tokens = theme::builtin_entries()
+            .into_iter()
+            .find(|t| t.id == "corcho")
+            .map(|t| t.tokens)
+            .unwrap_or_else(theme::default_tokens);
+        Self {
+            tokens_json: serde_json::to_string(&tokens)
+                .unwrap_or_else(|_| "{}".into())
+                .into(),
+            mode: "system".into(),
+            light_theme: "paper".into(),
+            dark_theme: "corcho".into(),
+            active_theme: "corcho".into(),
+            system_dark: true,
+        }
+    }
+}
+
+impl qobject::AppearanceController {
+    pub fn refresh(
+        mut self: Pin<&mut Self>,
+        settings_json: &QString,
+        themes_json: &QString,
+        fonts_json: &QString,
+        system_dark: bool,
+    ) {
+        let settings: serde_json::Value =
+            serde_json::from_str(&p(settings_json)).unwrap_or_else(|_| serde_json::json!({}));
+        let themes: serde_json::Value =
+            serde_json::from_str(&p(themes_json)).unwrap_or_else(|_| serde_json::json!([]));
+        let fonts: serde_json::Value =
+            serde_json::from_str(&p(fonts_json)).unwrap_or_else(|_| serde_json::json!([]));
+        let mode = settings["theme_mode"]
+            .as_str()
+            .unwrap_or("system")
+            .to_string();
+        let light = settings["theme_light"]
+            .as_str()
+            .unwrap_or("paper")
+            .to_string();
+        let dark = settings["theme_dark"]
+            .as_str()
+            .unwrap_or("corcho")
+            .to_string();
+        let use_dark = mode == "dark" || (mode == "system" && system_dark);
+        let wanted = if use_dark {
+            dark.clone()
+        } else {
+            light.clone()
+        };
+        let mut tokens = if wanted == "custom" {
+            let custom = &settings["customTheme"];
+            theme::build_tokens(
+                custom["background"].as_str().unwrap_or("#121214"),
+                custom["surface"].as_str().unwrap_or("#1b1b1f"),
+                custom["accent"].as_str().unwrap_or("#c9a86a"),
+                custom["text"].as_str().unwrap_or("#e8e8ea"),
+                !use_dark,
+                "Inter",
+            )
+        } else {
+            themes
+                .as_array()
+                .and_then(|items| {
+                    items
+                        .iter()
+                        .find(|t| t["id"].as_str() == Some(wanted.as_str()))
+                })
+                .and_then(|t| t.get("tokens"))
+                .and_then(|v| v.as_object())
+                .cloned()
+                .unwrap_or_else(theme::default_tokens)
+        };
+        let font_id = settings["font"].as_str().unwrap_or("inter");
+        if let Some(family) = fonts
+            .as_array()
+            .and_then(|items| items.iter().find(|f| f["id"].as_str() == Some(font_id)))
+            .and_then(|f| f["family"].as_str())
+            .filter(|family| !family.is_empty())
+        {
+            tokens.insert("fontFamily".into(), serde_json::json!(family));
+        }
+        self.as_mut().set_tokens_json(s(
+            serde_json::to_string(&tokens).unwrap_or_else(|_| "{}".into())
+        ));
+        self.as_mut().set_mode(s(mode));
+        self.as_mut().set_light_theme(s(light));
+        self.as_mut().set_dark_theme(s(dark));
+        self.as_mut().set_active_theme(s(wanted));
+        self.as_mut().set_system_dark(system_dark);
+    }
 }
 
 pub struct AppControllerRust {
@@ -322,6 +508,7 @@ pub struct AppControllerRust {
     grids_json: QString,
     cards_json: QString,
     folders_json: QString,
+    calendar_json: QString,
     settings_json: QString,
     active_grid_id: QString,
     pan_x: f64,
@@ -350,6 +537,7 @@ impl Default for AppControllerRust {
             grids_json: QString::default(),
             cards_json: QString::default(),
             folders_json: QString::default(),
+            calendar_json: QString::from("{\"calendars\":[],\"dateLinks\":[]}"),
             settings_json: QString::default(),
             active_grid_id: QString::default(),
             pan_x: 0.0,
@@ -373,14 +561,16 @@ impl Default for AppControllerRust {
 
 impl qobject::AppController {
     fn refresh_all(mut self: Pin<&mut Self>) {
-        let (grids, cards, folders, settings, active, pan, pany, zoom, upd, git) = {
+        let (grids, cards, folders, calendar, settings, themes, active, pan, pany, zoom, upd, git) = {
             let core_arc = self.as_ref().rust().core.clone();
             let core = core_arc.lock().unwrap();
             (
                 core.grids_json(),
                 core.cards_json(),
                 core.folders_json(),
+                core.calendar_json(),
                 core.settings_json(),
+                core.themes_json(),
                 core.active_grid_id(),
                 core.active_grid_view().0,
                 core.active_grid_view().1,
@@ -392,7 +582,9 @@ impl qobject::AppController {
         self.as_mut().set_grids_json(s(grids));
         self.as_mut().set_cards_json(s(cards));
         self.as_mut().set_folders_json(s(folders));
+        self.as_mut().set_calendar_json(s(calendar));
         self.as_mut().set_settings_json(s(settings));
+        self.as_mut().set_themes_json(s(themes));
         self.as_mut().set_active_grid_id(s(active));
         self.as_mut().set_pan_x(pan);
         self.as_mut().set_pan_y(pany);
@@ -402,9 +594,59 @@ impl qobject::AppController {
     }
 
     pub fn boot(mut self: Pin<&mut Self>) {
-        crate::deeplink::register(self.as_ref().qt_thread());
+        let qt = self.as_ref().qt_thread();
+        crate::deeplink::register(qt.clone());
         self.as_mut().refresh_all();
         self.as_mut().set_status_text(s("Ready"));
+
+        let data_dir = {
+            let core_arc = self.as_ref().rust().core.clone();
+            let core = core_arc.lock().unwrap();
+            core.data_dir.clone()
+        };
+        let _ = std::fs::create_dir_all(&data_dir);
+        std::thread::spawn(move || {
+            use notify::Watcher;
+            let (tx, rx) = std::sync::mpsc::channel();
+            let mut watcher = match notify::recommended_watcher(move |event| {
+                let _ = tx.send(event);
+            }) {
+                Ok(watcher) => watcher,
+                Err(err) => {
+                    tracing::warn!("workspace watcher: {err}");
+                    return;
+                }
+            };
+            if let Err(err) = watcher.watch(&data_dir, notify::RecursiveMode::Recursive) {
+                tracing::warn!("workspace watcher: {err}");
+                return;
+            }
+            while let Ok(event) = rx.recv() {
+                let Ok(event) = event else { continue };
+                let workspace = event
+                    .paths
+                    .iter()
+                    .any(|p| p.file_name().and_then(|n| n.to_str()) == Some("workspace.json"));
+                let theme_file = event
+                    .paths
+                    .iter()
+                    .any(|p| p.extension().and_then(|e| e.to_str()) == Some("css"));
+                if !workspace && !theme_file {
+                    continue;
+                }
+                std::thread::sleep(Duration::from_millis(120));
+                while rx.try_recv().is_ok() {}
+                if theme_file {
+                    let _ = qt.queue(move |mut q| {
+                        q.as_mut().refresh();
+                    });
+                } else {
+                    let _ = qt.queue(move |mut q| {
+                        q.as_mut().reload_if_changed();
+                    });
+                }
+            }
+        });
     }
 
     pub fn handle_deep_link(mut self: Pin<&mut Self>, url: &QString) {
@@ -441,13 +683,29 @@ impl qobject::AppController {
         self.as_mut().refresh_all();
     }
 
+    pub fn reload_if_changed(mut self: Pin<&mut Self>) -> bool {
+        let changed = self
+            .as_ref()
+            .rust()
+            .core
+            .clone()
+            .lock()
+            .map(|mut core| core.reload_if_changed().unwrap_or(false))
+            .unwrap_or(false);
+        if changed {
+            self.as_mut().refresh_all();
+        }
+        changed
+    }
+
     fn refresh_cards(mut self: Pin<&mut Self>) {
-        let cards = {
+        let (cards, calendar) = {
             let core_arc = self.as_ref().rust().core.clone();
             let core = core_arc.lock().unwrap();
-            core.cards_json()
+            (core.cards_json(), core.calendar_json())
         };
         self.as_mut().set_cards_json(s(cards));
+        self.as_mut().set_calendar_json(s(calendar));
     }
 
     pub fn save_now(self: Pin<&mut Self>) {
@@ -474,6 +732,126 @@ impl qobject::AppController {
             core.update_card_json(&p(json))
         };
         self.as_mut().refresh_cards();
+        ok
+    }
+
+    pub fn create_calendar(mut self: Pin<&mut Self>, name: &QString, color: &QString) -> QString {
+        let calendar = self
+            .as_ref()
+            .rust()
+            .core
+            .clone()
+            .lock()
+            .unwrap()
+            .add_calendar(&p(name), &p(color));
+        self.as_mut().refresh_all();
+        s(serde_json::to_string(&calendar).unwrap_or_default())
+    }
+
+    pub fn update_calendar(
+        mut self: Pin<&mut Self>,
+        id: &QString,
+        name: &QString,
+        color: &QString,
+    ) -> bool {
+        let name = p(name);
+        let color = p(color);
+        let ok = {
+            let core_arc = self.as_ref().rust().core.clone();
+            let mut core = core_arc.lock().unwrap();
+            core.update_calendar(
+                &p(id),
+                if name.is_empty() { None } else { Some(&name) },
+                if color.is_empty() { None } else { Some(&color) },
+            )
+        };
+        self.as_mut().refresh_all();
+        ok
+    }
+
+    pub fn delete_calendar(mut self: Pin<&mut Self>, id: &QString) -> bool {
+        let ok = self
+            .as_ref()
+            .rust()
+            .core
+            .clone()
+            .lock()
+            .unwrap()
+            .delete_calendar(&p(id));
+        self.as_mut().refresh_all();
+        ok
+    }
+
+    pub fn add_date_link(
+        mut self: Pin<&mut Self>,
+        source_card_id: &QString,
+        source_item_id: &QString,
+        date: &QString,
+        calendar_ids_json: &QString,
+        title: &QString,
+    ) -> QString {
+        let ids: Vec<String> =
+            serde_json::from_str(&p(calendar_ids_json)).unwrap_or_else(|_| Vec::new());
+        let card = p(source_card_id);
+        let item = p(source_item_id);
+        let result = self
+            .as_ref()
+            .rust()
+            .core
+            .clone()
+            .lock()
+            .unwrap()
+            .add_date_link(
+                ids,
+                &p(date),
+                &p(title),
+                if card.is_empty() { None } else { Some(card) },
+                if item.is_empty() { None } else { Some(item) },
+            );
+        self.as_mut().refresh_all();
+        match result {
+            Ok(link) => s(link.id),
+            Err(err) => s(format!("error:{err}")),
+        }
+    }
+
+    pub fn update_date_link(
+        mut self: Pin<&mut Self>,
+        link_id: &QString,
+        date: &QString,
+        calendar_ids_json: &QString,
+        title: &QString,
+    ) -> bool {
+        let ids: Vec<String> =
+            serde_json::from_str(&p(calendar_ids_json)).unwrap_or_else(|_| Vec::new());
+        let ok = self
+            .as_ref()
+            .rust()
+            .core
+            .clone()
+            .lock()
+            .unwrap()
+            .update_date_link(
+                &p(link_id),
+                if ids.is_empty() { None } else { Some(ids) },
+                Some(&p(date)),
+                Some(&p(title)),
+            )
+            .unwrap_or(false);
+        self.as_mut().refresh_all();
+        ok
+    }
+
+    pub fn delete_date_link(mut self: Pin<&mut Self>, link_id: &QString) -> bool {
+        let ok = self
+            .as_ref()
+            .rust()
+            .core
+            .clone()
+            .lock()
+            .unwrap()
+            .delete_date_link(&p(link_id));
+        self.as_mut().refresh_all();
         ok
     }
 
@@ -642,6 +1020,16 @@ impl qobject::AppController {
             .lock()
             .unwrap()
             .set_view(pan_x, pan_y, zoom);
+    }
+
+    pub fn set_viewport(self: Pin<&mut Self>, width: f64, height: f64) {
+        self.as_ref()
+            .rust()
+            .core
+            .clone()
+            .lock()
+            .unwrap()
+            .set_viewport(width, height);
     }
 
     pub fn undo(mut self: Pin<&mut Self>) -> bool {
@@ -882,7 +1270,8 @@ impl qobject::AppController {
             match result {
                 Ok((ws, status)) => {
                     let _ = qt.queue(move |mut q| {
-                        if let Some(ws) = ws {
+                        if let Some(mut ws) = ws {
+                            ws.migrate();
                             if let Ok(mut core) = q.as_ref().rust().core.clone().lock() {
                                 core.ws = ws;
                                 let ws_snapshot = core.ws.clone();
@@ -1163,6 +1552,40 @@ impl qobject::AppController {
         let _ = open::that(p(url));
     }
 
+    pub fn open_themes_folder(&self) {
+        let dir = self.core.lock().unwrap().data_dir.join("themes");
+        let _ = std::fs::create_dir_all(&dir);
+        let _ = open::that(dir);
+    }
+
+    pub fn create_theme_from_template(mut self: Pin<&mut Self>) -> QString {
+        let dir = {
+            let core_arc = self.as_ref().rust().core.clone();
+            let core = core_arc.lock().unwrap();
+            theme::themes_dir(&core.data_dir)
+        };
+        let _ = std::fs::create_dir_all(&dir);
+        let mut index = 1;
+        let path = loop {
+            let name = if index == 1 {
+                "my-theme.css".to_string()
+            } else {
+                format!("my-theme-{index}.css")
+            };
+            let candidate = dir.join(name);
+            if !candidate.exists() {
+                break candidate;
+            }
+            index += 1;
+        };
+        if let Err(err) = std::fs::write(&path, theme::TEMPLATE) {
+            tracing::warn!("create theme: {err}");
+            return QString::default();
+        }
+        self.as_mut().refresh_all();
+        s(path.display().to_string())
+    }
+
     pub fn set_launch_at_startup(mut self: Pin<&mut Self>, enabled: bool) -> bool {
         let ok = write_autostart(enabled);
         if ok {
@@ -1186,14 +1609,19 @@ impl qobject::AppController {
         self.as_mut().refresh_all();
     }
 
-    pub fn spectrum_start(&self, volume: f64, tone_freq: f64, tone_mix: f64) {
-        if let Err(e) = crate::audio::start(volume as f32, tone_freq as f32, tone_mix as f32) {
-            tracing::warn!("spectrum audio: {e}");
+    pub fn timbre_start(&self, card_id: &QString, volume: f64, tone_freq: f64, tone_mix: f64) {
+        if let Err(e) = crate::audio::start(
+            &p(card_id),
+            volume as f32,
+            tone_freq as f32,
+            tone_mix as f32,
+        ) {
+            tracing::warn!("timbre audio: {e}");
         }
     }
 
-    pub fn spectrum_stop(&self) {
-        crate::audio::stop();
+    pub fn timbre_stop(&self, card_id: &QString) {
+        crate::audio::stop(&p(card_id));
     }
 
     pub fn adblock_check(&self, url: &QString) -> bool {
@@ -1213,9 +1641,9 @@ impl qobject::AppController {
     }
 }
 
-const CHANGELOG: &str = "Corcho 0.1.0\n\n- Rewritten as a native Rust + Qt6 application.\n- Infinite grid canvas with thirteen card types.\n- Eight fragment modes, including Spectrum audio.\n- Five AI providers plus a local server.\n- Folder and Google Drive sync, encrypted backups.\n- Stable, beta and experimental update channels.";
+const CHANGELOG: &str = "Corcho 0.1.0\n\n- Rewritten as a native Rust + Qt6 application.\n- Infinite grid canvas with fourteen card types.\n- Calendar cards with multi-calendar date links and reminders.\n- Dedicated Timbre audio card.\n- Five AI providers plus a local server.\n- Folder and Google Drive sync, encrypted backups.\n- Stable, beta and experimental update channels.";
 
-fn write_autostart(enabled: bool) -> bool {
+pub(crate) fn write_autostart(enabled: bool) -> bool {
     let Some(home) = std::env::var_os("HOME") else {
         return false;
     };

@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
 Name=Corcho
-Comment=A native canvas for personal development
+Comment=A native grid workspace for notes, sites, tasks and calendars
 Exec=corcho %u
 Icon=corcho
 Terminal=false

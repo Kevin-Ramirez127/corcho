@@ -39,31 +39,29 @@ CardFrame {
 
     Column {
         anchors.fill: parent
-        spacing: 6
-
+        spacing: root.th.spaceCompact
         Row {
             width: parent.width
             height: 30
-            spacing: 4
-
+            spacing: root.th.space1
             Icon {
                 anchors.verticalCenter: parent.verticalCenter
                 name: "chevron-left"
-                size: 15
+                size: root.th.iconBody
                 color: webView.canGoBack ? root.th.text2 : root.th.muted
                 TapHandler { onTapped: if (webView.canGoBack) webView.goBack() }
             }
             Icon {
                 anchors.verticalCenter: parent.verticalCenter
                 name: "chevron-right"
-                size: 15
+                size: root.th.iconBody
                 color: webView.canGoForward ? root.th.text2 : root.th.muted
                 TapHandler { onTapped: if (webView.canGoForward) webView.goForward() }
             }
             Icon {
                 anchors.verticalCenter: parent.verticalCenter
                 name: "refresh-cw"
-                size: 14
+                size: root.th.iconBody
                 color: root.th.text2
                 TapHandler { onTapped: webView.reload() }
             }
@@ -82,7 +80,7 @@ CardFrame {
             Icon {
                 anchors.verticalCenter: parent.verticalCenter
                 name: "zoom-out"
-                size: 14
+                size: root.th.iconBody
                 color: root.th.text2
                 TapHandler { onTapped: webView.zoomFactor = Math.max(0.4, webView.zoomFactor - 0.1) }
             }
@@ -90,27 +88,27 @@ CardFrame {
                 anchors.verticalCenter: parent.verticalCenter
                 text: Math.round(webView.zoomFactor * 100) + "%"
                 color: root.th.muted
-                font.family: "JetBrains Mono"
-                font.pixelSize: 10
+                font.family: root.th.fontMono
+                font.pixelSize: root.th.fontSizeSmall
             }
             Icon {
                 anchors.verticalCenter: parent.verticalCenter
                 name: "zoom-in"
-                size: 14
+                size: root.th.iconBody
                 color: root.th.text2
                 TapHandler { onTapped: webView.zoomFactor = Math.min(2.5, webView.zoomFactor + 0.1) }
             }
             Icon {
                 anchors.verticalCenter: parent.verticalCenter
                 name: "external-link"
-                size: 14
+                size: root.th.iconBody
                 color: root.th.text2
                 TapHandler { onTapped: root.app.openExternal(webView.url) }
             }
             Icon {
                 anchors.verticalCenter: parent.verticalCenter
                 name: "shield"
-                size: 14
+                size: root.th.iconBody
                 color: root.app.adblockCheck(webView.url) ? root.th.accent : root.th.muted
                 TapHandler { onTapped: debugPopup.open() }
             }
@@ -129,7 +127,7 @@ CardFrame {
                 text: "Enter a URL to load a website in its own session"
                 color: root.th.muted
                 font.family: root.th.fontFamily
-                font.pixelSize: 12
+                font.pixelSize: root.th.fontSizeSmall
             }
 
         WebEngineView {
@@ -182,29 +180,28 @@ CardFrame {
         padding: 14
 
         background: Rectangle {
-            radius: 12
+            radius: root.th.radiusCard
             color: root.th.menu
-            border.width: 1
+            border.width: root.th.borderWidth
             border.color: root.th.border
         }
 
         contentItem: Column {
-            spacing: 10
-
+            spacing: root.th.spaceSnug
             Row {
-                spacing: 8
+                spacing: root.th.space2
                 Text {
                     text: "Website session"
                     color: root.th.text
                     font.family: root.th.fontFamily
-                    font.pixelSize: 14
-                    font.weight: 500
+                    font.pixelSize: root.th.fontSizeBody
+                    font.weight: root.th.fontWeightMedium
                 }
                 Item { width: 1; height: 1 }
             }
 
             Row {
-                spacing: 8
+                spacing: root.th.space2
                 AppButton {
                     th: root.th
                     icon: "cookie"
@@ -216,8 +213,8 @@ CardFrame {
                 AppButton {
                     th: root.th
                     icon: "shield"
-                    text: "Simulate attack"
-                    onClicked: root.runAttack()
+                    text: "Run session probe"
+                    onClicked: root.runProbe()
                 }
             }
 
@@ -228,48 +225,48 @@ CardFrame {
                 readOnly: true
                 selectByMouse: true
                 color: root.th.text2
-                font.family: "JetBrains Mono"
-                font.pixelSize: 11
+                font.family: root.th.fontMono
+                font.pixelSize: root.th.fontSizeSmall
                 wrapMode: TextEdit.WrapAnywhere
                 clip: true
             }
         }
     }
 
-    function runAttack() {
+    function runProbe() {
         var script = `
         (function () {
             var out = [];
-            out.push("=== Security Attack Simulation ===");
+            out.push("=== Cross-Origin Session Probe ===");
             out.push("document.cookie: " + (document.cookie || "(empty)"));
             var targets = [
                 ["Google", "https://www.google.com/"],
-                ["Gmail Feed", "https://mail.google.com/mail/feed/atom"],
-                ["GitHub API", "https://api.github.com/user"],
-                ["Discord API", "https://discord.com/api/users/@me"]
+                ["Wikipedia", "https://en.wikipedia.org/w/api.php?action=query&meta=siteinfo&format=json"],
+                ["Hacker News", "https://hacker-news.firebaseio.com/v0/topstories.json"],
+                ["Open-Meteo", "https://api.open-meteo.com/v1/forecast?latitude=52.52&longitude=13.41&current=temperature_2m"]
             ];
             var pending = targets.length;
             targets.forEach(function (t) {
                 fetch(t[1], { credentials: "include", mode: "cors" })
                     .then(function (r) { return r.text().then(function (b) {
-                        out.push((r.status < 400 && b.length > 0 ? "[LEAK] " : "[BLOCKED] ") + t[0] + " — " + r.status + " (" + b.length + "b)");
+                        out.push((r.status < 400 && b.length > 0 ? "[LEAK] " : "[BLOCKED] ") + t[0] + ": " + r.status + " (" + b.length + "b)");
                     }); })
-                    .catch(function (e) { out.push("[BLOCKED] " + t[0] + " — " + e.message); })
+                    .catch(function (e) { out.push("[BLOCKED] " + t[0] + ": " + e.message); })
                     .finally(function () {
                         pending -= 1;
                         if (pending === 0) {
                             out.push("Verdict: cross-origin reads finished.");
-                            window.__corchoAttack = out.join("\\n");
+                            window.__corchoProbe = out.join("\\n");
                         }
                     });
             });
-            out.push("Running attacks...");
+            out.push("Running probes...");
             return out.join("\\n");
         })()`;
         webView.runJavaScript(script, function (value) {
             root.debugOutput = String(value || "");
             setTimeout(function () {
-                webView.runJavaScript("window.__corchoAttack || ''", function (final) {
+                webView.runJavaScript("window.__corchoProbe || ''", function (final) {
                     if (final) root.debugOutput = String(final);
                 });
             }, 2500);

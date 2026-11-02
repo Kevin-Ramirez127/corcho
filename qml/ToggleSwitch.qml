@@ -18,25 +18,25 @@ Item {
     Accessible.onPressAction: root.toggled(!root.checked)
     Keys.onSpacePressed: root.toggled(!root.checked)
 
-    implicitWidth: 40
-    implicitHeight: 24
+    implicitWidth: root.th.switchWidth
+    implicitHeight: root.th.switchHeight
     opacity: enabledSwitch ? 1.0 : 0.45
 
     Rectangle {
         anchors.fill: parent
         radius: height / 2
         color: root.checked ? root.th.accent : root.th.surfaceStrong
-        border.width: root.activeFocus ? 2 : 1
+        border.width: root.activeFocus ? root.th.borderWidthFocus : root.th.borderWidth
         border.color: root.activeFocus ? root.th.accent : (root.checked ? root.th.accent : root.th.border)
         Behavior on color { ColorAnimation { duration: 130 } }
     }
 
     Rectangle {
-        width: 18
-        height: 18
-        radius: 9
-        y: 3
-        x: root.checked ? root.width - width - 3 : 3
+        width: root.th.switchThumb
+        height: root.th.switchThumb
+        radius: root.th.radiusBadge
+        y: root.th.borderWidth
+        x: root.checked ? root.width - width - root.th.borderWidth : root.th.borderWidth
         color: root.checked ? root.th.accentInk : root.th.text2
         Behavior on x { NumberAnimation { duration: 130; easing.type: Easing.OutCubic } }
     }

@@ -16,13 +16,12 @@ Item {
     signal newGridRequested()
     signal newFolderRequested()
     signal settingsRequested()
-    signal powerbarRequested()
+    signal toggleCollapsed()
     signal gridMenuRequested(var grid, real x, real y)
     signal folderMenuRequested(var folder, real x, real y)
 
-    implicitWidth: collapsed ? 64 : 248
+    implicitWidth: collapsed ? root.th.sidebarCollapsedWidth : root.th.sidebarWidth
 
-    Behavior on implicitWidth { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
 
     Rectangle {
         anchors.fill: parent
@@ -30,7 +29,7 @@ Item {
 
         Rectangle {
             anchors.right: parent.right
-            width: 1
+            width: root.th.borderWidth
             height: parent.height
             color: root.th.border
         }
@@ -41,83 +40,52 @@ Item {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.topMargin: 16
-        spacing: 8
-
+        anchors.topMargin: root.th.space4
+        spacing: root.th.space2
         Item {
             width: parent.width
-            height: 40
+            height: root.th.sidebarHeaderHeight
 
             Row {
                 anchors.left: parent.left
-                anchors.leftMargin: 18
+                anchors.leftMargin: 20
                 anchors.verticalCenter: parent.verticalCenter
-                spacing: 10
+                spacing: root.th.space2
                 visible: !root.collapsed
 
-                Rectangle {
-                    width: 22
-                    height: 22
-                    radius: 6
+                Icon {
+                    anchors.verticalCenter: parent.verticalCenter
+                    name: "pin"
+                    size: root.th.iconLarge
                     color: root.th.accent
-                    Rectangle {
-                        anchors.centerIn: parent
-                        width: 8
-                        height: 8
-                        radius: 2
-                        color: root.th.accentInk
-                    }
                 }
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
                     text: "Corcho"
                     color: root.th.text
                     font.family: root.th.fontFamily
-                    font.pixelSize: 14
-                    font.weight: 500
+                    font.pixelSize: root.th.fontSizeTitle
+                    font.weight: root.th.fontWeightMedium
                 }
             }
 
             Item {
                 visible: root.collapsed
                 anchors.centerIn: parent
-                width: 22
-                height: 22
-                Rectangle {
-                    anchors.fill: parent
-                    radius: 6
-                    color: root.th.accent
-                }
-                Rectangle {
-                    anchors.centerIn: parent
-                    width: 8
-                    height: 8
-                    radius: 2
-                    color: root.th.accentInk
-                }
-            }
-
-            Item {
-                anchors.right: parent.right
-                anchors.rightMargin: 12
-                anchors.verticalCenter: parent.verticalCenter
-                width: 28
-                height: 28
-                visible: !root.collapsed
-
+                width: 24
+                height: 24
                 Icon {
                     anchors.centerIn: parent
-                    name: "panel-left"
-                    size: 15
-                    color: root.th.muted
+                    name: "pin"
+                    size: root.th.iconLarge
+                    color: root.th.accent
                 }
-                TapHandler { onTapped: root.collapsed = true }
             }
         }
 
         Row {
             anchors.horizontalCenter: parent.horizontalCenter
-            spacing: 6
+            spacing: root.th.space2
             visible: !root.collapsed
 
             AppButton {
@@ -140,24 +108,23 @@ Item {
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.bottomMargin: 12
-        spacing: 4
-
+        anchors.bottomMargin: root.th.space4
+        spacing: root.th.space1
         Item {
             width: parent.width
-            height: 30
+            height: root.th.statusbarHeight
 
             Row {
                 anchors.left: parent.left
-                anchors.leftMargin: 18
+                anchors.leftMargin: 20
                 anchors.verticalCenter: parent.verticalCenter
-                spacing: 8
+                spacing: root.th.space2
                 visible: !root.collapsed
 
                 Rectangle {
-                    width: 7
-                    height: 7
-                    radius: 4
+                    width: 8
+                    height: 8
+                    radius: root.th.radiusMicro
                     color: root.app.syncing ? root.th.accent : (root.settings && root.settings.cloud_sync_enabled ? root.th.success : root.th.muted)
                     anchors.verticalCenter: parent.verticalCenter
                 }
@@ -166,38 +133,43 @@ Item {
                     text: root.app.syncing ? "Syncing" : (root.settings && root.settings.cloud_sync_enabled ? "Cloud sync on" : "Local only")
                     color: root.th.muted
                     font.family: root.th.fontFamily
-                    font.pixelSize: 11
+                    font.pixelSize: root.th.fontSizeSmall
                 }
             }
         }
 
-        AppButton {
-            anchors.left: parent.left
-            anchors.leftMargin: root.collapsed ? 16 : 12
-            th: root.th
-            icon: "search"
-            text: root.collapsed ? "" : "Powerbar"
-            onClicked: root.powerbarRequested()
-            width: root.collapsed ? 32 : 224
-        }
-        AppButton {
-            anchors.left: parent.left
-            anchors.leftMargin: root.collapsed ? 16 : 12
-            th: root.th
-            icon: "settings"
-            text: root.collapsed ? "" : "Settings"
-            onClicked: root.settingsRequested()
-            width: root.collapsed ? 32 : 224
-        }
-        AppButton {
-            anchors.left: parent.left
-            anchors.leftMargin: root.collapsed ? 16 : 12
-            th: root.th
-            icon: "panel-left"
-            text: root.collapsed ? "" : "Expand"
-            visible: root.collapsed
-            onClicked: root.collapsed = false
-            width: 32
+        Item {
+            width: parent.width
+            height: root.th.controlHeight
+
+            AppButton {
+                anchors.left: parent.left
+                anchors.leftMargin: root.collapsed ? 4 : 12
+                anchors.verticalCenter: parent.verticalCenter
+                th: root.th
+                icon: "settings"
+                text: root.collapsed ? "" : "Settings"
+                onClicked: root.settingsRequested()
+                width: root.collapsed ? 28 : parent.width - 60
+            }
+
+            Item {
+                anchors.right: parent.right
+                anchors.rightMargin: root.collapsed ? 4 : 12
+                anchors.verticalCenter: parent.verticalCenter
+                width: 24
+                height: 24
+                Accessible.role: Accessible.Button
+                Accessible.name: root.collapsed ? "Expand sidebar" : "Collapse sidebar"
+
+                Icon {
+                    anchors.centerIn: parent
+                    name: "panel-left"
+                    size: root.th.iconSmall
+                    color: root.th.text2
+                }
+                TapHandler { onTapped: root.toggleCollapsed() }
+            }
         }
     }
 
@@ -216,8 +188,7 @@ Item {
         Column {
             id: listColumn
             width: list.width
-            spacing: 2
-
+            spacing: root.th.spaceHalf
             Repeater {
                 model: root.folders
 
@@ -227,25 +198,25 @@ Item {
 
                     Item {
                         width: parent.width
-                        height: 30
+                        height: root.th.menuItemHeight
 
                         Row {
                             anchors.left: parent.left
-                            anchors.leftMargin: 16
+                            anchors.leftMargin: 20
                             anchors.verticalCenter: parent.verticalCenter
-                            spacing: 6
+                            spacing: root.th.space2
                             visible: !root.collapsed
 
                             Icon {
                                 anchors.verticalCenter: parent.verticalCenter
                                 name: modelData.collapsed ? "chevron-right" : "chevron-down"
-                                size: 11
+                                size: root.th.iconBody
                                 color: root.th.muted
                             }
                             Icon {
                                 anchors.verticalCenter: parent.verticalCenter
                                 name: "folder-plus"
-                                size: 13
+                                size: root.th.iconBody
                                 color: root.th.text2
                             }
                             Text {
@@ -253,8 +224,8 @@ Item {
                                 text: modelData.name
                                 color: root.th.text2
                                 font.family: root.th.fontFamily
-                                font.pixelSize: 11
-                                font.weight: 500
+                                font.pixelSize: root.th.fontSizeSmall
+                                font.weight: root.th.fontWeightMedium
                             }
                         }
 
@@ -294,26 +265,24 @@ Item {
             property bool hoveredNow: false
 
             width: listColumn.width
-            height: 34
+            height: root.th.controlHeight
 
             Rectangle {
                 anchors.fill: parent
-                anchors.leftMargin: 8
-                anchors.rightMargin: 8
-                radius: 7
+                anchors.leftMargin: root.th.space2
+                anchors.rightMargin: root.th.space2
+                radius: root.th.radiusControl
                 color: root.activeGridId === modelData.id ? root.th.surfaceStrong : (row.hoveredNow ? root.th.hover : "transparent")
             }
 
             Row {
-                anchors.left: parent.left
-                anchors.leftMargin: root.collapsed ? (row.width - 32) / 2 : 22
+                x: root.collapsed ? (row.width - width) / 2 : 20
                 anchors.verticalCenter: parent.verticalCenter
-                spacing: 9
-
+                spacing: root.th.space2
                 Icon {
                     anchors.verticalCenter: parent.verticalCenter
                     name: "layout-grid"
-                    size: 14
+                    size: root.th.iconBody
                     color: root.activeGridId === modelData.id ? root.th.accent : root.th.text2
                 }
                 Text {
@@ -324,7 +293,7 @@ Item {
                     color: root.activeGridId === modelData.id ? root.th.text : root.th.text2
                     elide: Text.ElideRight
                     font.family: root.th.fontFamily
-                    font.pixelSize: 13
+                    font.pixelSize: root.th.fontSizeBody
                     font.weight: root.activeGridId === modelData.id ? 500 : 400
                 }
                 Text {
@@ -332,8 +301,8 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     text: modelData.cards.length
                     color: root.th.muted
-                    font.family: "JetBrains Mono"
-                    font.pixelSize: 10
+                    font.family: root.th.fontMono
+                    font.pixelSize: root.th.fontSizeSmall
                 }
             }
 

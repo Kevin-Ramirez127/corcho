@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.85"
 license = "MIT"
-description = "A futuristic canvas for personal development — Rust + Qt6 native rewrite"
+description = "A native grid workspace for notes, sites, tasks and calendars; built with Rust and Qt 6"
 default-run = "corcho"
 
 [dependencies]
@@ -21,7 +21,7 @@ notify = "8"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 semver = "1"
 uuid = { version = "1", features = ["v4"] }
-time = { version = "0.3", features = ["formatting", "macros"] }
+time = { version = "0.3", features = ["formatting", "macros", "local-offset"] }
 anyhow = "1"
 thiserror = "2"
 tracing = "0.1"

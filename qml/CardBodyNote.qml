@@ -22,11 +22,9 @@ CardFrame {
 
     Column {
         anchors.fill: parent
-        spacing: 8
-
+        spacing: root.th.space2
         Row {
-            spacing: 2
-
+            spacing: root.th.spaceHalf
             Repeater {
                 model: [
                     { icon: "bold", run: function () { root.wrap("**", "**"); } },
@@ -48,13 +46,13 @@ CardFrame {
 
                     Rectangle {
                         anchors.fill: parent
-                        radius: 5
+                        radius: root.th.radiusDot
                         color: toolItem.hoveredNow ? root.th.hover : "transparent"
                     }
                     Icon {
                         anchors.centerIn: parent
                         name: modelData.icon
-                        size: 13
+                        size: root.th.iconBody
                         color: root.th.text2
                     }
                     HoverHandler { id: h
@@ -74,7 +72,7 @@ CardFrame {
             selectionColor: root.th.accent
             selectedTextColor: root.th.accentInk
             font.family: root.th.fontFamily
-            font.pixelSize: 13
+            font.pixelSize: root.th.fontSizeSmall
             wrapMode: TextEdit.Wrap
             selectByMouse: true
             bottomPadding: 6
@@ -93,7 +91,7 @@ CardFrame {
                 text: "Write something"
                 color: root.th.muted
                 font.family: root.th.fontFamily
-                font.pixelSize: 13
+                font.pixelSize: root.th.fontSizeSmall
                 wrapMode: Text.WordWrap
             }
         }

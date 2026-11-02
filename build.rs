@@ -9,6 +9,9 @@ fn main() {
         .collect();
     qml_files.sort();
     println!("cargo::rerun-if-changed=qml");
+    for path in &qml_files {
+        println!("cargo::rerun-if-changed={}", path.display());
+    }
 
     CxxQtBuilder::new_qml_module(QmlModule::new("Corcho").qml_files(qml_files))
         .qt_module("Quick")

@@ -31,6 +31,7 @@ pub fn ensure_dirs(data_dir: &Path) -> Result<()> {
     fs::create_dir_all(data_dir)?;
     fs::create_dir_all(attachments_dir(data_dir))?;
     fs::create_dir_all(backups_dir(data_dir))?;
+    fs::create_dir_all(crate::theme::themes_dir(data_dir))?;
     Ok(())
 }
 
@@ -78,6 +79,9 @@ pub fn load_workspace(data_dir: &Path) -> Result<Workspace> {
     if ws.grids.is_empty() {
         let g = ws.add_grid("Grid A");
         ws.active_grid_id = Some(g.id);
+    }
+    if ws.migrate() {
+        let _ = save_workspace(data_dir, &ws);
     }
     Ok(ws)
 }
@@ -157,7 +161,8 @@ pub fn import_zip(data_dir: &Path, src: &Path) -> Result<Workspace> {
         }
     }
     let raw = ws_raw.context("backup contains no workspace.json")?;
-    let ws: Workspace = serde_json::from_str(&raw).context("invalid Corcho backup file")?;
+    let mut ws: Workspace = serde_json::from_str(&raw).context("invalid Corcho backup file")?;
+    ws.migrate();
     save_workspace(data_dir, &ws)?;
     Ok(ws)
 }
@@ -211,6 +216,7 @@ pub fn import_legacy(dir: &Path) -> Result<Workspace> {
     } else {
         ws.active_grid_id = ws.grids.first().map(|g| g.id.clone());
     }
+    ws.migrate();
     Ok(ws)
 }
 
@@ -229,6 +235,14 @@ pub fn write_attachment(data_dir: &Path, name: &str, bytes: &[u8]) -> Result<Pat
     let dest = attachments_dir(data_dir).join(safe);
     fs::write(&dest, bytes)?;
     Ok(dest)
+}
+
+pub fn delete_attachment(data_dir: &Path, name: &str) -> Result<()> {
+    let safe = Path::new(name)
+        .file_name()
+        .context("invalid attachment name")?;
+    fs::remove_file(attachments_dir(data_dir).join(safe))?;
+    Ok(())
 }
 
 pub fn list_attachments(data_dir: &Path) -> Vec<String> {

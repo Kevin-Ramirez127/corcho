@@ -4,7 +4,7 @@ CardFrame {
     id: root
 
     property var strokes: (card.strokes) ? card.strokes : []
-    property string penColor: (card.penColor) ? card.penColor : "#e0a48f"
+    property string penColor: (card.penColor) ? card.penColor : root.th.accent
     property real penWidth: (card.penWidth) ? card.penWidth : 3
     property var current: []
     property bool drawing: false
@@ -17,13 +17,11 @@ CardFrame {
 
     Column {
         anchors.fill: parent
-        spacing: 6
-
+        spacing: root.th.spaceCompact
         Row {
-            spacing: 6
-
+            spacing: root.th.spaceCompact
             Repeater {
-                model: ["#e0a48f", "#e8e8ea", "#86b78a", "#7aa2f7", "#e07a7a"]
+                model: [root.th.accent, root.th.text, "#86b78a", "#7aa2f7", root.th.danger]
 
                 delegate: Item {
                     required property var modelData
@@ -32,7 +30,7 @@ CardFrame {
 
                     Rectangle {
                         anchors.fill: parent
-                        radius: 8
+                        radius: root.th.radiusControl
                         color: modelData
                         border.width: root.penColor === modelData ? 2 : 0
                         border.color: root.th.text
@@ -50,7 +48,7 @@ CardFrame {
 
             Icon {
                 name: "trash-2"
-                size: 14
+                size: root.th.iconBody
                 color: root.th.muted
                 TapHandler {
                     onTapped: {

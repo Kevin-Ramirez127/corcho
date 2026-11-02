@@ -36,16 +36,14 @@ CardFrame {
 
     Column {
         anchors.fill: parent
-        spacing: 8
-
+        spacing: root.th.space2
         Row {
             width: parent.width
-            spacing: 10
-
+            spacing: root.th.spaceSnug
             Rectangle {
                 width: 54
                 height: 54
-                radius: 8
+                radius: root.th.radiusControl
                 color: root.th.surfaceStrong
                 clip: true
 
@@ -60,7 +58,7 @@ CardFrame {
                     anchors.centerIn: parent
                     visible: !(root.player && root.player.artUrl && root.player.artUrl.indexOf("file:") === 0)
                     name: "music-2"
-                    size: 22
+                    size: root.th.iconLarge
                     color: root.th.muted
                 }
             }
@@ -68,16 +66,15 @@ CardFrame {
             Column {
                 width: parent.width - 64
                 anchors.verticalCenter: parent.verticalCenter
-                spacing: 2
-
+                spacing: root.th.spaceHalf
                 Text {
                     width: parent.width
                     text: root.player ? (root.player.title || "Unknown track") : "Nothing playing"
                     color: root.th.text
                     elide: Text.ElideRight
                     font.family: root.th.fontFamily
-                    font.pixelSize: 13
-                    font.weight: 500
+                    font.pixelSize: root.th.fontSizeBody
+                    font.weight: root.th.fontWeightMedium
                 }
                 Text {
                     width: parent.width
@@ -85,7 +82,7 @@ CardFrame {
                     color: root.th.text2
                     elide: Text.ElideRight
                     font.family: root.th.fontFamily
-                    font.pixelSize: 12
+                    font.pixelSize: root.th.fontSizeSmall
                 }
                 Text {
                     width: parent.width
@@ -94,30 +91,29 @@ CardFrame {
                     color: root.th.muted
                     elide: Text.ElideRight
                     font.family: root.th.fontFamily
-                    font.pixelSize: 11
+                    font.pixelSize: root.th.fontSizeSmall
                 }
             }
         }
 
         Row {
             anchors.horizontalCenter: parent.horizontalCenter
-            spacing: 14
-
+            spacing: root.th.space4
             Icon {
                 name: "skip-back"
-                size: 18
+                size: root.th.iconLarge
                 color: root.th.text2
                 TapHandler { onTapped: root.act("previous") }
             }
             Icon {
                 name: root.player && root.player.status === "Playing" ? "pause" : "play"
-                size: 24
+                size: root.th.iconLarge
                 color: root.th.accent
                 TapHandler { onTapped: root.act("play-pause") }
             }
             Icon {
                 name: "skip-forward"
-                size: 18
+                size: root.th.iconLarge
                 color: root.th.text2
                 TapHandler { onTapped: root.act("next") }
             }

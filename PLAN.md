@@ -1,10 +1,10 @@
-# Corcho-RS — Rust + Qt6 Native Rewrite
+# Corcho-RS: Rust + Qt6 Native Rewrite
 
 ## 1. Objective
 
 Rebuild the Corcho / Corcho v1.20.0 feature set as a **native Linux desktop app** in **Rust** with **Qt 6**, replacing the Electron/Chromium shell.
 
-- **Shell/UI:** Qt Quick (QML) — GPU-rendered, native window, no Electron, no bundled web shell.
+- **Shell/UI:** Qt Quick (QML): GPU-rendered, native window, no Electron, no bundled web shell.
 - **Logic:** Rust owns the model, storage, AI, sync, integrations.
 - **Web content:** QtWebEngine is embedded *only* for website cards (the original app needs a real browser engine there).
 - **Targets:** Linux first (AppImage, DEB, Flatpak). Keep macOS/Windows buildable but out of scope for v1.
@@ -24,9 +24,9 @@ Non-goals for v1: cloud account service, mobile, web version, byte-for-byte UI c
 | QML modules | QtQuick, QtQuick3D, QtWebEngine, QtMultimedia, QtNetwork, QtQml, QtTest, QtDBus |
 | QML dev | `Qt6QmlImportScanner`, `Qt6LinguistTools` present |
 
-Bridge library: **cxx-qt 0.10** (KDAB) — supports all Qt 6, MSRV 1.85, `QAbstractListModel`, QObject signal/slot, Qt threading. Clone used for reference: `KDAB/cxx-qt`.
+Bridge library: **cxx-qt 0.10** (KDAB) supports all Qt 6, MSRV 1.85, `QAbstractListModel`, QObject signal/slot, Qt threading. Clone used for reference: `KDAB/cxx-qt`.
 
-**Do not clone Qt or the Rust toolchain** — Qt source is ~several GB and unnecessary; use the installed Qt dev packages + docs. Clone only small binding repos when an API is unclear (cxx-qt done).
+**Do not clone Qt or the Rust toolchain**: Qt source is ~several GB and unnecessary; use the installed Qt dev packages + docs. Clone only small binding repos when an API is unclear (cxx-qt done).
 
 ### Feasibility spike result
 `examples/qml_minimal` from cxx-qt **configures and builds** against the installed Qt 6.12 (see build log verification). This de-risks the core stack.
@@ -38,9 +38,9 @@ Bridge library: **cxx-qt 0.10** (KDAB) — supports all Qt 6, MSRV 1.85, `QAbstr
 ```
 ┌───────────────────────────────────────────────┐
 │ Qt Quick (QML)                                │
-│  Shell · Canvas · Cards · Dialogs · Powerbar  │
+│  Shell · Canvas · Cards · Dialogs · Launcher  │
 │  QtWebEngine (website cards)                  │
-│  QtQuick3D (Artifact/Hypercube fragments)     │
+│  Calendar and Timbre cards                    │
 └───────────────▲───────────────┬───────────────┘
                 │ signals        │ invoke()
 ┌───────────────┴───────────────▼───────────────┐
@@ -84,11 +84,9 @@ corcho-rs/
 │  ├─ shell/                     # Sidebar, Topbar, StatusBar, MobileShell
 │  ├─ canvas/                    # CanvasView, CardLayer, Minimap, Selection
 │  ├─ cards/                     # Note, Website, Bookmark, ApiData, Ai, Script,
-│  │                             # Fragment, GridLink, Checklist, Kanban,
-│  │                             # Whiteboard, Pomodoro, Mpris
-│  ├─ fragments/                 # Haptic, Nebula, Spectrum, Artifact, Boson,
-│  │                             # Vector, Calendar, Hypercube
-│  ├─ dialogs/                   # Settings*, Powerbar, ContextMenu, Tutorials,
+│  │                             # Calendar, Timbre, GridPortal, Checklist,
+│  │                             # Kanban, Whiteboard, Pomodoro, Mpris
+│  ├─ dialogs/                   # Settings*, Launcher, ContextMenu, Tutorials,
 │  │                             # Onboarding, Update, Changelog
 │  └─ style/                     # Themes.qml, Fonts.qml, Icons.qml, Metrics.qml
 ├─ assets/                       # fonts/, icons/lucide/, images/
@@ -109,7 +107,7 @@ struct Card { id, kind: CardKind, x: f32, y: f32, w: f32, h: f32,
               color, icon, title, locked: bool, payload: serde_json::Value }
 
 enum CardKind { Note, Website, Bookmark, ApiData, Ai, Script,
-                Fragment, GridLink, Checklist, Kanban, Whiteboard, Pomodoro, Mpris }
+                Calendar, Timbre, GridPortal, Checklist, Kanban, Whiteboard, Pomodoro, Mpris }
 ```
 
 - **Store:** one JSON file per grid (`grids/<id>.json`) + `workspace.json` + `settings.json`, atomic write (temp + rename), `.bak` rotation. Same shape as the original for easy migration.
@@ -122,9 +120,9 @@ enum CardKind { Note, Website, Bookmark, ApiData, Ai, Script,
 
 ## 6. Rust ↔ Qt bridge
 
-- `AppController` (QObject) — `#[qinvokable]` methods: `create_card`, `delete_card`, `move_card`, `resize_card`, `duplicate_card`, `switch_grid`, `create_folder`, `rename_*`, `set_theme`, `run_powerbar`, `open_settings`, `connect_ai`, etc.
-- `GridListModel` / `CardListModel` — `QAbstractListModel` (cxx-qt todo_app pattern). Card role returns a `QVariantMap` for heterogeneous payloads; QML delegates by `kind`.
-- `SettingsObject` — Q_PROPERTY-backed settings with `changed` signals.
+- `AppController` (QObject): `#[qinvokable]` methods: `create_card`, `delete_card`, `move_card`, `resize_card`, `duplicate_card`, `switch_grid`, `create_folder`, `rename_*`, `set_theme`, `run_launcher`, `open_settings`, `connect_ai`, etc.
+- `GridListModel` / `CardListModel`: `QAbstractListModel` (cxx-qt todo_app pattern). Card role returns a `QVariantMap` for heterogeneous payloads; QML delegates by `kind`.
+- `SettingsObject`: Q_PROPERTY-backed settings with `changed` signals.
 - Async streams (AI tokens, download progress, sync status) emit Qt signals from tokio via `qt_thread()`.
 - High-frequency drag/resize stays in QML; one `commit_card_geometry` call per gesture end.
 
@@ -147,8 +145,9 @@ enum CardKind { Note, Website, Bookmark, ApiData, Ai, Script,
 | API Data | `reqwest` fetch, JSON field mappings, test fetch, refresh timer. |
 | AI | Provider/model/prompt/config, streaming, context injection, field mappings, refresh schedule. |
 | Script | `tokio::process::Command` in `/bin/sh` (feature-flagged and sandboxed; menu disabled by default like upstream). |
-| Fragment | see 7.4. |
-| Grid Link | Rust model navigation + canvas switch. |
+| Calendar | Month view, reminders and date links across cards. |
+| Timbre | Noise and pure-tone audio with volume, pitch and mix. |
+| Grid Portal | Rust model navigation + canvas switch. |
 | Checklist | QML list model, reorder, progress. |
 | Kanban | Columns + drag/drop, per-column limits. |
 | Whiteboard | QML `Canvas`/`Shape` strokes, pen/eraser/colour/width, stroke persistence. |
@@ -161,20 +160,18 @@ enum CardKind { Note, Website, Bookmark, ApiData, Ai, Script,
 - Context injection from linked Notes/Websites; web-search toggle; refresh intervals.
 - Proxy through Rust (no keys in QML).
 
-### 7.4 Fragments
-- **Haptic** — QML pressure/release interaction + elastic animation.
-- **Nebula** — animated mesh gradient (`ShaderEffect`/`Canvas`).
-- **Spectrum** — noise + pure-tone synth via `cpal` in Rust (low latency) with volume/tone controls.
-- **Artifact / Hypercube** — QtQuick3D wireframe meshes (cube, icosahedron, torus, hypercube).
-- **Boson** — particle field in `ShaderEffect`/`Canvas` with pointer ripples.
-- **Vector** — time-passage visual.
-- **Calendar** — QML calendar fragment.
-- **Haptic/Nebula/Spectrum/Artifact/Boson/Vector/Calendar/Hypercube** all with persisted config.
+### 7.4 Calendar and Timbre
+- **Calendar**: QML month grid with previous/next month and Today navigation,
+  a selected-day agenda, and per-calendar filters.
+- **Date links**: reminders and dates from any card or kanban/checklist item
+  are stored as date links that reference one or more calendars.
+- **Timbre**: noise and pure-tone synth via `cpal` in Rust (low latency), with
+  volume, pitch and mix controls. Playback is manual and owned by one card.
 
 ### 7.5 Web / adblock (`crates/integrations` + `cpp/`)
 - Per-website persistent `WebEngineProfile` (isolated storage/cookies).
 - `adblock-rust` (Brave) filter engine + tiny `QWebEngineUrlRequestInterceptor` C++ shim.
-- Cookie/debug panel incl. the **"Simulate Attack"** self-test (reimplement in a sandboxed test profile).
+- Cookie/debug panel incl. the **Session Probe** self-test (reimplement in a sandboxed test profile).
 - Permission handler, window-open handler, clear-partition-data.
 
 ### 7.6 Sync, backup, data (`crates/sync`, `crates/storage`)
@@ -187,13 +184,13 @@ enum CardKind { Note, Website, Bookmark, ApiData, Ai, Script,
 ### 7.7 Updates and OS integration
 - Updater: GitHub Releases (`reqwest` + `semver`), channels **stable/beta/experimental**, mandatory-update gate, AppImage/DEB installer strategy per package type.
 - Launch-at-startup (XDG autostart / portal), single instance (D-Bus name), `corcho://` protocol handler, native file dialogs, About panel, changelog.
-- Global Powerbar hotkey via XDG `GlobalShortcuts` portal (`ashpd`) with X11 fallback.
+- Global Launcher hotkey via XDG `GlobalShortcuts` portal (`ashpd`) with X11 fallback.
 - MPRIS card, media art cache, clipboard, open-in-browser.
 
 ### 7.8 UI shell
-- Sidebar (grids, folders, sync indicator, settings, powerbar), topbar, status bar, responsive/mobile layout.
-- Powerbar (command palette): grids/cards search, create commands, zoom, undo/redo, themes, easter eggs.
-- Settings — General / Interface / Appearance / Data / AI / Security / About, porting all options from §11 of the inventory.
+- Sidebar (grids, folders, sync indicator, settings, launcher), topbar, status bar, responsive/mobile layout.
+- Launcher (command palette): grids/cards search, create commands, zoom, undo/redo, themes, easter eggs.
+- Settings: General / Interface / Appearance / Data / AI / Security / About, porting all options from §11 of the inventory.
 - Themes: 19 standard + custom editor; 14 fonts; opacity, audio, visual-effect toggles.
 - Tutorials/onboarding, splash, easter eggs, changelog, legal links, local diagnostics (no telemetry).
 
@@ -205,18 +202,18 @@ Everything in the inventory maps as follows. Nothing is dropped; OS-specific ite
 
 | Area | Coverage |
 |---|---|
-| Canvas/grid (pan, zoom, snap, magnet, ripple, parallax, minimap, folders, grid links, lock, undo/redo) | Full — QML + Rust |
-| 12 card types | Full |
-| 8 fragment modes | Full (QtQuick3D + QML + cpal) |
+| Canvas/grid (pan, zoom, snap, magnet, ripple, parallax, minimap, folders, grid portals, lock, undo/redo) | Full (QML + Rust) |
+| 14 card types | Full |
+| Calendar + date links + Timbre | Full (QML + cpal) |
 | 19 themes + custom, 14 fonts, opacity/volume/effects | Full |
 | AI: 5 providers + local, model lists, streaming, web search, refresh, context injection, stats | Full |
-| Website cards: webview/bookmark/API, isolated sessions, nav/zoom, scroll memory, adblock, cookie debug, attack sim | Full |
+| Website cards: webview/bookmark/API, isolated sessions, nav/zoom, scroll memory, adblock, cookie debug, session probe | Full |
 | Cloud sync: folder provider (iCloud substitute) + Google Drive + Git remote, conflicts, indicator, troubleshoot | Full |
 | Backups import/export, data folder, migration, wipe/reset | Full |
 | Updates: channels, auto modes, mandatory flow, changelog | Full |
-| Licensing | Removed — Corcho is fully free software |
-| Powerbar + tutorials + onboarding + easter eggs + legal + diagnostics + analytics (opt-in) | Full |
-| MPRIS/now-playing | Full (`mpris`/zbus + playerctl fallback) — Linux |
+| Licensing | Removed; Corcho is fully free software |
+| Launcher + tutorials + onboarding + easter eggs + legal + diagnostics + analytics (opt-in) | Full |
+| MPRIS/now-playing | Full (`mpris`/zbus + playerctl fallback); Linux |
 | Script card `/bin/sh` | Full, disabled-by-default menu entry like upstream |
 | Debug tools (test data, simulated failures, mandatory-update test, memory/logs) | Full behind `--debug`/dev build |
 
@@ -239,23 +236,23 @@ Keep the dependency surface small; prefer Qt for rendering/OS and Rust for logic
 
 Sizing assumes one developer; rough, not a commitment.
 
-**M0 — Spike (S).** cxx-qt window + QML shell + one `CardListModel` + create/move/delete card + JSON persistence. *Accept:* card survives restart; `cargo test` + QML smoke test pass.
+**M0: Spike (S).** cxx-qt window + QML shell + one `CardListModel` + create/move/delete card + JSON persistence. *Accept:* card survives restart; `cargo test` + QML smoke test pass.
 
-**M1 — Canvas & core model (M).** Grids, folders, pan/zoom, snap, minimap, undo/redo, sidebar, contexts. *Accept:* 200-card grid at 60 fps; undo/redo 20 steps.
+**M1: Canvas & core model (M).** Grids, folders, pan/zoom, snap, minimap, undo/redo, sidebar, contexts. *Accept:* 200-card grid at 60 fps; undo/redo 20 steps.
 
-**M2 — Productivity cards (M).** Note, Checklist, Kanban, Whiteboard, Pomodoro, Grid Link, Script (flagged). *Accept:* all persist and edit correctly.
+**M2: Productivity cards (M).** Note, Checklist, Kanban, Whiteboard, Pomodoro, Grid Portal, Script (flagged). *Accept:* all persist and edit correctly.
 
-**M3 — Web cards & adblock (M).** Website/Bookmark/API Data, profiles, nav, adblock, cookie debug. *Accept:* site isolation + adblock verified against a test site.
+**M3: Web cards & adblock (M).** Website/Bookmark/API Data, profiles, nav, adblock, cookie debug. *Accept:* site isolation + adblock verified against a test site.
 
-**M4 — AI (M).** Providers, streaming, AI cards, context injection, refresh, stats. *Accept:* streaming from each provider (mock in CI) + local server.
+**M4: AI (M).** Providers, streaming, AI cards, context injection, refresh, stats. *Accept:* streaming from each provider (mock in CI) + local server.
 
-**M5 — Fragments (M).** Haptic, Nebula, Spectrum (audio), Artifact/Boson/Vector, Calendar, Hypercube. *Accept:* stable frame times; audio synth works.
+**M5: Calendar and Timbre (M).** Month view, reminders, date links, calendar filters, and the audio synth. *Accept:* date links survive restart; audio starts and stops cleanly.
 
-**M6 — Sync/data (M).** Folder sync + Google Drive, conflicts, backups, import/export, migration. *Accept:* two-instance convergence test + conflict backup.
+**M6: Sync/data (M).** Folder sync + Google Drive, conflicts, backups, import/export, migration. *Accept:* two-instance convergence test + conflict backup.
 
-**M7 — Platform (M).** Updates, launch-at-startup, protocol, hotkey, single instance, MPRIS, legal. *Accept:* end-to-end update on AppImage.
+**M7: Platform (M).** Updates, launch-at-startup, protocol, hotkey, single instance, MPRIS, legal. *Accept:* end-to-end update on AppImage.
 
-**M8 — Polish & packaging (M).** Themes/fonts parity, tutorials/onboarding, accessibility, AppImage/DEB/Flatpak, docs. *Accept:* clean install on fresh VM; feature matrix checklist green.
+**M8: Polish & packaging (M).** Themes/fonts parity, tutorials/onboarding, accessibility, AppImage/DEB/Flatpak, docs. *Accept:* clean install on fresh VM; feature matrix checklist green.
 
 Total: **~3–5 months solo** for parity, more with cross-platform packaging.
 
@@ -298,7 +295,7 @@ Total: **~3–5 months solo** for parity, more with cross-platform packaging.
 ## 14. Legal
 
 Corcho is free software under the MIT license. It is a clean-room reimplementation of behaviour. Do not copy the original product's binaries, icons, fonts, or bundled assets. Use:
-- Lucide icons (ISC) — fetch from upstream.
+- Lucide icons (ISC); fetch from upstream.
 - Fonts under their own licenses (Inter/DM Sans/Manrope/JetBrains Mono/Fira Code/Source Code Pro/IBM Plex/Space Mono are OFL; check OCR-A and OpenDyslexic).
 - Own branding and visual design.
 
@@ -312,7 +309,7 @@ Corcho is free software under the MIT license. It is a clean-room reimplementati
 4. Lock the theme/font/icon asset set and licenses.
 5. Start M1 canvas + model.
 
-Reference repos cloned: `KDAB/cxx-qt` (binding API). Qt/Rust toolchains cloned? **No** — installed versions are sufficient; clone only if a specific API needs reading.
+Reference repos cloned: `KDAB/cxx-qt` (binding API). Qt/Rust toolchains cloned? **No**: installed versions are sufficient; clone only if a specific API needs reading.
 
 ---
 
@@ -327,11 +324,11 @@ zero.
 - **Light refresh:** card updates refresh only `cardsJson`; grids/folders/
   settings are refreshed only when their shape changes.
 - **Culling:** cards outside the viewport plus a margin are unloaded by the
-  `Loader`, so off-screen webviews and fragment timers cost nothing.
+  `Loader`, so off-screen webviews and timbre visualizers cost nothing.
 - **Canvas:** dot grid redraws are coalesced per frame; minimap redraws only on
   pan/zoom; ripple and spawn animations are single-shot.
-- **Fragments:** 30 fps cap, one Timer per fragment, stopped when off-screen or
-  when **Reduced motion** is on.
+- **Timbre:** visualizer timer runs only while audio is playing and stops
+  when the card is off-screen or **Reduced motion** is on.
 - **Persistence:** view changes stay in memory and save on release; JSON writes
   are atomic; a future pass adds a 400 ms debounce for text edits.
 - **Network:** AI streams are emitted per chunk without re-serialising the
@@ -340,7 +337,7 @@ zero.
   qrc resources; no network at launch.
 
 Acceptance: 200 cards at 60 fps on the reference machine; pan with a webview
-card visible stays above 50 fps; idle CPU < 1% with no fragment playing.
+card visible stays above 50 fps; idle CPU < 1% with no timbre playing.
 
 ## 16. Theme and accessibility color grading pass
 
@@ -361,7 +358,7 @@ Procedure:
    and `text2` values; dark themes get lighter ones.
 6. Add a visible focus ring, keyboard activation, and screen-reader roles/names
    to every control.
-7. Honour the OS/reduced-motion setting: no spawn, ripple, parallax or fragment
+7. Honour the OS/reduced-motion setting: no spawn, ripple, parallax or timbre
    animation when enabled.
 
 Acceptance: a contrast script over the theme table reports no body-text pair
@@ -396,22 +393,24 @@ Delivered in this repository:
 
 - [x] Cargo-only `cxx-qt` build, Qt 6 QML shell, AppController bridge.
 - [x] Model, atomic JSON storage, snapshot undo/redo, search, tests.
-- [x] Infinite canvas: pan, zoom, snap, minimap, folders, grid links, lock,
+- [x] Infinite canvas: pan, zoom, snap, minimap, folders, grid portals, lock,
       spawn/ripple, reduced motion, culling.
-- [x] Thirteen card types, including website, API, AI, script, kanban,
-      whiteboard, pomodoro and MPRIS.
-- [x] Eight fragment modes with audio (Spectrum) and a 30 fps budget.
+- [x] Fourteen card types, including website, API, AI, script, calendar,
+      timbre, kanban, whiteboard, pomodoro and MPRIS.
+- [x] Multi-calendar date links, reminders, month navigation and per-calendar
+      filters.
+- [x] Timbre audio card with manual start/stop and visualizer.
 - [x] Five AI providers plus local server, streaming, context, key validation.
-- [x] Isolated website sessions, host ad blocker, cookie panel, attack sim.
+- [x] Isolated website sessions, host ad blocker, cookie panel, session probe.
 - [x] Folder sync, Google Drive sync, git sync (any remote), conflict copies,
       zip backup/restore, legacy import.
 - [x] Updates (stable/beta/experimental), MPRIS, scripts, launch at startup,
       single instance, `corcho://` deep links.
-- [x] Powerbar, six settings tabs, 19 themes, custom theme editor, fonts,
+- [x] Launcher, six settings tabs, 19 themes, custom theme editor, fonts,
       onboarding, tutorials, changelog.
 - [x] Fully FOSS: no licensing, premium locks, premium icons or telemetry.
 - [x] Optimization pass: ListModel diffing, light card refresh, culling,
-      View state kept in memory, fragment timers stopped off-screen.
+      View state kept in memory, timbre visualizer stopped off-screen.
 - [x] Accessibility pass: WCAG/APCA targets, contrast test in `model.rs`,
       focus rings, keyboard activation, `Accessible` names/roles.
 - [x] Unslop pass: 4 px rhythm, quiet chrome, one ember accent, one icon set,

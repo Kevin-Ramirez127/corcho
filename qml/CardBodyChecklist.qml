@@ -6,6 +6,25 @@ CardFrame {
     property var items: (card.items) ? card.items : []
     property bool changed: false
 
+    readonly property var links: {
+        try { return (JSON.parse(root.app.calendarJson).dateLinks || []); }
+        catch (e) { return []; }
+    }
+
+    function linkFor(itemId) {
+        for (var i = 0; i < links.length; i++)
+            if (links[i].sourceCardId === root.card.id && links[i].sourceItemId === itemId)
+                return links[i];
+        return null;
+    }
+
+    function shortDate(key) {
+        var p = key.split("-");
+        if (p.length !== 3) return key;
+        var d = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+        return d.toLocaleDateString(Qt.locale(), "MMM d");
+    }
+
     function persist() {
         root.commit({ items: root.items });
     }
@@ -40,20 +59,18 @@ CardFrame {
 
     Column {
         anchors.fill: parent
-        spacing: 8
-
+        spacing: root.th.space2
         Rectangle {
             width: parent.width
             height: 4
-            radius: 2
+            radius: root.th.radiusHairline
             color: root.th.surfaceStrong
 
             Rectangle {
                 width: parent.width * (root.items.length === 0 ? 0 : root.doneCount / root.items.length)
                 height: parent.height
-                radius: 2
+                radius: root.th.radiusHairline
                 color: root.th.accent
-                Behavior on width { NumberAnimation { duration: 160 } }
             }
         }
 
@@ -62,7 +79,7 @@ CardFrame {
             width: parent.width
             height: parent.height - 42
             clip: true
-            spacing: 2
+            spacing: root.th.spaceHalf
             model: root.items
 
             delegate: Item {
@@ -70,13 +87,14 @@ CardFrame {
                 required property var modelData
                 required property int index
                 property bool hoveredNow: false
+                readonly property var link: root.linkFor(modelData.id)
 
                 width: list.width
                 height: 30
 
                 Rectangle {
                     anchors.fill: parent
-                    radius: 6
+                    radius: root.th.radiusKeycap
                     color: checkItem.hoveredNow ? root.th.hover : "transparent"
                 }
 
@@ -86,32 +104,59 @@ CardFrame {
                     anchors.leftMargin: 4
                     anchors.verticalCenter: parent.verticalCenter
                     name: modelData.done ? "circle-check" : "circle"
-                    size: 16
+                    size: root.th.iconBody
                     color: modelData.done ? root.th.accent : root.th.muted
+                }
+
+                Row {
+                    id: rightRow
+                    anchors.right: parent.right
+                    anchors.rightMargin: 4
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: root.th.space1
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        visible: checkItem.link !== null
+                        text: checkItem.link ? root.shortDate(checkItem.link.date) : ""
+                        color: root.th.accent
+                        font.family: root.th.fontFamily
+                        font.pixelSize: root.th.fontSizeMicro
+                    }
+                    Icon {
+                        anchors.verticalCenter: parent.verticalCenter
+                        name: "calendar"
+                        size: root.th.iconSmall
+                        color: checkItem.link !== null ? root.th.accent : root.th.muted
+                        opacity: (checkItem.link !== null || checkItem.hoveredNow) ? 1 : 0
+                        TapHandler {
+                            onTapped: root.dateLinkRequested(
+                                root.card.id,
+                                modelData.id,
+                                checkItem.link ? checkItem.link.id : "",
+                                checkItem.link ? checkItem.link.date : "")
+                        }
+                    }
+                    Icon {
+                        anchors.verticalCenter: parent.verticalCenter
+                        name: "x"
+                        size: root.th.iconSmall
+                        color: root.th.muted
+                        opacity: checkItem.hoveredNow ? 1 : 0
+                    }
                 }
 
                 Text {
                     anchors.left: box.right
                     anchors.leftMargin: 9
-                    anchors.right: parent.right
-                    anchors.rightMargin: 24
+                    anchors.right: rightRow.left
+                    anchors.rightMargin: 6
                     anchors.verticalCenter: parent.verticalCenter
                     text: modelData.text
                     elide: Text.ElideRight
                     color: modelData.done ? root.th.muted : root.th.text
                     font.family: root.th.fontFamily
-                    font.pixelSize: 13
+                    font.pixelSize: root.th.fontSizeSmall
                     font.strikeout: modelData.done
-                }
-
-                Icon {
-                    anchors.right: parent.right
-                    anchors.rightMargin: 4
-                    anchors.verticalCenter: parent.verticalCenter
-                    name: "x"
-                    size: 12
-                    color: root.th.muted
-                    opacity: checkItem.hoveredNow ? 1 : 0
                 }
 
                 HoverHandler { id: rowHover
@@ -134,7 +179,7 @@ CardFrame {
             height: 28
             color: root.th.text
             font.family: root.th.fontFamily
-            font.pixelSize: 13
+            font.pixelSize: root.th.fontSizeSmall
             clip: true
             onAccepted: {
                 root.addItem(text);

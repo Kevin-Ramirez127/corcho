@@ -24,38 +24,29 @@ Item {
     Column {
         anchors.centerIn: parent
         width: Math.min(560, root.width - 80)
-        spacing: 18
-
-        Rectangle {
-            width: 40
-            height: 40
-            radius: 11
+        spacing: root.th.space5
+        Icon {
+            name: "pin"
+            size: root.th.iconPage
             color: root.th.accent
-            Rectangle {
-                anchors.centerIn: parent
-                width: 14
-                height: 14
-                radius: 3
-                color: root.th.accentInk
-            }
         }
 
         Text {
             text: "Corcho"
             color: root.th.text
             font.family: root.th.fontFamily
-            font.pixelSize: 30
-            font.weight: 500
+            font.pixelSize: root.th.fontSizeDisplay
+            font.weight: root.th.fontWeightMedium
         }
 
         Text {
             width: parent.width
-            text: "A canvas for thinking in cards. Notes, websites, tasks, timers and fragments live side by side on an infinite grid."
+            text: "A canvas for thinking in cards. Notes, websites, tasks, timers and calendars live side by side on an infinite grid."
             color: root.th.text2
             font.family: root.th.fontFamily
-            font.pixelSize: 14
+            font.pixelSize: root.th.fontSizeSubtitle
             wrapMode: Text.WordWrap
-            lineHeight: 1.4
+            lineHeight: 1.45
         }
 
         Text {
@@ -63,17 +54,16 @@ Item {
             text: "We intentionally do not include example grids. You will get the most out of it by exploring it yourself, without preconceptions."
             color: root.th.muted
             font.family: root.th.fontFamily
-            font.pixelSize: 13
+            font.pixelSize: root.th.fontSizeBody
             wrapMode: Text.WordWrap
-            lineHeight: 1.4
+            lineHeight: 1.45
         }
 
         Row {
-            spacing: 10
-
+            spacing: root.th.space3
             AppButton {
                 th: root.th
-                text: "Start exploring"
+                text: "Begin"
                 variant: "solid"
                 onClicked: root.startExploring()
             }
@@ -85,11 +75,16 @@ Item {
             }
         }
 
-        Text {
-            text: "Press Ctrl + K for the Powerbar"
-            color: root.th.muted
-            font.family: "JetBrains Mono"
-            font.pixelSize: 11
+        Row {
+            spacing: root.th.space2
+            Keycap { th: root.th; text: "Ctrl K" }
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: "Launcher"
+                color: root.th.muted
+                font.family: root.th.fontFamily
+                font.pixelSize: root.th.fontSizeSmall
+            }
         }
     }
 }

@@ -17,6 +17,8 @@ FocusScope {
     Accessible.role: Accessible.Grouping
     Accessible.name: (root.card.title || root.card.type) + " card"
     signal menuRequested(var card, real globalX, real globalY)
+    signal dateLinkRequested(string sourceCardId, string sourceItemId, string linkId, string defaultDate)
+    signal calendarManagerRequested()
     property bool cardHovered: false
     property bool menuHovered: false
     property bool resizeHovered: false
@@ -35,7 +37,6 @@ FocusScope {
         entered = true;
         if (root.settings && root.settings.spawn_animations && !root.settings.reduced_motion) {
             opacity = 0;
-            scale = 0.97;
             enterAnim.start();
         }
     }
@@ -66,9 +67,9 @@ FocusScope {
     NumberAnimation {
         id: enterAnim
         target: root
-        properties: "opacity,scale"
+        property: "opacity"
         to: 1
-        duration: 130
+        duration: root.th.motionSlow
         easing.type: Easing.OutCubic
     }
 
@@ -113,22 +114,40 @@ FocusScope {
     Rectangle {
         id: surface
         anchors.fill: parent
-        radius: 14
+        radius: root.th.radiusCard
         transform: Translate { x: root.parallaxX; y: root.parallaxY }
         color: root.th.card
-        border.width: root.selected ? 1.5 : 1
+        border.width: root.selected ? root.th.borderWidthStrong : root.th.borderWidth
         border.color: root.selected ? root.th.accent : (root.cardHovered ? root.th.borderStrong : root.th.border)
-        Behavior on border.color { ColorAnimation { duration: 110 } }
+        Behavior on border.color { ColorAnimation { duration: 120 } }
+    }
+
+    Item {
+        visible: root.selected
+        width: 6
+        height: 10
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.top: parent.top
+        anchors.topMargin: -3
+        z: 2
 
         Rectangle {
-            width: 20
-            height: 3
-            radius: 2
-            x: 14
-            y: 0
-            anchors.topMargin: -1
+            anchors.horizontalCenter: parent.horizontalCenter
+            width: 6
+            height: 6
+            radius: root.th.radiusSmall
             color: root.card.color || root.th.accent
-            opacity: 0.85
+            border.width: root.th.borderWidth
+            border.color: root.th.accent
+        }
+        Rectangle {
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.top: parent.top
+            anchors.topMargin: 6
+            width: 1
+            height: 4
+            color: root.th.accent
+            opacity: root.th.opacityEmphasis
         }
     }
 
@@ -139,21 +158,20 @@ FocusScope {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        height: 44
+        height: root.th.cardHeaderHeight
 
         Row {
             anchors.left: parent.left
-            anchors.leftMargin: 14
+            anchors.leftMargin: root.th.space4
             anchors.right: menuButton.left
-            anchors.rightMargin: 8
+            anchors.rightMargin: root.th.space2
             anchors.verticalCenter: parent.verticalCenter
-            spacing: 9
-
+            spacing: root.th.space2
             Icon {
                 anchors.verticalCenter: parent.verticalCenter
                 name: root.card.icon || "square"
-                size: 15
-                color: root.card.color || root.th.text2
+                size: root.th.iconBody
+                color: root.th.text2
             }
 
             TextInput {
@@ -163,8 +181,8 @@ FocusScope {
                 text: root.card.title || ""
                 color: root.th.text
                 font.family: root.th.fontFamily
-                font.pixelSize: 13
-                font.weight: 500
+                font.pixelSize: root.th.fontSizeBody
+                font.weight: root.th.fontWeightMedium
                 selectByMouse: true
                 selectionColor: root.th.accent
                 clip: true
@@ -187,22 +205,22 @@ FocusScope {
 
         Item {
             id: menuButton
-            width: 28
-            height: 28
+            width: 32
+            height: 32
             anchors.right: parent.right
-            anchors.rightMargin: 10
+            anchors.rightMargin: root.th.space3
             anchors.verticalCenter: parent.verticalCenter
             opacity: root.cardHovered || root.selected ? 1 : 0
 
             Rectangle {
                 anchors.fill: parent
-                radius: 6
+                radius: root.th.radiusControl
                 color: root.menuHovered ? root.th.hover : "transparent"
             }
             Icon {
                 anchors.centerIn: parent
                 name: "ellipsis"
-                size: 15
+                size: root.th.iconBody
                 color: root.th.text2
             }
             HoverHandler { id: menuHover
@@ -253,16 +271,16 @@ FocusScope {
         anchors.right: parent.right
         anchors.top: root.showChrome ? header.bottom : parent.top
         anchors.bottom: parent.bottom
-        anchors.margins: root.showChrome ? 14 : 10
-        anchors.topMargin: root.showChrome ? 0 : 10
+        anchors.margins: root.showChrome ? 16 : 12
+        anchors.topMargin: root.showChrome ? 0 : 12
         clip: true
     }
 
     Item {
         id: resizeHandle
         visible: root.resizable && !root.card.locked
-        width: 18
-        height: 18
+        width: 20
+        height: 20
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         opacity: root.resizeHovered || root.selected ? 1 : 0
@@ -270,7 +288,7 @@ FocusScope {
         Icon {
             anchors.centerIn: parent
             name: "maximize-2"
-            size: 11
+            size: root.th.iconSmall
             color: root.th.muted
             rotation: 90
         }

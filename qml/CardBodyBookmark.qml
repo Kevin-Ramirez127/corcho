@@ -15,16 +15,14 @@ CardFrame {
 
     Column {
         anchors.fill: parent
-        spacing: 8
-
+        spacing: root.th.space2
         Row {
             width: parent.width
-            spacing: 10
-
+            spacing: root.th.spaceSnug
             Rectangle {
                 width: 40
                 height: 40
-                radius: 10
+                radius: root.th.radiusMenu
                 color: root.th.surfaceStrong
                 TapHandler { onTapped: root.open() }
 
@@ -33,15 +31,15 @@ CardFrame {
                     text: root.domain.length > 0 ? root.domain.charAt(0).toUpperCase() : "?"
                     color: root.th.accent
                     font.family: root.th.fontFamily
-                    font.pixelSize: 18
-                    font.weight: 500
+                    font.pixelSize: root.th.fontSizePage
+                    font.weight: root.th.fontWeightMedium
                 }
             }
 
             Icon {
                 anchors.verticalCenter: parent.verticalCenter
                 name: "external-link"
-                size: 14
+                size: root.th.iconBody
                 color: root.th.muted
                 TapHandler { onTapped: root.open() }
             }
@@ -49,16 +47,15 @@ CardFrame {
             Column {
                 width: parent.width - 50
                 anchors.verticalCenter: parent.verticalCenter
-                spacing: 2
-
+                spacing: root.th.spaceHalf
                 Text {
                     width: parent.width
                     text: root.domain || "Add a URL"
                     color: root.th.text
                     elide: Text.ElideRight
                     font.family: root.th.fontFamily
-                    font.pixelSize: 13
-                    font.weight: 500
+                    font.pixelSize: root.th.fontSizeSmall
+                    font.weight: root.th.fontWeightMedium
                 }
                 Text {
                     width: parent.width
@@ -66,7 +63,7 @@ CardFrame {
                     color: root.th.muted
                     elide: Text.ElideMiddle
                     font.family: root.th.fontFamily
-                    font.pixelSize: 11
+                    font.pixelSize: root.th.fontSizeSmall
                 }
             }
         }

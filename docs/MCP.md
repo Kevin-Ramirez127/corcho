@@ -1,4 +1,4 @@
-# Corcho MCP server — full control surface
+# Corcho MCP server: full control surface
 
 A single Model Context Protocol server that exposes **every** Corcho capability
 to an agent. The GUI and the MCP server are two clients of the same Rust core;
@@ -30,9 +30,11 @@ Rules:
 - One `Arc<Mutex<Core>>` (already present) is the single source of truth.
 - Every mutation goes through `Core` methods, so undo/redo, persistence and
   validation apply identically to GUI and MCP calls.
-- The MCP server may run **headless** (`corcho --mcp`) or attached to a running
-  GUI over a Unix socket (`$XDG_RUNTIME_DIR/corcho.sock`) so an agent can drive
-  the visible window.
+- The MCP server runs **headless** (`corcho --mcp`) against the same data
+  directory as the GUI. The GUI polls `workspace.json` every 1.5 s and reloads
+  on external changes, while the MCP server reloads when the file changes, so
+  data edits converge without a socket. A live Unix-socket transport for
+  driving QtWebEngine state is still planned.
 - No tool reads or writes files outside the configured data directory, except
   explicit import/export paths validated by a path guard.
 
@@ -44,7 +46,7 @@ Rules:
 | --- | --- | --- |
 | stdio | `corcho --mcp` | Claude Desktop, opencode, local agents |
 | HTTP | `corcho --mcp-http 127.0.0.1:7411` | Remote tooling, multiple clients (bearer token) |
-| socket | `corcho --mcp-socket $XDG_RUNTIME_DIR/corcho.sock` | Drive a running GUI |
+| socket (planned) | `corcho --mcp-socket $XDG_RUNTIME_DIR/corcho.sock` | Drive a running GUI |
 
 HTTP requires a bearer token written to `~/.local/share/corcho/mcp.token`
 (mode 0600) and validates `Origin` against a localhost allowlist. Bind is
@@ -62,8 +64,8 @@ include `expected_revision` for optimistic concurrency; a mismatch returns
 
 | Tool | Input | Effect |
 | --- | --- | --- |
-| `workspace.get` | — | Full workspace, revision, active grid |
-| `workspace.revision` | — | Current revision only |
+| `workspace.get` | - | Full workspace, revision, active grid |
+| `workspace.revision` | - | Current revision only |
 | `workspace.import` | `path`, `format` (`corcho`\|`legacy`), `dryRun` | Import, returns diff summary |
 | `workspace.export` | `path`, `includeAttachments` | Write a backup zip |
 | `workspace.reset` | `confirm` | Wipe all data (typed confirmation) |
@@ -101,32 +103,67 @@ Kind-specific tools:
 | --- | --- |
 | `note.append` / `note.replace` | Edit note text |
 | `checklist.add/update/remove/toggle` | Checklist items |
-| `kanban.addColumn/removeColumn/addItem/moveItem/removeItem` | Kanban |
+| `kanban.addColumn/renameColumn/removeColumn/addItem/moveItem/removeItem` | Kanban |
 | `whiteboard.clear`, `whiteboard.stroke` | Stroke list |
-| `pomodoro.start/pause/reset/configure` | Timer |
-| `website.navigate/back/forward/reload/zoom` | Web card |
-| `website.cookies.read`, `website.attack.run` | Session debug |
+| `pomodoro.configure`, `pomodoro.reset` | Timer configuration and reset |
+| `web.state`, `web.navigate` | Read or set a web card URL (the GUI navigates on reload) |
+| `web.fetch`, `web.dom` | Fetch HTML or render the DOM in headless Chromium |
+| `web.screenshot` | Render the page in headless Chromium; returns a text summary plus an MCP image content block |
 | `api.fetch` | Run an API Data card |
 | `script.run` | Execute a card script in `/bin/sh` (permission-gated) |
 | `mpris.list/action/metadata` | Media control |
-| `gridlink.set` | Target grid |
-| `fragment.configure` | Mode, accent, speed, audio |
-| `fragment.audio.start/stop` | Spectrum synth |
+| `portal.set` | Target grid |
+| `calendar.*` | Calendars, date links, reminders and agenda |
+| `timbre.configure/state` | Timbre audio settings |
+
+### 3.2.1 Calendar
+
+| Tool | Input | Effect |
+| --- | --- | --- |
+| `calendar.list` | - | Calendars and resolved date links |
+| `calendar.create` | `name`, `color?` | Create a calendar |
+| `calendar.update` | `calendarId`, `name?`, `color?` | Rename or recolour |
+| `calendar.delete` | `calendarId`, `confirm: "yes"` | Delete a calendar and its links |
+| `calendar.link.add` | `date`, `calendarIds[]`, `title?`, `sourceCardId?`, `sourceItemId?` | Link a date |
+| `calendar.link.update` | `linkId`, `date?`, `calendarIds?`, `title?` | Change a link |
+| `calendar.link.delete` | `linkId` | Remove a link |
+| `calendar.link.list` | `calendarIds?`, `from?`, `to?`, `sourceCardId?` | Filtered links |
+| `calendar.agenda` | `from`, `to`, `calendarIds?` | Resolved agenda |
+| `calendar.setMonth` | `cardId`, `year`, `month` (0-11) | Change a card's month |
+| `calendar.today` | `cardId` | Return a card to the current month |
+
+A date link can belong to multiple calendars. A Calendar card stores its own
+`calendarIds` filter; an empty filter shows every calendar. Kanban and
+checklist items use the same link model, so their dates appear in the agenda
+and can be edited from either side.
+
+### 3.2.2 Viewport and frame
+
+| Tool | Input | Effect |
+| --- | --- | --- |
+| `view.get` | `gridId?` | Pan, zoom, viewport size and visible world frame |
+| `view.set` / `grid.view` | `gridId?`, `panX?`, `panY?`, `zoom?`, `viewportWidth?`, `viewportHeight?` | Change view |
+| `frame.get` | `gridId?`, `frame?`, `viewportWidth?`, `viewportHeight?` | Visible world rectangle |
+| `card.visibility` | same as `frame.get` | Per-card `inside`, `intersects` and `visibleFraction` |
+
+The GUI reports its canvas size through `AppController.setViewport`, so these
+tools work against the real window once Corcho has been open. Pass an explicit
+`frame` or viewport size when running headless.
 
 ### 3.3 AI
 
 | Tool | Input | Effect |
 | --- | --- | --- |
-| `ai.providers` | — | Provider + model catalogue |
+| `ai.providers` | - | Provider + model catalogue |
 | `ai.validateKey` | `provider`, `apiKey` | Validate (never logged) |
 | `ai.setKey` / `ai.clearKey` | `provider`, `apiKey?` | Store in local settings |
 | `ai.setModel` | `provider`, `model` | Default model |
 | `ai.complete` | `provider?`, `model?`, `prompt`, `context?`, `webSearch?` | Non-streaming completion |
-| `ai.stream` | same, `streamId` | Emits `ai.chunk`/`ai.done` notifications |
-| `ai.cancel` | `streamId` | Cancel |
+| `ai.stream` (planned) | same, `streamId` | Emits `ai.chunk`/`ai.done` notifications |
+| `ai.cancel` (planned) | `streamId` | Cancel |
 | `ai.card.run` | `cardId` | Run an AI card with its saved prompt/context |
 | `ai.models.local` | `serverUrl`, `apiKey?` | List local models |
-| `ai.stats` | — | Card counts, token estimates |
+| `ai.stats` | - | Card counts, token estimates |
 
 API keys are write-only: `settings.get` redacts them; logs never include them.
 
@@ -137,9 +174,15 @@ API keys are write-only: `settings.get` redacts them; logs never include them.
 | `settings.get` | `redactSecrets?` |
 | `settings.set` | `key`, `value` (validated against the schema) |
 | `settings.batch` | `patch` object, atomic |
-| `theme.list` | — |
-| `theme.set` | `themeId` |
+| `theme.list` | - |
+| `theme.get` | Current mode, light slot, dark slot and manual effective theme |
+| `theme.set` | `themeId`, optional `mode` (`light`\|`dark`; omit to set both) |
+| `theme.mode.set` | `system`\|`light`\|`dark` |
 | `theme.custom.set` | `background`, `surface`, `accent`, `text` |
+| `theme.css.template` | Return the complete CSS theme template |
+| `theme.css.get` | Read a CSS theme |
+| `theme.css.set` | `themeId`, `css`; validate and write a CSS theme |
+| `theme.css.delete` | `themeId`; remove a user CSS theme |
 | `font.list` / `font.set` | Font id |
 | `effects.set` | spawn, parallax, ripple, reducedMotion |
 | `audio.setVolume` | 0–100 |
@@ -148,8 +191,8 @@ API keys are write-only: `settings.get` redacts them; logs never include them.
 
 | Tool | Input |
 | --- | --- |
-| `sync.status` | — |
-| `sync.now` | — |
+| `sync.status` | - |
+| `sync.now` | - |
 | `sync.configure` | `enabled`, `provider` (`folder`\|`gdrive`), `folder?` |
 | `gdrive.connect` / `gdrive.disconnect` | PKCE flow (browser) |
 | `git.status` | enabled, remote, branch, last sync, last error |
@@ -163,24 +206,24 @@ API keys are write-only: `settings.get` redacts them; logs never include them.
 
 | Tool | Input |
 | --- | --- |
-| `update.check` | — |
+| `update.check` | - |
 | `update.channel.set` | `stable`\|`beta`\|`experimental` |
-| `update.download` / `update.install` | — |
+| `update.download` / `update.install` | - |
 | `app.launchAtStartup` | boolean |
 | `app.openExternal` | URL (allowlist http/https) |
 | `app.quit` / `app.relaunch` | confirm |
-| `app.changelog` | — |
+| `app.changelog` | - |
 | `app.about` | version, build info |
 | `diagnostics.run` | integrity checks |
 
-### 3.7 Powerbar, tutorials, easter eggs
+### 3.7 Launcher, tutorials, easter eggs
 
 | Tool | Input |
 | --- | --- |
-| `powerbar.search` | `query` |
-| `powerbar.run` | `commandId`, `args?` |
-| `tutorial.reset` | — |
-| `onboarding.complete` | — |
+| `launcher.search` | `query` |
+| `launcher.run` | `commandId`, `args?` |
+| `tutorial.reset` | - |
+| `onboarding.complete` | - |
 
 ---
 
@@ -207,16 +250,16 @@ changelog, `application/zip` for backups.
 
 Reusable agent prompts exposed by the server:
 
-- `organize-inbox` — triage unlinked notes into a grid.
-- `summarize-grid` — summarize a grid's cards.
-- `weekly-review` — collect pomodoros, checklists and notes into a review.
-- `research-to-cards` — run a web/AI research pass and create cards.
-- `clean-duplicates` — find duplicate cards and propose merges.
+- `organize-inbox`: triage unlinked notes into a grid.
+- `summarize-grid`: summarize a grid's cards.
+- `weekly-review`: collect pomodoros, checklists and notes into a review.
+- `research-to-cards`: run a web/AI research pass and create cards.
+- `clean-duplicates`: find duplicate cards and propose merges.
 
 Each prompt declares arguments (gridId, date range) and returns messages that
 call the tools above.
 
-## 6. Events / subscriptions
+## 6. Events / subscriptions (planned)
 
 The server broadcasts JSON-RPC notifications:
 
@@ -239,62 +282,59 @@ during drags.
 
 ## 7. Safety model
 
-- **Write scope:** only the Corcho data dir and explicitly supplied
-  import/export paths. `..` and symlinks are resolved and re-checked.
-- **Secrets:** API keys and OAuth tokens are redacted from reads, errors and
-  logs. `settings.set` accepts them; nothing returns them.
-- **Destructive tools** (`workspace.reset`, `grid.delete`, `data.setDir`,
-  `app.quit`) require `confirm: "yes"` and are annotated
-  `destructiveHint: true`.
-- **Script execution** is off by default; enabling requires
-  `settings.allowScripts = true` and each call carries a timeout.
-- **Rate limits:** per-tool token bucket (mutations 10/s, AI 2/s, updates 1/min).
-- **Audit log:** every tool call appended to `~/.local/share/corcho/mcp-audit.log`
-  with tool, args hash, revision and outcome; secrets omitted.
-- **No implicit network:** only AI, sync and update tools touch the
-  network, and only when invoked.
+Implemented:
+
+- **Write scope:** imports and exports require absolute paths; attachments are
+  reduced to their file name before joining the attachments directory;
+  `update.install` only accepts files inside `updates/`.
+- **Secrets:** `settings.get`, `workspace.get` and `corcho://workspace` redact
+  API keys, OAuth tokens and client secrets; errors never echo keys.
+- **Confirmation:** `workspace.reset`, `calendar.delete` and `app.relaunch`
+  require `confirm: "yes"`; `quit` requires `confirm: true`.
+- **Input validation:** card kinds, colours, icons, coordinates, sizes,
+  frame rectangles and HTTP(S) URLs are validated. Unknown kinds, schemes
+  other than http/https, embedded credentials and out-of-range geometry are
+  rejected before any mutation.
+- **Size caps:** stdio lines and HTTP bodies are capped at 8 MiB, attachment
+  base64 at 32 MB per call, `web.fetch` at 2 MB of text, and script bodies at
+  100 kB.
+- **Scripts:** `script.run` is disabled until `settings.set` sets
+  `allow_scripts` to true; timeouts are clamped to 1-300 seconds.
+- **Concurrency:** `expectedRevision` rejects stale mutations with
+  `REVISION_CONFLICT`.
+- **Explicit network:** web, AI, sync and update tools only touch the network
+  when called.
+
+Planned:
+
+- Unix-socket auth for a live GUI, per-tool rate limits, an audit log, and a
+  script permission gate.
 
 ## 8. Implementation
 
-- Crate: `mcp/` binary (`corcho-mcp`) depending on `corcho` core as a library.
-- Protocol: `rmcp` crate (official Rust MCP SDK) or a small JSON-RPC 2.0 loop
-  with `serde`. Tool schemas generated from Rust types with `schemars`.
-- `Core` gains a `revision: u64` counter incremented on every mutation; tool
-  calls compare it for optimistic concurrency.
-- Tool registry is a single `match` over tool names; each handler returns
-  `serde_json::Value`. The same registry powers stdio and HTTP.
-- GUI integration: the core broadcasts via `tokio::broadcast`; the MCP server and
-  Qt bridge both subscribe, so an agent's mutation appears in the window and a
-  GUI mutation appears to the agent.
-- Headless mode boots `Core` without a `QGuiApplication`.
-- Packaging: `corcho --mcp` is a hidden flag; `corcho-mcp` is also shipped for
-  agents that prefer a dedicated binary.
-
-### Milestones
-
-1. **Registry + stdio + workspace/grid/card CRUD** with revision checks.
-2. **Settings/themes/fonts + resources + events.**
-3. **AI (streaming) + web/API/script tools** with permission gates.
-4. **Sync/backup/update/OS tools.**
-5. **HTTP transport + token auth + audit log + rate limits.**
-6. **Prompts + completions + conformance tests** against the MCP spec.
-
-### Tests
-
-- Golden JSON-RPC request/response fixtures per tool.
-- Property tests: create → update → undo → redo returns the original JSON.
-- Two-client convergence: MCP mutation + GUI mutation + sync produce one state.
-- Security tests: path traversal, symlink escape, secret redaction, token auth.
-- `mcp-probe` conformance run for initialize, tools/list, resources/list.
-
----
+- One newline-delimited JSON-RPC loop in `src/mcp.rs` serves both stdio and a
+  minimal HTTP transport. The same `call_tool` registry backs both.
+- `Core` owns the model, storage, history, sync, updates and integrations.
+  The GUI and MCP process each hold a `Core`; both reload `workspace.json` when
+  its mtime changes.
+- `Workspace` carries a `revision` counter that increments on every save.
+- Viewport size is reported by `CanvasView` through `AppController.setViewport`
+  and persisted in the workspace, so frame math survives restarts.
+- Web DOM and screenshots shell out to headless Chromium with a hard timeout.
+- Tool schemas live next to their handlers in one registry. Every tool carries
+  a title, a multi-line description, per-property titles and descriptions, and
+  MCP annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`,
+  `openWorldHint`).
+- Tests cover registry advertisement, every callable tool (with network,
+  destructive and exiting tools skipped), frame visibility, revision conflicts
+  and missing arguments.
 
 ## 9. Why an MCP server
 
 The canvas is a workspace for thinking. An agent that can read the workspace,
-create and edit cards, run AI processors, and trigger sync/update actions turns
+create and edit cards, run AI nodes, and trigger sync/update actions turns
 Corcho into a programmable surface without scripting the GUI. Because every
-capability already lives in `Core`, the MCP layer is a thin, auditable adapter —
+capability already lives in `Core`, the MCP layer is a thin, auditable adapter,
 not a second application.
 
 
@@ -302,51 +342,61 @@ not a second application.
 
 ## 10. Implementation status
 
-Implemented in `src/mcp.rs`, started with `corcho --mcp` (or `CORCHO_MCP=1`):
+Implemented in `src/mcp.rs`, started with `corcho --mcp` or `corcho --mcp-http`:
 
-- `initialize`, `ping`, `tools/list`, `tools/call`, `resources/list`,
-  `resources/read`, `prompts/list`, `prompts/get` over newline-delimited
-  JSON-RPC on stdio.
-- Tools: workspace get/export/import; grid list/get/create/rename/delete/
-  switch/move; card list/get/create/update/delete/duplicate/move/search;
-  note append/replace; checklist add/update/remove/toggle; kanban add/move/
-  remove item; whiteboard clear/stroke; fragment configure; grid link set;
-  pomodoro configure/reset; api fetch; settings get/set/batch; theme list/set;
-  font list; powerbar search/run; ai providers/complete; sync.now; git status/
-  configure/sync; backup export/import; update check/channel; app about/
-  changelog; attachments list/read; script run; mpris list/action; quit.
-- Resources: `corcho://workspace`, `corcho://grid/{id}`, `corcho://card/{id}`,
-  `corcho://settings` (secrets redacted), `corcho://themes`,
-  `corcho://changelog`.
-- Prompts: `organize-inbox`, `summarize-grid`, `weekly-review`.
-- Tests cover initialize/tools list, missing arguments, and the git merge.
+- Transports: newline-delimited JSON-RPC over stdio, and minimal HTTP with a
+  bearer token and localhost Origin check.
+- Methods: `initialize`, `ping`, `tools/list`, `tools/call`, `resources/list`,
+  `resources/read`, `prompts/list`, `prompts/get`.
+- Workspace/grid/folder: get, revision, export, import, reset, list, get,
+  create, rename, delete, switch, reorder, move, view, and folder lifecycle.
+- Cards: list (with grid/kind/query filters), get, create (any grid, optional
+  payload and geometry), update, delete, duplicate (offset), move (in-grid or
+  across grids), resize, setColor, setIcon, lock, search, visibility.
+- Viewport: `view.get`, `view.set`, `grid.view`, `frame.get`,
+  `card.visibility`.
+- Kind-specific: note, checklist, kanban (columns and items), whiteboard,
+  pomodoro, calendar, date links, timbre, API fetch, script run, grid portal,
+  MPRIS.
+- Web: `web.state`, `web.navigate`, `web.fetch`, `web.dom`, `web.screenshot`.
+  DOM and screenshot rendering use headless Chromium. They render the stored
+  URL, not the live QtWebEngine profile or its cookies.
+- AI: providers, validateKey, setKey/clearKey, setModel, complete, models.local,
+  card.run, stats.
+- Appearance: theme list/get/set/custom, CSS themes (template/get/set/delete), system/light/dark mode, font list/set, effects, audio volume.
+- Sync/data: sync status/configure/now, git status/configure/sync, backup
+  export/import, data.setDir, attachments list/read/write/delete.
+- OS/app: update check/download/install, launch at startup, open external,
+  relaunch, changelog, about, diagnostics, tutorial reset, onboarding complete,
+  adblock check/hosts, quit.
+- Resources: workspace, grid, card, settings, themes, models, diagnostics,
+  changelog.
+- Prompts: organize-inbox, summarize-grid, weekly-review, research-to-cards,
+  clean-duplicates.
+- Optimistic concurrency: any tool accepts `expectedRevision`; a stale value
+  returns `REVISION_CONFLICT`.
 
-HTTP requests need `Authorization: Bearer <token>`; the token is printed at
-startup and written to `~/.local/share/corcho/mcp.token` (0600). Bind is
-loopback by default. Example:
+### Surface analysis
 
-```sh
-corcho --mcp-http 127.0.0.1:7411
-curl -H "Authorization: Bearer $(cat ~/.local/share/corcho/mcp.token)" \
-  -H 'content-type: application/json' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"app.about","arguments":{}}}' \
-  http://127.0.0.1:7411/
-```
+Covered without a running GUI:
 
-Example client config (opencode):
+- All model, card, grid, folder, calendar, date link, settings, theme, font,
+  backup, attachment, sync, git, update, MPRIS, script and AI calls.
+- Frame/visibility math against a supplied frame or a previously reported
+  viewport.
+- Web content for public URLs through headless Chromium.
+- Calendar filtering and agenda resolution across grids.
 
-```json
-{
-  "mcp": {
-    "corcho": {
-      "type": "local",
-      "command": ["corcho", "--mcp"],
-      "enabled": true
-    }
-  }
-}
-```
+Still requires the running GUI or a future socket transport:
 
-Remaining from the design above: event subscriptions (SSE), a Unix-socket
-transport for driving the live GUI, and web/website tools that require the
-GUI's QtWebEngine. All other categories are implemented.
+- Capturing the live QtWebEngine view, its cookies, navigation history, or
+  authenticated session state.
+- Driving the visible window's transient UI state (open dialogs, selection,
+  drag, launcher state).
+- Google Drive OAuth (`gdrive.connect` reports a GUI-only error).
+- Pomodoro start/pause and AI token streaming (configuration and non-streaming
+  completion are available).
+
+The registry, resources and prompts above are complete for the implemented
+handlers. Previously several card tools existed in `call_tool` but were missing
+from `tools/list`; that gap is fixed and covered by a test.

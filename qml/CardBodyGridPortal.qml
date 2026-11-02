@@ -15,8 +15,7 @@ CardFrame {
 
     Column {
         anchors.fill: parent
-        spacing: 10
-
+        spacing: root.th.spaceSnug
         SelectField {
             width: parent.width
             th: root.th
@@ -31,8 +30,7 @@ CardFrame {
         }
 
         Row {
-            spacing: 8
-
+            spacing: root.th.space2
             AppButton {
                 th: root.th
                 icon: "arrow-right"
@@ -47,7 +45,7 @@ CardFrame {
                 text: root.target ? (root.target.cards.length + " cards") : ""
                 color: root.th.muted
                 font.family: root.th.fontFamily
-                font.pixelSize: 11
+                font.pixelSize: root.th.fontSizeSmall
             }
         }
     }

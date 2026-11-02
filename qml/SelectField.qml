@@ -19,7 +19,7 @@ Item {
     property bool fieldHovered: false
 
     implicitWidth: 180
-    implicitHeight: 34
+    implicitHeight: root.th.controlHeight
 
     readonly property var current: {
         for (let i = 0; i < options.length; i++)
@@ -29,32 +29,31 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        radius: 8
+        radius: root.th.radiusControl
         color: root.fieldHovered ? root.th.hover : root.th.input
-        border.width: 1
+        border.width: root.th.borderWidth
         border.color: (open || root.activeFocus) ? root.th.accent : root.th.border
         Behavior on color { ColorAnimation { duration: 110 } }
     }
 
     Row {
         anchors.fill: parent
-        anchors.leftMargin: 12
-        anchors.rightMargin: 10
-        spacing: 6
-
+        anchors.leftMargin: root.th.space3
+        anchors.rightMargin: root.th.space3
+        spacing: root.th.space2
         Text {
             anchors.verticalCenter: parent.verticalCenter
-            width: parent.width - 20
+            width: parent.width - root.th.space5
             elide: Text.ElideRight
             text: root.current ? root.current.label : root.placeholder
             color: root.current ? root.th.text : root.th.muted
             font.family: root.th.fontFamily
-            font.pixelSize: 13
+            font.pixelSize: root.th.fontSizeBody
         }
         Icon {
             anchors.verticalCenter: parent.verticalCenter
             name: "chevron-down"
-            size: 13
+            size: root.th.iconBody
             color: root.th.muted
         }
     }

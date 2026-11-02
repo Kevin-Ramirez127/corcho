@@ -18,14 +18,14 @@ Item {
     Accessible.role: Accessible.EditableText
     Accessible.name: root.placeholder
 
-    implicitHeight: inputHeight
+    implicitHeight: root.th.controlHeight
     implicitWidth: 240
 
     Rectangle {
         anchors.fill: parent
-        radius: 8
+        radius: root.th.radiusControl
         color: root.th.input
-        border.width: 1
+        border.width: root.th.borderWidth
         border.color: input.activeFocus ? root.th.accent : root.th.border
         Behavior on border.color { ColorAnimation { duration: 110 } }
     }
@@ -40,7 +40,7 @@ Item {
         selectionColor: root.th.accent
         selectedTextColor: root.th.accentInk
         font.family: root.th.fontFamily
-        font.pixelSize: 13
+        font.pixelSize: root.th.fontSizeBody
         echoMode: root.password ? TextInput.Password : TextInput.Normal
         clip: true
         text: root.text
@@ -62,7 +62,7 @@ Item {
             text: root.placeholder
             color: root.th.muted
             font.family: root.th.fontFamily
-            font.pixelSize: 13
+            font.pixelSize: root.th.fontSizeBody
         }
     }
 }

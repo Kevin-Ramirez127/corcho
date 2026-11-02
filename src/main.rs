@@ -12,6 +12,7 @@ mod search;
 mod single_instance;
 mod storage;
 mod sync;
+mod theme;
 mod updates;
 
 use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QUrl};

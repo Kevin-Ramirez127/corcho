@@ -10,6 +10,8 @@ Item {
     property string selectedId: ""
 
     signal menuRequested(var card, real globalX, real globalY)
+    signal dateLinkRequested(string sourceCardId, string sourceItemId, string linkId, string defaultDate)
+    signal calendarManagerRequested()
     signal backgroundMenuRequested(real globalX, real globalY, real worldX, real worldY)
     signal createRequested(real worldX, real worldY)
 
@@ -49,7 +51,19 @@ Item {
     }
 
     onCardsChanged: syncCards()
-    Component.onCompleted: syncCards()
+    Component.onCompleted: { syncCards(); reportViewport(); }
+    onWidthChanged: viewportDebounce.restart()
+    onHeightChanged: viewportDebounce.restart()
+    function reportViewport() {
+        if (root.app && root.width > 0 && root.height > 0)
+            root.app.setViewport(root.width, root.height);
+    }
+    Timer {
+        id: viewportDebounce
+        interval: 350
+        repeat: false
+        onTriggered: reportViewport()
+    }
     property bool minimapVisible: false
 
     function bodyFor(type) {
@@ -60,8 +74,9 @@ Item {
         case "api": return "CardBodyApi.qml";
         case "ai": return "CardBodyAi.qml";
         case "script": return "CardBodyScript.qml";
-        case "fragment": return "CardBodyFragment.qml";
-        case "gridlink": return "CardBodyGridLink.qml";
+        case "calendar": return "CardBodyCalendar.qml";
+        case "timbre": return "CardBodyTimbre.qml";
+        case "portal": return "CardBodyGridPortal.qml";
         case "checklist": return "CardBodyChecklist.qml";
         case "kanban": return "CardBodyKanban.qml";
         case "whiteboard": return "CardBodyWhiteboard.qml";
@@ -105,9 +120,13 @@ Item {
         property real px: root.app.panX
         property real py: root.app.panY
         property real pz: root.app.zoom
+        property color dotColor: root.th.text
+        property real gridOpacity: root.settings && root.settings.grid_opacity !== undefined ? root.settings.grid_opacity : 0.6
         onPxChanged: requestPaint()
         onPyChanged: requestPaint()
         onPzChanged: requestPaint()
+        onDotColorChanged: requestPaint()
+        onGridOpacityChanged: requestPaint()
         onWidthChanged: requestPaint()
         onHeightChanged: requestPaint()
 
@@ -115,16 +134,15 @@ Item {
             var ctx = getContext("2d");
             ctx.clearRect(0, 0, width, height);
             var z = Math.max(0.2, root.app.zoom);
-            var step = 32 * z;
+            var step = root.th.gridStep * z;
             if (step < 9) step *= 2;
             var ox = ((root.app.panX % step) + step) % step;
             var oy = ((root.app.panY % step) + step) % step;
-            var opacity = root.settings && root.settings.grid_opacity !== undefined ? root.settings.grid_opacity : 0.6;
-            ctx.fillStyle = Qt.rgba(root.th.text.r, root.th.text.g, root.th.text.b, 0.09 * (opacity / 0.6));
+            ctx.fillStyle = Qt.rgba(dotColor.r, dotColor.g, dotColor.b, root.th.gridDotOpacity * (gridOpacity / 0.6));
             for (var x = ox; x < width; x += step) {
                 for (var y = oy; y < height; y += step) {
                     ctx.beginPath();
-                    ctx.arc(x, y, 1.1, 0, Math.PI * 2);
+                    ctx.arc(x, y, root.th.gridDotSize, 0, Math.PI * 2);
                     ctx.fill();
                 }
             }
@@ -207,15 +225,21 @@ Item {
 
                 onLoaded: {
                     item.card = card;
-                    item.app = root.app;
-                    item.th = root.th;
-                    item.settings = root.settings;
-                    item.gridId = root.app.activeGridId;
+                    item.app = Qt.binding(function () { return root.app; });
+                    item.th = Qt.binding(function () { return root.th; });
+                    item.settings = Qt.binding(function () { return root.settings; });
+                    item.gridId = Qt.binding(function () { return root.app.activeGridId; });
                     item.selected = Qt.binding(function () { return root.selectedId === cardLoader.card.id; });
                     item.selectRequested.connect(function () { root.selectedId = cardLoader.card.id; });
                     item.menuRequested.connect(function (cardData, gx, gy) {
                         root.selectedId = cardData.id;
                         root.menuRequested(cardData, gx, gy);
+                    });
+                    item.dateLinkRequested.connect(function (cardId, itemId, linkId, defaultDate) {
+                        root.dateLinkRequested(cardId, itemId, linkId, defaultDate);
+                    });
+                    item.calendarManagerRequested.connect(function () {
+                        root.calendarManagerRequested();
                     });
                 }
             }
@@ -224,7 +248,7 @@ Item {
 
     Column {
         anchors.centerIn: parent
-        spacing: 12
+        spacing: root.th.space3
         visible: root.cards.length === 0
 
         Text {
@@ -232,15 +256,15 @@ Item {
             text: "This grid is empty"
             color: root.th.text
             font.family: root.th.fontFamily
-            font.pixelSize: 18
-            font.weight: 500
+            font.pixelSize: root.th.fontSizeLarge
+            font.weight: root.th.fontWeightMedium
         }
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
             text: "Double-click anywhere, or create your first card"
             color: root.th.muted
             font.family: root.th.fontFamily
-            font.pixelSize: 13
+            font.pixelSize: root.th.fontSizeBody
         }
         AppButton {
             anchors.horizontalCenter: parent.horizontalCenter
@@ -256,11 +280,11 @@ Item {
         id: ripple
         width: 48
         height: 48
-        radius: 24
+        radius: root.th.radiusLarge
         color: "transparent"
-        border.width: 1.5
+        border.width: root.th.borderWidthStrong
         border.color: root.th.accent
-        opacity: 0
+        opacity: root.th.opacityNone
         z: 2
     }
 

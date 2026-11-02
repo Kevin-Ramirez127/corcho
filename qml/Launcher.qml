@@ -33,8 +33,9 @@ Item {
         { id: "create-website", label: "Add website", icon: "globe", keywords: "web embed" },
         { id: "create-bookmark", label: "Add bookmark", icon: "bookmark", keywords: "link" },
         { id: "create-api", label: "Add API data", icon: "database", keywords: "http json" },
-        { id: "create-ai", label: "Add AI processor", icon: "cpu", keywords: "ai prompt" },
-        { id: "create-fragment", label: "Add fragment", icon: "aperture", keywords: "sensory" },
+        { id: "create-ai", label: "Add AI node", icon: "cpu", keywords: "ai prompt" },
+        { id: "create-calendar", label: "Add calendar", icon: "calendar", keywords: "dates reminders" },
+        { id: "create-timbre", label: "Add timbre", icon: "audio-lines", keywords: "sound audio noise tone" },
         { id: "create-script", label: "Add script", icon: "terminal", keywords: "shell" },
         { id: "create-checklist", label: "Add checklist", icon: "list-checks", keywords: "todo tasks" },
         { id: "create-kanban", label: "Add kanban", icon: "kanban", keywords: "board columns" },
@@ -115,27 +116,26 @@ Item {
 
     Rectangle {
         id: panel
-        width: Math.min(680, root.width - 80)
-        height: 420
+        width: Math.min(root.th.launcherMaxWidth, root.width - root.th.space6)
+        height: root.th.launcherHeight
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.top: parent.top
-        anchors.topMargin: 96
-        radius: 14
+        anchors.topMargin: root.th.launcherTopMargin
+        radius: root.th.radiusPanel
         color: root.th.menu
-        border.width: 1
+        border.width: root.th.borderWidth
         border.color: root.th.border
 
         Column {
             anchors.fill: parent
-            anchors.margins: 12
-            spacing: 10
-
+            anchors.margins: root.th.space4
+            spacing: root.th.space3
             AppTextField {
                 id: query
                 width: parent.width
                 inputHeight: 42
                 th: root.th
-                placeholder: "Search grids, cards and commands"
+                placeholder: "Search"
                 onEdited: root.rebuild()
                 onAccepted: root.run(root.selectedIndex)
                 onKeyPressed: function (event) {
@@ -155,9 +155,9 @@ Item {
             ListView {
                 id: list
                 width: parent.width
-                height: parent.height - 54
+                height: parent.height - root.th.space6
                 clip: true
-                spacing: 2
+                spacing: root.th.spaceHalf
                 model: results
                 currentIndex: root.selectedIndex
 
@@ -168,25 +168,24 @@ Item {
                     property bool hoveredNow: false
 
                     width: list.width
-                    height: 40
+                    height: root.th.menuItemHeight
 
                     Rectangle {
                         anchors.fill: parent
-                        radius: 8
+                        radius: root.th.radiusControl
                         color: index === root.selectedIndex ? root.th.surfaceStrong : (resultRow.hoveredNow ? root.th.hover : "transparent")
                     }
 
                     Row {
                         anchors.fill: parent
-                        anchors.leftMargin: 10
-                        anchors.rightMargin: 10
-                        spacing: 10
-
+                        anchors.leftMargin: root.th.space3
+                        anchors.rightMargin: root.th.space3
+                        spacing: root.th.space3
                         Icon {
                             anchors.verticalCenter: parent.verticalCenter
                             name: modelData.icon || "square"
-                            size: 15
-                            color: modelData.kind === "command" ? root.th.text2 : root.th.accent
+                            size: root.th.iconBody
+                            color: root.th.text2
                         }
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
@@ -195,7 +194,7 @@ Item {
                             color: root.th.text
                             elide: Text.ElideRight
                             font.family: root.th.fontFamily
-                            font.pixelSize: 13
+                            font.pixelSize: root.th.fontSizeBody
                         }
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
@@ -205,7 +204,7 @@ Item {
                             horizontalAlignment: Text.AlignRight
                             elide: Text.ElideRight
                             font.family: root.th.fontFamily
-                            font.pixelSize: 11
+                            font.pixelSize: root.th.fontSizeSmall
                         }
                     }
 

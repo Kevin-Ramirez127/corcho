@@ -36,22 +36,21 @@ Item {
         width: 380
         height: 142
         anchors.centerIn: parent
-        radius: 14
+        radius: root.th.radiusCard
         color: root.th.menu
-        border.width: 1
+        border.width: root.th.borderWidth
         border.color: root.th.border
 
         Column {
             anchors.fill: parent
             anchors.margins: 16
-            spacing: 10
-
+            spacing: root.th.spaceSnug
             Text {
                 text: root.title
                 color: root.th.text
                 font.family: root.th.fontFamily
-                font.pixelSize: 14
-                font.weight: 500
+                font.pixelSize: root.th.fontSizeBody
+                font.weight: root.th.fontWeightMedium
             }
 
             AppTextField {
@@ -68,8 +67,7 @@ Item {
 
             Row {
                 anchors.right: parent.right
-                spacing: 8
-
+                spacing: root.th.space2
                 AppButton {
                     th: root.th
                     text: "Cancel"

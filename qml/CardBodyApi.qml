@@ -27,12 +27,10 @@ CardFrame {
 
     Column {
         anchors.fill: parent
-        spacing: 8
-
+        spacing: root.th.space2
         Row {
             width: parent.width
-            spacing: 6
-
+            spacing: root.th.spaceCompact
             SelectField {
                 id: methodField
                 th: root.th
@@ -73,18 +71,18 @@ CardFrame {
         }
 
         Row {
-            spacing: 8
+            spacing: root.th.space2
             Text {
                 text: root.status
                 color: root.th.muted
-                font.family: "JetBrains Mono"
-                font.pixelSize: 11
+                font.family: root.th.fontMono
+                font.pixelSize: root.th.fontSizeSmall
             }
             Text {
                 text: "JSON response"
                 color: root.th.muted
                 font.family: root.th.fontFamily
-                font.pixelSize: 11
+                font.pixelSize: root.th.fontSizeSmall
             }
         }
 
@@ -95,8 +93,8 @@ CardFrame {
             readOnly: true
             selectByMouse: true
             color: root.th.text2
-            font.family: "JetBrains Mono"
-            font.pixelSize: 11
+            font.family: root.th.fontMono
+            font.pixelSize: root.th.fontSizeSmall
             wrapMode: TextEdit.WrapAnywhere
             clip: true
 
@@ -106,7 +104,7 @@ CardFrame {
                 text: "Run a request to see the response"
                 color: root.th.muted
                 font.family: root.th.fontFamily
-                font.pixelSize: 12
+                font.pixelSize: root.th.fontSizeSmall
                 wrapMode: Text.WordWrap
             }
         }

@@ -8,8 +8,8 @@ Item {
     property var cards: []
     property real viewportWidth: 800
     property real viewportHeight: 600
-    property int minimapWidth: 176
-    property int minimapHeight: 112
+    property int minimapWidth: root.th.minimapWidth
+    property int minimapHeight: root.th.minimapHeight
 
     signal centerAt(real worldX, real worldY)
 
@@ -37,9 +37,9 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        radius: 10
+        radius: root.th.radiusMenu
         color: root.th.menu
-        border.width: 1
+        border.width: root.th.borderWidth
         border.color: root.th.border
     }
 
@@ -48,7 +48,9 @@ Item {
         anchors.fill: parent
         anchors.margins: 8
         property var b: root.bounds
+        property var themeObj: root.th
         onBChanged: requestPaint()
+        onThemeObjChanged: requestPaint()
         Connections {
             target: root.app
             function onPanXChanged() { canvas.requestPaint(); }
@@ -69,7 +71,7 @@ Item {
 
             for (var i = 0; i < root.cards.length; i++) {
                 var c = root.cards[i];
-                ctx.fillStyle = Qt.rgba(1, 1, 1, 0.16);
+                ctx.fillStyle = Qt.rgba(Qt.color(root.th.text).r, Qt.color(root.th.text).g, Qt.color(root.th.text).b, 0.16);
                 ctx.fillRect(px(c.x), py(c.y), Math.max(1, c.width * s), Math.max(1, c.height * s));
             }
 

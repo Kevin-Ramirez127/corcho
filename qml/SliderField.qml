@@ -29,16 +29,16 @@ Item {
             y: (parent.height - height) / 2
             width: parent.width
             height: 4
-            radius: 2
+            radius: root.th.radiusHairline
             color: root.th.surfaceStrong
         }
 
         handle: Rectangle {
             x: slider.visualPosition * (slider.availableWidth - width)
             y: (slider.availableHeight - height) / 2
-            width: 14
-            height: 14
-            radius: 7
+            width: 16
+            height: 16
+            radius: root.th.radiusControl
             color: root.th.text
             border.width: 2
             border.color: root.th.accent

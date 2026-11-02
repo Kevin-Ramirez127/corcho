@@ -34,7 +34,7 @@ ones. The High Contrast theme is the fallback for low-vision users.
 - Every button, field, toggle, select and menu row is tab-reachable.
 - Focus is a 1.5–2 px ember ring, not a glow.
 - Space/Return activates buttons, toggles and selects.
-- Escape closes overlays; Ctrl+K opens the Powerbar; Ctrl+Z/Y undo/redo.
+- Escape closes overlays; Ctrl+K opens the Launcher; Ctrl+Z/Y undo/redo.
 
 ## Screen readers
 
@@ -45,7 +45,7 @@ relevant, `Accessible.checked` / `Accessible.description`. Icons are marked
 ## Motion
 
 `Reduced motion` (Settings → Appearance) disables card spawn, canvas ripple,
-fragment animation and audio-reactive motion. Fragment audio can still play.
+timbre visualizer animation. Timbre audio can still play.
 
 ## Research
 
