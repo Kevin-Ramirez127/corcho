@@ -114,6 +114,7 @@ Item {
     clip: true
     property bool panning: false
     property bool syncingModel: false
+    property bool modalOpen: false
 
     ListModel { id: cardModel }
 
@@ -265,6 +266,7 @@ Item {
     focus: true
 
     Keys.onPressed: function (event) {
+        if (root.modalOpen) return;
         var step = (event.modifiers & Qt.ShiftModifier) ? 220 : 70;
         if (event.key === Qt.Key_Left) root.app.setView(root.app.panX + step, root.app.panY, root.app.zoom);
         else if (event.key === Qt.Key_Right) root.app.setView(root.app.panX - step, root.app.panY, root.app.zoom);
@@ -444,6 +446,10 @@ Item {
             root.createRequested(wx, wy);
         }
         onWheel: function (wheel) {
+            if (root.modalOpen) {
+                wheel.accepted = true;
+                return;
+            }
             if (active) return;
             var wantPan = !(wheel.modifiers & Qt.ControlModifier)
                 && (!root.settings || root.settings.trackpad_pan !== false);
@@ -614,6 +620,10 @@ Item {
             root.app.saveNow();
         }
         onWheel: function (wheel) {
+            if (root.modalOpen) {
+                wheel.accepted = true;
+                return;
+            }
             if (active) return;
             var wantPan = !(wheel.modifiers & Qt.ControlModifier)
                 && (!root.settings || root.settings.trackpad_pan !== false);

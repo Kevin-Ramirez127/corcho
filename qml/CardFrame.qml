@@ -235,7 +235,9 @@ FocusScope {
         MouseArea {
             anchors.fill: parent
             acceptedButtons: Qt.LeftButton
-            preventStealing: true
+            // Let the DragHandler take over once the pointer moves, otherwise
+            // the mouse area keeps the grab and the card cannot be moved.
+            preventStealing: false
             onClicked: function (mouse) {
                 mouse.accepted = true;
                 root.selectRequested(!!(mouse.modifiers & Qt.ControlModifier));
@@ -304,7 +306,8 @@ FocusScope {
         DragHandler {
             id: mover
             target: null
-            enabled: !root.card.locked
+            enabled: !root.card.locked && !root.editingTitle
+            grabPermissions: PointerHandler.CanTakeOverFromAnything
             cursorShape: Qt.SizeAllCursor
             property real lastX: 0
             property real lastY: 0

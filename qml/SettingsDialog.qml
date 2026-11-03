@@ -793,290 +793,313 @@ Item {
                         // ── Data ────────────────────────────────────────────
                         Column {
                             width: parent.width
-                            spacing: root.th.space1
+                            spacing: root.th.space3
                             visible: root.tab === "data"
 
-                            SettingRow {
+                            SettingsSection {
                                 th: root.th
-                                title: "Cloud Sync"
+                                title: "Cloud sync"
+                                icon: "cloud"
                                 description: "Sync your grids across devices through a folder or Google Drive."
-                                ToggleSwitch {
+
+                                SettingRow {
                                     th: root.th
-                                    checked: root.val("cloud_sync_enabled", false)
-                                    onToggled: function (value) { root.set("cloud_sync_enabled", value); }
+                                    title: "Enable cloud sync"
+                                    description: "Turn folder or Google Drive sync on or off."
+                                    ToggleSwitch {
+                                        th: root.th
+                                        checked: root.val("cloud_sync_enabled", false)
+                                        onToggled: function (value) { root.set("cloud_sync_enabled", value); }
+                                    }
                                 }
-                            }
-                            SettingRow {
-                                th: root.th
-                                title: "Provider"
-                                SelectField {
-                                    width: 180
+                                SettingRow {
                                     th: root.th
-                                    value: root.val("cloud_provider", "none")
-                                    options: [
-                                        { value: "none", label: "None" },
-                                        { value: "folder", label: "Folder" },
-                                        { value: "gdrive", label: "Google Drive" }
-                                    ]
-                                    onSelected: function (value) { root.set("cloud_provider", value); }
+                                    title: "Provider"
+                                    SelectField {
+                                        width: 180
+                                        th: root.th
+                                        value: root.val("cloud_provider", "none")
+                                        options: [
+                                            { value: "none", label: "None" },
+                                            { value: "folder", label: "Folder" },
+                                            { value: "gdrive", label: "Google Drive" }
+                                        ]
+                                        onSelected: function (value) { root.set("cloud_provider", value); }
+                                    }
                                 }
-                            }
-                            SettingRow {
-                                th: root.th
-                                title: "Sync folder"
-                                description: root.val("cloud_folder", "") || "No folder selected"
-                                AppButton {
+                                SettingRow {
                                     th: root.th
-                                    icon: "folder-plus"
-                                    text: "Choose"
-                                    onClicked: root.openDialog("sync")
+                                    title: "Sync folder"
+                                    description: root.val("cloud_folder", "") || "No folder selected"
+                                    AppButton {
+                                        th: root.th
+                                        icon: "folder-plus"
+                                        text: "Choose"
+                                        onClicked: root.openDialog("sync")
+                                    }
+                                    AppButton {
+                                        th: root.th
+                                        icon: "refresh-cw"
+                                        text: "Sync now"
+                                        onClicked: root.app.syncNow()
+                                    }
                                 }
-                                AppButton {
+                                SettingRow {
                                     th: root.th
-                                    icon: "refresh-cw"
-                                    text: "Sync now"
-                                    onClicked: root.app.syncNow()
+                                    title: "Google OAuth client ID"
+                                    description: "From a Google Cloud OAuth desktop client."
+                                    AppTextField {
+                                        width: 260
+                                        th: root.th
+                                        text: root.val("gdrive_client_id", "")
+                                        placeholder: "…apps.googleusercontent.com"
+                                        onCommitted: function (value) { root.set("gdrive_client_id", value); }
+                                    }
                                 }
-                            }
-                            SettingRow {
-                                th: root.th
-                                title: "Google OAuth client ID"
-                                description: "From a Google Cloud OAuth desktop client."
-                                AppTextField {
-                                    width: 260
+                                SettingRow {
                                     th: root.th
-                                    text: root.val("gdrive_client_id", "")
-                                    placeholder: "…apps.googleusercontent.com"
-                                    onCommitted: function (value) { root.set("gdrive_client_id", value); }
+                                    title: "Google OAuth client secret"
+                                    description: "Optional for public desktop clients."
+                                    AppTextField {
+                                        width: 260
+                                        th: root.th
+                                        password: true
+                                        text: root.val("gdrive_client_secret", "")
+                                        placeholder: "Client secret"
+                                        onCommitted: function (value) { root.set("gdrive_client_secret", value); }
+                                    }
                                 }
-                            }
-                            SettingRow {
-                                th: root.th
-                                title: "Google OAuth client secret"
-                                description: "Optional for public desktop clients."
-                                AppTextField {
-                                    width: 260
+                                SettingRow {
                                     th: root.th
-                                    password: true
-                                    text: root.val("gdrive_client_secret", "")
-                                    placeholder: "Client secret"
-                                    onCommitted: function (value) { root.set("gdrive_client_secret", value); }
+                                    title: "Google Drive"
+                                    description: root.val("gdrive_connected", false) ? (root.val("gdrive_email", "") || "Connected") : "Not connected"
+                                    AppButton {
+                                        th: root.th
+                                        icon: "cloud"
+                                        text: root.val("gdrive_connected", false) ? "Disconnect" : "Connect"
+                                        onClicked: {
+                                            if (root.val("gdrive_connected", false)) root.app.gdriveDisconnect();
+                                            else root.app.gdriveConnect();
+                                        }
+                                    }
                                 }
-                            }
-                            SettingRow {
-                                th: root.th
-                                title: "Google Drive"
-                                description: root.val("gdrive_connected", false) ? (root.val("gdrive_email", "") || "Connected") : "Not connected"
-                                AppButton {
+                                SettingRow {
                                     th: root.th
-                                    icon: "cloud"
-                                    text: root.val("gdrive_connected", false) ? "Disconnect" : "Connect"
-                                    onClicked: {
-                                        if (root.val("gdrive_connected", false)) root.app.gdriveDisconnect();
-                                        else root.app.gdriveConnect();
+                                    title: "Sync files to cloud"
+                                    description: "Include attachments and images."
+                                    ToggleSwitch {
+                                        th: root.th
+                                        checked: root.val("cloud_file_sync", false)
+                                        onToggled: function (value) { root.set("cloud_file_sync", value); }
+                                    }
+                                }
+                                SettingRow {
+                                    th: root.th
+                                    title: "Show sync indicator"
+                                    ToggleSwitch {
+                                        th: root.th
+                                        checked: root.val("cloud_indicator", false)
+                                        onToggled: function (value) { root.set("cloud_indicator", value); }
                                     }
                                 }
                             }
-                            SettingRow {
-                                th: root.th
-                                title: "Sync files to cloud"
-                                description: "Include attachments and images."
-                                ToggleSwitch {
-                                    th: root.th
-                                    checked: root.val("cloud_file_sync", false)
-                                    onToggled: function (value) { root.set("cloud_file_sync", value); }
-                                }
-                            }
-                            SettingRow {
-                                th: root.th
-                                title: "Show sync indicator"
-                                ToggleSwitch {
-                                    th: root.th
-                                    checked: root.val("cloud_indicator", false)
-                                    onToggled: function (value) { root.set("cloud_indicator", value); }
-                                }
-                            }
-                            SettingRow {
+
+                            SettingsSection {
                                 th: root.th
                                 title: "Git sync"
+                                icon: "git-branch"
                                 description: "Keep the workspace in a Git repository on GitHub, Codeberg, GitLab or any remote."
-                                AppButton {
+
+                                SettingRow {
                                     th: root.th
-                                    icon: "git-compare"
-                                    text: "Set up…"
-                                    onClicked: root.gitWizardRequested()
+                                    title: "Enable git sync"
+                                    description: "Pull on start and push changes after edits."
+                                    AppButton {
+                                        th: root.th
+                                        icon: "git-compare"
+                                        text: "Set up…"
+                                        onClicked: root.gitWizardRequested()
+                                    }
+                                    ToggleSwitch {
+                                        th: root.th
+                                        checked: root.val("git_sync_enabled", false)
+                                        onToggled: function (value) { root.set("git_sync_enabled", value); }
+                                    }
                                 }
-                                ToggleSwitch {
+                                SettingRow {
                                     th: root.th
-                                    checked: root.val("git_sync_enabled", false)
-                                    onToggled: function (value) { root.set("git_sync_enabled", value); }
+                                    title: "Remote"
+                                    description: "SSH or HTTPS URL. The system git credentials and SSH agent are used."
+                                    AppTextField {
+                                        width: 300
+                                        th: root.th
+                                        text: root.val("git_remote", "")
+                                        placeholder: "git@github.com:you/corcho-data.git"
+                                        onCommitted: function (value) { root.set("git_remote", value); }
+                                    }
+                                }
+                                SettingRow {
+                                    th: root.th
+                                    title: "Authentication"
+                                    description: "gh CLI uses the login from the gh command instead of stored tokens."
+                                    SelectField {
+                                        width: 170
+                                        th: root.th
+                                        value: root.val("git_auth", "system")
+                                        options: [
+                                            { value: "system", label: "Git credentials" },
+                                            { value: "gh", label: "gh CLI" }
+                                        ]
+                                        onSelected: function (value) { root.set("git_auth", value); }
+                                    }
+                                }
+                                SettingRow {
+                                    th: root.th
+                                    title: "Branch"
+                                    AppTextField {
+                                        width: 160
+                                        th: root.th
+                                        text: root.val("git_branch", "main")
+                                        placeholder: "main"
+                                        onCommitted: function (value) { root.set("git_branch", value); }
+                                    }
+                                }
+                                SettingRow {
+                                    th: root.th
+                                    title: "Pull at start"
+                                    description: "Fast-forward or union-merge the remote before loading."
+                                    ToggleSwitch {
+                                        th: root.th
+                                        checked: root.val("git_auto_pull", true)
+                                        onToggled: function (value) { root.set("git_auto_pull", value); }
+                                    }
+                                }
+                                SettingRow {
+                                    th: root.th
+                                    title: "Push changes"
+                                    description: "Commit and push two seconds after the last edit."
+                                    ToggleSwitch {
+                                        th: root.th
+                                        checked: root.val("git_auto_push", true)
+                                        onToggled: function (value) { root.set("git_auto_push", value); }
+                                    }
+                                }
+                                SettingRow {
+                                    th: root.th
+                                    title: "Include attachments"
+                                    ToggleSwitch {
+                                        th: root.th
+                                        checked: root.val("git_include_attachments", false)
+                                        onToggled: function (value) { root.set("git_include_attachments", value); }
+                                    }
+                                }
+                                SettingRow {
+                                    th: root.th
+                                    title: "GitHub card token"
+                                    description: "Used by Git cards for private repositories when Authentication is Git credentials."
+                                    AppTextField {
+                                        width: 220
+                                        th: root.th
+                                        password: true
+                                        text: root.val("repo_token_github", "")
+                                        placeholder: "Token"
+                                        onCommitted: function (value) { root.set("repo_token_github", value); }
+                                    }
+                                }
+                                SettingRow {
+                                    th: root.th
+                                    title: "GitLab card token"
+                                    description: "Used by Git cards for private repositories."
+                                    AppTextField {
+                                        width: 220
+                                        th: root.th
+                                        password: true
+                                        text: root.val("repo_token_gitlab", "")
+                                        placeholder: "Token"
+                                        onCommitted: function (value) { root.set("repo_token_gitlab", value); }
+                                    }
+                                }
+                                SettingRow {
+                                    th: root.th
+                                    title: "Forgejo card token"
+                                    description: "Used by Git cards for Forgejo and Gitea repositories."
+                                    AppTextField {
+                                        width: 220
+                                        th: root.th
+                                        password: true
+                                        text: root.val("repo_token_forgejo", "")
+                                        placeholder: "Token"
+                                        onCommitted: function (value) { root.set("repo_token_forgejo", value); }
+                                    }
+                                }
+                                SettingRow {
+                                    th: root.th
+                                    title: "Git status"
+                                    description: root.git.lastError ? ("Error: " + root.git.lastError) : (root.git.lastSync ? ("Last sync: " + root.git.lastSync) : "Not synced yet")
+                                    AppButton {
+                                        th: root.th
+                                        icon: "git-compare"
+                                        text: "Sync now"
+                                        enabledButton: root.val("git_sync_enabled", false) && root.val("git_remote", "") !== ""
+                                        onClicked: root.app.gitSyncNow()
+                                    }
                                 }
                             }
-                            SettingRow {
+
+                            SettingsSection {
                                 th: root.th
-                                title: "Remote"
-                                description: "SSH or HTTPS URL. The system git credentials and SSH agent are used."
-                                AppTextField {
-                                    width: 300
+                                title: "Backup and storage"
+                                icon: "hard-drive"
+                                description: "Export, import or move the workspace data."
+
+                                SettingRow {
                                     th: root.th
-                                    text: root.val("git_remote", "")
-                                    placeholder: "git@github.com:you/corcho-data.git"
-                                    onCommitted: function (value) { root.set("git_remote", value); }
+                                    title: "Backup"
+                                    description: "Export or import all grids and cards."
+                                    AppButton {
+                                        th: root.th
+                                        icon: "upload"
+                                        text: "Export"
+                                        onClicked: root.openDialog("export")
+                                    }
+                                    AppButton {
+                                        th: root.th
+                                        icon: "download"
+                                        text: "Import"
+                                        onClicked: root.openDialog("import")
+                                    }
                                 }
-                            }
-                            SettingRow {
-                                th: root.th
-                                title: "Authentication"
-                                description: "gh CLI uses the login from the gh command instead of stored tokens."
-                                SelectField {
-                                    width: 170
+                                SettingRow {
                                     th: root.th
-                                    value: root.val("git_auth", "system")
-                                    options: [
-                                        { value: "system", label: "Git credentials" },
-                                        { value: "gh", label: "gh CLI" }
-                                    ]
-                                    onSelected: function (value) { root.set("git_auth", value); }
+                                    title: "Data folder"
+                                    description: root.val("data_dir", "") || "Default location"
+                                    AppButton {
+                                        th: root.th
+                                        icon: "folder-plus"
+                                        text: "Choose"
+                                        onClicked: root.openDialog("data")
+                                    }
                                 }
-                            }
-                            SettingRow {
-                                th: root.th
-                                title: "Branch"
-                                AppTextField {
-                                    width: 160
+                                SettingRow {
                                     th: root.th
-                                    text: root.val("git_branch", "main")
-                                    placeholder: "main"
-                                    onCommitted: function (value) { root.set("git_branch", value); }
+                                    title: "Import legacy data"
+                                    description: "Read a legacy data folder."
+                                    AppButton {
+                                        th: root.th
+                                        icon: "download"
+                                        text: "Import"
+                                        onClicked: root.openDialog("legacy")
+                                    }
                                 }
-                            }
-                            SettingRow {
-                                th: root.th
-                                title: "Pull at start"
-                                description: "Fast-forward or union-merge the remote before loading."
-                                ToggleSwitch {
-                                    th: root.th
-                                    checked: root.val("git_auto_pull", true)
-                                    onToggled: function (value) { root.set("git_auto_pull", value); }
+                                Text {
+                                    width: parent.width
+                                    text: root.folderMessage
+                                    visible: root.folderMessage !== ""
+                                    color: root.th.muted
+                                    font.family: root.th.fontFamily
+                                    font.pixelSize: root.th.fontSizeSmall
+                                    wrapMode: Text.WordWrap
                                 }
-                            }
-                            SettingRow {
-                                th: root.th
-                                title: "Push changes"
-                                description: "Commit and push two seconds after the last edit."
-                                ToggleSwitch {
-                                    th: root.th
-                                    checked: root.val("git_auto_push", true)
-                                    onToggled: function (value) { root.set("git_auto_push", value); }
-                                }
-                            }
-                            SettingRow {
-                                th: root.th
-                                title: "Include attachments"
-                                ToggleSwitch {
-                                    th: root.th
-                                    checked: root.val("git_include_attachments", false)
-                                    onToggled: function (value) { root.set("git_include_attachments", value); }
-                                }
-                            }
-                            SettingRow {
-                                th: root.th
-                                title: "GitHub card token"
-                                description: "Used by Git cards for private repositories when Authentication is Git credentials."
-                                AppTextField {
-                                    width: 220
-                                    th: root.th
-                                    password: true
-                                    text: root.val("repo_token_github", "")
-                                    placeholder: "Token"
-                                    onCommitted: function (value) { root.set("repo_token_github", value); }
-                                }
-                            }
-                            SettingRow {
-                                th: root.th
-                                title: "GitLab card token"
-                                description: "Used by Git cards for private repositories."
-                                AppTextField {
-                                    width: 220
-                                    th: root.th
-                                    password: true
-                                    text: root.val("repo_token_gitlab", "")
-                                    placeholder: "Token"
-                                    onCommitted: function (value) { root.set("repo_token_gitlab", value); }
-                                }
-                            }
-                            SettingRow {
-                                th: root.th
-                                title: "Forgejo card token"
-                                description: "Used by Git cards for Forgejo and Gitea repositories."
-                                AppTextField {
-                                    width: 220
-                                    th: root.th
-                                    password: true
-                                    text: root.val("repo_token_forgejo", "")
-                                    placeholder: "Token"
-                                    onCommitted: function (value) { root.set("repo_token_forgejo", value); }
-                                }
-                            }
-                            SettingRow {
-                                th: root.th
-                                title: "Git status"
-                                description: root.git.lastError ? ("Error: " + root.git.lastError) : (root.git.lastSync ? ("Last sync: " + root.git.lastSync) : "Not synced yet")
-                                AppButton {
-                                    th: root.th
-                                    icon: "git-compare"
-                                    text: "Sync now"
-                                    enabledButton: root.val("git_sync_enabled", false) && root.val("git_remote", "") !== ""
-                                    onClicked: root.app.gitSyncNow()
-                                }
-                            }
-                            SettingRow {
-                                th: root.th
-                                title: "Backup"
-                                description: "Export or import all grids and cards."
-                                AppButton {
-                                    th: root.th
-                                    icon: "upload"
-                                    text: "Export"
-                                    onClicked: root.openDialog("export")
-                                }
-                                AppButton {
-                                    th: root.th
-                                    icon: "download"
-                                    text: "Import"
-                                    onClicked: root.openDialog("import")
-                                }
-                            }
-                            SettingRow {
-                                th: root.th
-                                title: "Data folder"
-                                description: root.val("data_dir", "") || "Default location"
-                                AppButton {
-                                    th: root.th
-                                    icon: "folder-plus"
-                                    text: "Choose"
-                                    onClicked: root.openDialog("data")
-                                }
-                            }
-                            SettingRow {
-                                th: root.th
-                                title: "Import legacy data"
-                                description: "Read a legacy data folder."
-                                AppButton {
-                                    th: root.th
-                                    icon: "download"
-                                    text: "Import"
-                                    onClicked: root.openDialog("legacy")
-                                }
-                            }
-                            Text {
-                                width: parent.width
-                                text: root.folderMessage
-                                visible: root.folderMessage !== ""
-                                color: root.th.muted
-                                font.family: root.th.fontFamily
-                                font.pixelSize: root.th.fontSizeSmall
-                                wrapMode: Text.WordWrap
                             }
                         }
 

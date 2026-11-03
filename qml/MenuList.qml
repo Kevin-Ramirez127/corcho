@@ -14,7 +14,7 @@ Popup {
 
     width: 224
     padding: 8
-    modal: false
+    modal: true
     focus: true
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
     property int currentIndex: 0
@@ -37,11 +37,23 @@ Popup {
         }
     }
 
+    function estimatedHeight() {
+        var total = padding * 2;
+        for (var i = 0; i < items.length; i++) {
+            var data = items[i];
+            if (!data) continue;
+            if (i > 0) total += th.spaceHalf;
+            total += data.separator === true ? th.space2 : th.menuItemHeight;
+        }
+        return total;
+    }
+
     function place(px, py) {
         var w = areaW > 0 ? areaW : Screen.width;
         var h = areaH > 0 ? areaH : Screen.height;
+        var ph = Math.max(height, estimatedHeight());
         x = Math.max(4, Math.min(px, w - width - 4));
-        y = Math.max(4, Math.min(py, h - height - 4));
+        y = Math.max(4, Math.min(py, h - ph - 4));
     }
 
     function showAt(px, py) {
@@ -162,9 +174,10 @@ Popup {
 
                 HoverHandler { onHoveredChanged: row.hoveredNow = hovered }
 
-                TapHandler {
+                MouseArea {
+                    anchors.fill: parent
                     enabled: actionData.separator !== true
-                    onTapped: menu.activate(row.index)
+                    onClicked: menu.activate(row.index)
                 }
             }
         }

@@ -106,12 +106,27 @@ Item {
         root.close();
     }
 
+    function scrollResults(delta) {
+        var maxY = Math.max(0, list.contentHeight - list.height);
+        list.contentY = Math.max(0, Math.min(maxY, list.contentY - delta));
+    }
+
+    function wheelStep(event) {
+        return event.pixelDelta.y !== 0
+            ? event.pixelDelta.y
+            : event.angleDelta.y / 120 * Math.max(48, root.th.menuItemHeight * 2);
+    }
+
     signal settingsRequested()
 
     Rectangle {
         anchors.fill: parent
         color: Qt.rgba(0, 0, 0, 0.55)
-        MouseArea { anchors.fill: parent; onClicked: root.close() }
+        MouseArea {
+            anchors.fill: parent
+            onClicked: root.close()
+            onWheel: function (wheel) { wheel.accepted = true; }
+        }
     }
 
     Rectangle {
@@ -125,6 +140,15 @@ Item {
         color: root.th.menu
         border.width: root.th.borderWidth
         border.color: root.th.border
+
+        MouseArea {
+            anchors.fill: parent
+            acceptedButtons: Qt.NoButton
+            onWheel: function (wheel) {
+                root.scrollResults(root.wheelStep(wheel));
+                wheel.accepted = true;
+            }
+        }
 
         Column {
             anchors.fill: parent
@@ -155,11 +179,22 @@ Item {
             ListView {
                 id: list
                 width: parent.width
-                height: parent.height - root.th.space6
+                height: parent.height - query.height - root.th.space3
                 clip: true
                 spacing: root.th.spaceHalf
                 model: results
                 currentIndex: root.selectedIndex
+
+                // Scroll the results here and always consume the wheel. A
+                // Flickable lets the event bubble to the canvas once it reaches
+                // its end, which made the grid pan while the launcher was open.
+                WheelHandler {
+                    acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                    onWheel: function (event) {
+                        root.scrollResults(root.wheelStep(event));
+                        event.accepted = true;
+                    }
+                }
 
                 delegate: Item {
                     id: resultRow

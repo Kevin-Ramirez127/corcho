@@ -12,10 +12,14 @@ Item {
     activeFocusOnTab: true
     Accessible.role: Accessible.Button
     Accessible.name: root.current ? root.current.label : root.placeholder
-    Accessible.onPressAction: menu.open()
-    Keys.onSpacePressed: menu.open()
-    Keys.onReturnPressed: menu.open()
+    Accessible.onPressAction: root.openMenu()
+    Keys.onSpacePressed: root.openMenu()
+    Keys.onReturnPressed: root.openMenu()
     property bool fieldHovered: false
+
+    function openMenu() {
+        menu.openBelow(root);
+    }
 
     implicitWidth: 180
     implicitHeight: root.th.controlHeight
@@ -62,17 +66,22 @@ Item {
     }
 
     TapHandler {
-        onTapped: menu.open()
+        onTapped: root.openMenu()
     }
 
     ContextMenu {
         id: menu
+        parent: root.Window.window ? root.Window.window.contentItem : null
         th: root.th
         actions: root.options.map(function (o) {
-            return { label: o.label, icon: String(o.value) === String(root.value) ? "check" : "", value: o.value };
+            return {
+                label: o.label,
+                icon: String(o.value) === String(root.value) ? "check" : "",
+                action: String(o.value)
+            };
         })
-        onTriggered: function (index) {
-            root.selected(String(root.options[index].value));
+        onTriggered: function (value) {
+            root.selected(String(value));
         }
     }
 
