@@ -1103,6 +1103,7 @@ impl qobject::AppController {
                     github: settings.repo_token_github.clone(),
                     gitlab: settings.repo_token_gitlab.clone(),
                     forgejo: settings.repo_token_forgejo.clone(),
+                    auth_gh: settings.git_auth == "gh",
                 },
             )
         };

@@ -12,6 +12,7 @@ Item {
     property bool autoPull: true
     property bool autoPush: true
     property bool attachments: false
+    property string auth: "system"
     property string errorText: ""
 
     signal closed()
@@ -28,6 +29,7 @@ Item {
         autoPull = s.git_auto_pull !== false;
         autoPush = s.git_auto_push !== false;
         attachments = s.git_include_attachments === true;
+        auth = s.git_auth || "system";
         step = 0;
         errorText = "";
         opened = true;
@@ -69,6 +71,7 @@ Item {
         set("git_auto_pull", autoPull);
         set("git_auto_push", autoPush);
         set("git_include_attachments", attachments);
+        set("git_auth", auth);
         set("git_sync_enabled", true);
         close();
         root.app.gitSyncNow();
@@ -226,6 +229,21 @@ Item {
                         onToggled: function (value) { root.attachments = value; }
                     }
                 }
+                SettingRow {
+                    th: root.th
+                    title: "Authentication"
+                    description: "gh CLI uses the local gh login instead of stored tokens."
+                    SelectField {
+                        width: 170
+                        th: root.th
+                        value: root.auth
+                        options: [
+                            { value: "system", label: "Git credentials" },
+                            { value: "gh", label: "gh CLI" }
+                        ]
+                        onSelected: function (value) { root.auth = value; }
+                    }
+                }
             }
 
             Column {
@@ -246,7 +264,8 @@ Item {
                     text: "Remote: " + root.remote + "\nBranch: " + root.branch +
                           "\nPull at start: " + (root.autoPull ? "on" : "off") +
                           "\nPush changes: " + (root.autoPush ? "on" : "off") +
-                          "\nAttachments: " + (root.attachments ? "on" : "off")
+                          "\nAttachments: " + (root.attachments ? "on" : "off") +
+                          "\nAuthentication: " + (root.auth === "gh" ? "gh CLI" : "Git credentials")
                     color: root.th.text2
                     wrapMode: Text.WordWrap
                     font.family: root.th.fontFamily

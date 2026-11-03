@@ -17,6 +17,7 @@ pub struct GitConfig {
     pub auto_push: bool,
     pub auto_pull: bool,
     pub include_attachments: bool,
+    pub auth_gh: bool,
 }
 
 impl Default for GitConfig {
@@ -28,6 +29,7 @@ impl Default for GitConfig {
             auto_push: true,
             auto_pull: true,
             include_attachments: false,
+            auth_gh: false,
         }
     }
 }
@@ -90,6 +92,7 @@ impl GitSync {
             "branch": config.branch,
             "autoPush": config.auto_push,
             "autoPull": config.auto_pull,
+            "authGh": config.auth_gh,
             "dirty": state.as_ref().map(|s| s.dirty).unwrap_or(false),
             "busy": state.as_ref().map(|s| s.busy).unwrap_or(false),
             "lastSync": state.as_ref().and_then(|s| s.last_sync.clone()),
@@ -159,10 +162,32 @@ impl GitSync {
         let _ = git(data_dir, &["config", "user.name", "Corcho"]);
         let _ = git(data_dir, &["config", "user.email", "corcho@localhost"]);
 
-        let ignore = if config.include_attachments {
-            "updates/\nbackups/\nmcp.token\n*.sock\n*.tmp\n*.bak\n"
+        let https_remote = config.remote.starts_with("https://");
+        let rewrite_key = format!("url.{}.insteadOf", config.remote);
+        if config.auth_gh {
+            let _ = git(data_dir, &["config", "credential.helper", ""]);
+            git(
+                data_dir,
+                &[
+                    "config",
+                    "credential.helper",
+                    "!gh auth git-credential",
+                ],
+            )?;
+            if https_remote {
+                let _ = git(data_dir, &["config", &rewrite_key, &config.remote]);
+            }
         } else {
-            "updates/\nbackups/\nattachments/\nmcp.token\n*.sock\n*.tmp\n*.bak\n"
+            let _ = git(data_dir, &["config", "--unset-all", "credential.helper"]);
+            if https_remote {
+                let _ = git(data_dir, &["config", "--unset-all", &rewrite_key]);
+            }
+        }
+
+        let ignore = if config.include_attachments {
+            "updates/\nbackups/\nlogs/\nmcp.token\n*.sock\n*.tmp\n*.bak\n"
+        } else {
+            "updates/\nbackups/\nlogs/\nattachments/\nmcp.token\n*.sock\n*.tmp\n*.bak\n"
         };
         std::fs::write(data_dir.join(".gitignore"), ignore)?;
 
@@ -457,6 +482,7 @@ pub fn config_from(settings: &crate::model::Settings) -> GitConfig {
         auto_push: settings.git_auto_push,
         auto_pull: settings.git_auto_pull,
         include_attachments: settings.git_include_attachments,
+        auth_gh: settings.git_auth == "gh",
     }
 }
 
@@ -519,6 +545,7 @@ mod git_tests {
             auto_push: true,
             auto_pull: true,
             include_attachments: false,
+            auth_gh: false,
         }
     }
 

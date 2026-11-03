@@ -95,7 +95,7 @@ Item {
         return themeList.filter(function (t) { return t.light !== true || t.id === "custom"; });
     }
     function systemIsDark() {
-        return Application.styleHints.colorScheme !== Qt.Light;
+        return Application.styleHints.colorScheme === Qt.Dark;
     }
     function validateKey() {
         keyStatus = "Checking…";
@@ -883,6 +883,21 @@ Item {
                             }
                             SettingRow {
                                 th: root.th
+                                title: "Authentication"
+                                description: "gh CLI uses the login from the gh command instead of stored tokens."
+                                SelectField {
+                                    width: 170
+                                    th: root.th
+                                    value: root.val("git_auth", "system")
+                                    options: [
+                                        { value: "system", label: "Git credentials" },
+                                        { value: "gh", label: "gh CLI" }
+                                    ]
+                                    onSelected: function (value) { root.set("git_auth", value); }
+                                }
+                            }
+                            SettingRow {
+                                th: root.th
                                 title: "Branch"
                                 AppTextField {
                                     width: 160
@@ -924,7 +939,7 @@ Item {
                             SettingRow {
                                 th: root.th
                                 title: "GitHub card token"
-                                description: "Used by Git cards for private repositories."
+                                description: "Used by Git cards for private repositories when Authentication is Git credentials."
                                 AppTextField {
                                     width: 220
                                     th: root.th

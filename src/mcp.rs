@@ -1520,6 +1520,11 @@ fn call_tool(core: &mut Core, name: &str, args: &Value) -> Result<String> {
             if let Some(include) = args.get("includeAttachments").and_then(|v| v.as_bool()) {
                 core.set_setting_json("git_include_attachments", &include.to_string());
             }
+            if let Some(auth) = args.get("auth").and_then(|v| v.as_str()) {
+                if matches!(auth, "system" | "gh") {
+                    core.set_setting_json("git_auth", &json!(auth).to_string());
+                }
+            }
             Ok(core.git.status_json())
         }
         "git.sync" => {
@@ -2746,7 +2751,7 @@ fn tools() -> Vec<Value> {
     add(
         "git.configure",
         "Configure git sync.",
-        json!({"enabled":{"type":"boolean"},"remote":{"type":"string"},"branch":{"type":"string"},"autoPush":{"type":"boolean"},"autoPull":{"type":"boolean"}}),
+        json!({"enabled":{"type":"boolean"},"remote":{"type":"string"},"branch":{"type":"string"},"autoPush":{"type":"boolean"},"autoPull":{"type":"boolean"},"includeAttachments":{"type":"boolean"},"auth":{"type":"string","enum":["system","gh"]}}),
         vec![],
     );
     add(

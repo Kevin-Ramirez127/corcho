@@ -103,6 +103,10 @@ fn main() {
         return;
     }
 
+    if std::env::var_os("QT_QPA_PLATFORMTHEME").is_none() {
+        std::env::set_var("QT_QPA_PLATFORMTHEME", "xdgdesktopportal");
+    }
+
     let mut app = QGuiApplication::new();
     let mut engine = QQmlApplicationEngine::new();
 

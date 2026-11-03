@@ -46,7 +46,7 @@ ApplicationWindow {
         return null;
     }
 
-    readonly property bool systemDark: Application.styleHints.colorScheme !== Qt.Light
+    readonly property bool systemDark: Application.styleHints.colorScheme === Qt.Dark
     readonly property var th: parseJson(appearance.tokensJson, {})
 
     AppearanceController { id: appearance }

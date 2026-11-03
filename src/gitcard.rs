@@ -7,6 +7,18 @@ pub struct RepoTokens {
     pub github: String,
     pub gitlab: String,
     pub forgejo: String,
+    pub auth_gh: bool,
+}
+
+fn gh_token() -> String {
+    std::process::Command::new("gh")
+        .args(["auth", "token", "--hostname", "github.com"])
+        .env("GH_PROMPT_DISABLED", "1")
+        .output()
+        .ok()
+        .filter(|out| out.status.success())
+        .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())
+        .unwrap_or_default()
 }
 
 struct Repo {
@@ -74,11 +86,12 @@ fn client() -> Result<Client> {
         .build()?)
 }
 
-fn token_for<'a>(provider: &str, tokens: &'a RepoTokens) -> &'a str {
+fn token_for(provider: &str, tokens: &RepoTokens) -> String {
     match provider {
-        "github" => &tokens.github,
-        "gitlab" => &tokens.gitlab,
-        _ => &tokens.forgejo,
+        "github" if tokens.auth_gh => gh_token(),
+        "github" => tokens.github.clone(),
+        "gitlab" => tokens.gitlab.clone(),
+        _ => tokens.forgejo.clone(),
     }
 }
 
@@ -289,7 +302,7 @@ pub async fn fetch(url: &str, tokens: RepoTokens) -> Value {
         Ok(repo) => repo,
         Err(err) => return json!({"error": err.to_string()}),
     };
-    let token = token_for(repo.provider, &tokens).to_string();
+    let token = token_for(repo.provider, &tokens);
     let c = match client() {
         Ok(c) => c,
         Err(err) => return json!({"error": err.to_string()}),
