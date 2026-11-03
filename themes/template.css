@@ -60,6 +60,8 @@
   --calendar-today: #d98e5c29;
   /* UI font family */
   --font-family: Inter;
+  /* Wordmark and branding font */
+  --brand-font: TeX Gyre Adventor;
   /* Monospace font family */
   --font-mono: JetBrains Mono;
   /* Caption text size */

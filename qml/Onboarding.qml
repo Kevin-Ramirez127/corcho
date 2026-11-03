@@ -34,9 +34,9 @@ Item {
         Text {
             text: "Corcho"
             color: root.th.text
-            font.family: root.th.fontFamily
+            font.family: root.th.brandFont
             font.pixelSize: root.th.fontSizeDisplay
-            font.weight: root.th.fontWeightMedium
+            font.weight: Font.Bold
         }
 
         Text {

@@ -15,6 +15,14 @@ pub fn register(thread: QtThread) {
     }
 }
 
+pub fn is_registered() -> bool {
+    THREAD
+        .get()
+        .and_then(|slot| slot.lock().ok())
+        .map(|guard| guard.is_some())
+        .unwrap_or(false)
+}
+
 pub fn dispatch(url: &str) {
     let url = url.to_string();
     if let Some(slot) = THREAD.get() {

@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicI64, Ordering};
 
 use anyhow::Result;
 use serde_json::{json, Value};
@@ -9,6 +10,37 @@ use crate::model::{CalendarDef, Card, DateLink, Folder, Grid, Settings, Workspac
 use crate::search;
 use crate::storage;
 use crate::theme;
+
+const PAYLOAD_CAP: usize = 256 * 1024;
+
+#[cfg(target_env = "gnu")]
+fn trim_allocator() {
+    static LAST: AtomicI64 = AtomicI64::new(0);
+    let now = time::OffsetDateTime::now_utc().unix_timestamp();
+    let last = LAST.load(Ordering::Relaxed);
+    if now - last < 30 {
+        return;
+    }
+    if LAST
+        .compare_exchange(last, now, Ordering::Relaxed, Ordering::Relaxed)
+        .is_ok()
+    {
+        unsafe {
+            libc::malloc_trim(0);
+        }
+    }
+}
+
+#[cfg(not(target_env = "gnu"))]
+fn trim_allocator() {}
+
+fn clip(text: &str, max: usize) -> String {
+    if text.chars().count() <= max {
+        return text.to_string();
+    }
+    let cut: String = text.chars().take(max).collect();
+    format!("{cut}…")
+}
 
 pub struct Core {
     pub data_dir: PathBuf,
@@ -89,6 +121,7 @@ impl Core {
             .and_then(|m| m.modified())
             .ok();
         self.git.mark_dirty();
+        trim_allocator();
         Ok(())
     }
 
@@ -163,6 +196,21 @@ impl Core {
             .map(|g| g.cards.clone())
             .unwrap_or_default();
         serde_json::to_string(&cards).unwrap_or_else(|_| "[]".into())
+    }
+
+    pub fn all_cards_json(&self) -> String {
+        let mut out = Vec::new();
+        for grid in &self.ws.grids {
+            for card in &grid.cards {
+                let mut value = serde_json::to_value(card).unwrap_or_else(|_| json!({}));
+                if let Some(obj) = value.as_object_mut() {
+                    obj.insert("gridId".into(), json!(grid.id));
+                    obj.insert("gridName".into(), json!(grid.name));
+                }
+                out.push(value);
+            }
+        }
+        Value::Array(out).to_string()
     }
 
     pub fn folders_json(&self) -> String {
@@ -299,9 +347,22 @@ impl Core {
         }
         if let Some(obj) = value.get("payload").and_then(|v| v.as_object()) {
             for (k, v) in obj {
+                if matches!(k.as_str(), "lastBody" | "lastResult") {
+                    if let Some(text) = v.as_str() {
+                        if text.len() > PAYLOAD_CAP {
+                            let mut cut = PAYLOAD_CAP;
+                            while !text.is_char_boundary(cut) {
+                                cut -= 1;
+                            }
+                            card.set(k, json!(format!("{}\n… (truncated)", &text[..cut])));
+                            continue;
+                        }
+                    }
+                }
                 card.set(k, v.clone());
             }
         }
+        self.propagate_sync(&id);
         if !self.ws.date_links.is_empty() {
             self.ws.prune_date_links();
         }
@@ -311,7 +372,27 @@ impl Core {
 
     pub fn delete_card(&mut self, id: &str) -> bool {
         self.checkpoint();
+        let sync_id = self
+            .ws
+            .card(id)
+            .and_then(|(_, c)| c.get("syncId").and_then(|v| v.as_str()))
+            .map(str::to_string);
         let removed = self.ws.remove_card(id).is_some();
+        if let Some(sync_id) = sync_id {
+            let partners: Vec<String> = self
+                .ws
+                .grids
+                .iter()
+                .flat_map(|g| g.cards.iter())
+                .filter(|c| c.get("syncId").and_then(|v| v.as_str()) == Some(sync_id.as_str()))
+                .map(|c| c.id.clone())
+                .collect();
+            for partner in partners {
+                if let Some(card) = self.ws.card_mut(&partner) {
+                    card.payload.remove("syncId");
+                }
+            }
+        }
         if removed {
             self.ws.prune_date_links();
             self.save_quiet();
@@ -848,9 +929,16 @@ fn file_kind(path: &std::path::Path) -> Option<&'static str> {
         .to_ascii_lowercase();
     match ext.as_str() {
         "png" | "jpg" | "jpeg" | "webp" | "gif" | "bmp" | "svg" => Some("image"),
-        "pdf" => Some("pdf"),
         "md" | "markdown" => Some("markdown"),
         _ => None,
+    }
+}
+
+fn entry_kind(path: &std::path::Path) -> &'static str {
+    if path.is_dir() {
+        "folder"
+    } else {
+        file_kind(path).unwrap_or("other")
     }
 }
 
@@ -867,7 +955,7 @@ impl Core {
         let canonical = std::fs::canonicalize(path)
             .map_err(|err| anyhow::anyhow!("cannot open {path}: {err}"))?;
         let kind = file_kind(&canonical).ok_or_else(|| {
-            anyhow::anyhow!("only image, PDF, Markdown files and folders can be pinned")
+            anyhow::anyhow!("only image and Markdown files and folders can be pinned")
         })?;
         let name = canonical
             .file_name()
@@ -876,7 +964,6 @@ impl Core {
             .to_string();
         let (width, height) = match kind {
             "image" => (420.0, 360.0),
-            "pdf" => (520.0, 640.0),
             "markdown" => (480.0, 420.0),
             _ => (420.0, 360.0),
         };
@@ -898,6 +985,412 @@ impl Core {
         grid.cards.push(card.clone());
         self.save_quiet();
         Ok(card)
+    }
+
+    pub fn move_cards(&mut self, ids: &[String], dx: f64, dy: f64) -> bool {
+        if ids.is_empty() || (dx == 0.0 && dy == 0.0) {
+            return false;
+        }
+        if !ids.iter().any(|id| {
+            self.ws
+                .card(id)
+                .map(|(_, card)| !card.locked)
+                .unwrap_or(false)
+        }) {
+            return false;
+        }
+        self.checkpoint();
+        for id in ids {
+            if let Some(card) = self.ws.card_mut(id) {
+                if card.locked {
+                    continue;
+                }
+                card.x += dx;
+                card.y += dy;
+            }
+        }
+        self.save_quiet();
+        true
+    }
+
+    pub fn set_git_card_data(&mut self, card_id: &str, data: &Value) {
+        if let Some(card) = self.ws.card_mut(card_id) {
+            card.set("gitData", data.clone());
+            self.save_quiet();
+        }
+    }
+
+    pub fn sync_cards(&mut self, source_id: &str, target_id: &str) -> bool {
+        if source_id == target_id {
+            return false;
+        }
+        let Some((_, source)) = self.ws.card(source_id) else {
+            return false;
+        };
+        let Some((_, target)) = self.ws.card(target_id) else {
+            return false;
+        };
+        if source.kind != target.kind {
+            return false;
+        }
+        let sync_id = uuid::Uuid::new_v4().to_string();
+        if let Some(card) = self.ws.card_mut(source_id) {
+            card.set("syncId", json!(sync_id));
+        }
+        if let Some(card) = self.ws.card_mut(target_id) {
+            card.set("syncId", json!(sync_id));
+        }
+        self.copy_synced_content(source_id, target_id);
+        self.save_quiet();
+        true
+    }
+
+    pub fn unsync_card(&mut self, card_id: &str) -> bool {
+        let Some((_, card)) = self.ws.card(card_id) else {
+            return false;
+        };
+        let Some(sync_id) = card
+            .get("syncId")
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+        else {
+            return false;
+        };
+        let ids: Vec<String> = self
+            .ws
+            .grids
+            .iter()
+            .flat_map(|g| g.cards.iter())
+            .filter(|c| c.get("syncId").and_then(|v| v.as_str()) == Some(sync_id.as_str()))
+            .map(|c| c.id.clone())
+            .collect();
+        for id in ids {
+            if let Some(card) = self.ws.card_mut(&id) {
+                card.payload.remove("syncId");
+            }
+        }
+        self.save_quiet();
+        true
+    }
+
+    fn copy_synced_content(&mut self, from_id: &str, to_id: &str) {
+        let Some((_, source)) = self.ws.card(from_id) else {
+            return;
+        };
+        let title = source.title.clone();
+        let text = source.text.clone();
+        let mut payload = source.payload.clone();
+        payload.remove("linkedIds");
+        if let Some(target) = self.ws.card_mut(to_id) {
+            target.title = title;
+            target.text = text;
+            target.payload = payload;
+        }
+    }
+
+    fn propagate_sync(&mut self, source_id: &str) {
+        let Some(sync_id) = self
+            .ws
+            .card(source_id)
+            .and_then(|(_, c)| c.get("syncId").and_then(|v| v.as_str()))
+            .map(str::to_string)
+        else {
+            return;
+        };
+        let partners: Vec<String> = self
+            .ws
+            .grids
+            .iter()
+            .flat_map(|g| g.cards.iter())
+            .filter(|c| {
+                c.id != source_id
+                    && c.get("syncId").and_then(|v| v.as_str()) == Some(sync_id.as_str())
+            })
+            .map(|c| c.id.clone())
+            .collect();
+        for id in partners {
+            self.copy_synced_content(source_id, &id);
+        }
+    }
+
+    pub fn toggle_ai_link(&mut self, ai_id: &str, card_id: &str) -> bool {
+        if ai_id == card_id {
+            return false;
+        }
+        let Some((_, ai)) = self.ws.card(ai_id) else {
+            return false;
+        };
+        if ai.kind != "ai" || self.ws.card(card_id).is_none() {
+            return false;
+        }
+        let mut ids: Vec<String> = ai
+            .get("linkedIds")
+            .and_then(|v| v.as_array())
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|v| v.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default();
+        if let Some(pos) = ids.iter().position(|id| id == card_id) {
+            ids.remove(pos);
+        } else {
+            ids.push(card_id.to_string());
+        }
+        if let Some(card) = self.ws.card_mut(ai_id) {
+            card.set("linkedIds", json!(ids));
+        }
+        self.save_quiet();
+        true
+    }
+
+    pub fn ai_context(&self, ids: &[String]) -> String {
+        let mut parts = Vec::new();
+        for id in ids {
+            let Some((_, card)) = self.ws.card(id) else {
+                continue;
+            };
+            if card.kind == "ai" {
+                continue;
+            }
+            let text = self.card_context(card);
+            if !text.is_empty() {
+                parts.push(text);
+            }
+        }
+        parts.join("\n\n")
+    }
+
+    fn card_context(&self, card: &Card) -> String {
+        let title = if card.title.is_empty() {
+            card.kind.clone()
+        } else {
+            card.title.clone()
+        };
+        let body = match card.kind.as_str() {
+            "note" => card.text.clone(),
+            "website" | "bookmark" => card.str_field("url", ""),
+            "api" => format!(
+                "{}\n{}",
+                card.str_field("apiUrl", ""),
+                clip(&card.str_field("lastBody", ""), 2000)
+            ),
+            "script" => format!(
+                "{}\n{}",
+                clip(&card.str_field("script", ""), 1000),
+                clip(&card.str_field("lastOutput", ""), 1000)
+            ),
+            "calendar" => {
+                let cids: Vec<String> = card
+                    .get("calendarIds")
+                    .and_then(|v| v.as_array())
+                    .map(|items| {
+                        items
+                            .iter()
+                            .filter_map(|v| v.as_str().map(str::to_string))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let dates: Vec<String> = self
+                    .ws
+                    .date_links
+                    .iter()
+                    .filter(|link| link.calendar_ids.iter().any(|id| cids.contains(id)))
+                    .map(|link| format!("{} {}", link.date, link.title))
+                    .collect();
+                dates.join("\n")
+            }
+            "checklist" => card
+                .get("items")
+                .and_then(|v| v.as_array())
+                .map(|items| {
+                    items
+                        .iter()
+                        .map(|item| {
+                            let done = item.get("done").and_then(|v| v.as_bool()).unwrap_or(false);
+                            let text = item.get("text").and_then(|v| v.as_str()).unwrap_or("");
+                            format!("[{}] {}", if done { "x" } else { " " }, text)
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                })
+                .unwrap_or_default(),
+            "kanban" => card
+                .get("columns")
+                .and_then(|v| v.as_array())
+                .map(|columns| {
+                    columns
+                        .iter()
+                        .map(|column| {
+                            let name = column.get("title").and_then(|v| v.as_str()).unwrap_or("");
+                            let items = column
+                                .get("items")
+                                .and_then(|v| v.as_array())
+                                .map(|items| {
+                                    items
+                                        .iter()
+                                        .map(|item| {
+                                            let done = item
+                                                .get("done")
+                                                .and_then(|v| v.as_bool())
+                                                .unwrap_or(false);
+                                            let text = item
+                                                .get("text")
+                                                .and_then(|v| v.as_str())
+                                                .unwrap_or("");
+                                            format!("  [{}] {}", if done { "x" } else { " " }, text)
+                                        })
+                                        .collect::<Vec<_>>()
+                                        .join("\n")
+                                })
+                                .unwrap_or_default();
+                            format!("{name}\n{items}")
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                })
+                .unwrap_or_default(),
+            "whiteboard" => format!(
+                "{} strokes",
+                card.get("strokes")
+                    .and_then(|v| v.as_array())
+                    .map(|v| v.len())
+                    .unwrap_or(0)
+            ),
+            "pomodoro" => format!(
+                "{} phase, {}s left, {} sessions ({}m work / {}m break)",
+                card.str_field("phase", "work"),
+                card.get("remaining").and_then(|v| v.as_i64()).unwrap_or(0),
+                card.get("sessions").and_then(|v| v.as_i64()).unwrap_or(0),
+                card.get("workMinutes")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(25),
+                card.get("breakMinutes")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(5)
+            ),
+            "timbre" => format!(
+                "tone {} Hz, mix {}, volume {}",
+                card.get("toneFreq")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(220.0),
+                card.get("toneMix").and_then(|v| v.as_f64()).unwrap_or(0.4),
+                card.get("volume").and_then(|v| v.as_f64()).unwrap_or(0.35)
+            ),
+            "portal" => self
+                .ws
+                .grids
+                .iter()
+                .find(|grid| grid.id == card.str_field("targetGridId", ""))
+                .map(|grid| format!("target grid: {}", grid.name))
+                .unwrap_or_default(),
+            "mpris" => format!("media player: {}", card.str_field("playerName", "")),
+            "file" => format!(
+                "{} file: {}",
+                card.str_field("fileKind", ""),
+                card.str_field("path", "")
+            ),
+            _ => card.text.clone(),
+        };
+        let body = body.trim();
+        if body.is_empty() {
+            format!("{title} ({})", card.kind)
+        } else {
+            format!("{title} ({}):\n{body}", card.kind)
+        }
+    }
+
+    pub fn set_cards_group(&mut self, ids: &[String], group: &str) -> bool {
+        self.checkpoint();
+        for id in ids {
+            if let Some(card) = self.ws.card_mut(id) {
+                if group.is_empty() {
+                    card.payload.remove("group");
+                } else {
+                    card.set("group", json!(group));
+                }
+            }
+        }
+        self.save_quiet();
+        true
+    }
+
+    pub fn create_template(
+        &mut self,
+        name: &str,
+        ids: &[String],
+    ) -> Result<crate::model::Template> {
+        let mut cards = Vec::new();
+        for id in ids {
+            if let Some((_, card)) = self.ws.card(id) {
+                cards.push(card.clone());
+            }
+        }
+        if cards.is_empty() {
+            return Err(anyhow::anyhow!("select at least one card"));
+        }
+        let min_x = cards.iter().map(|c| c.x).fold(f64::INFINITY, f64::min);
+        let min_y = cards.iter().map(|c| c.y).fold(f64::INFINITY, f64::min);
+        for card in &mut cards {
+            card.x -= min_x;
+            card.y -= min_y;
+        }
+        let template = crate::model::Template {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: if name.trim().is_empty() {
+                "Template".into()
+            } else {
+                name.trim().to_string()
+            },
+            cards,
+        };
+        self.ws.templates.push(template.clone());
+        self.save_quiet();
+        Ok(template)
+    }
+
+    pub fn insert_template(
+        &mut self,
+        id: &str,
+        x: f64,
+        y: f64,
+        grid_id: Option<&str>,
+    ) -> Result<Vec<Card>> {
+        let template = self
+            .ws
+            .templates
+            .iter()
+            .find(|t| t.id == id)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("template not found"))?;
+        let target = grid_id
+            .map(str::to_string)
+            .unwrap_or_else(|| self.ws.active_grid_id.clone().unwrap_or_default());
+        let Some(grid) = self.ws.grid_mut(&target) else {
+            return Err(anyhow::anyhow!("grid not found"));
+        };
+        let mut inserted = Vec::new();
+        for source in template.cards {
+            let mut card = source;
+            card.id = uuid::Uuid::new_v4().to_string();
+            card.x += x;
+            card.y += y;
+            grid.cards.push(card.clone());
+            inserted.push(card);
+        }
+        self.save_quiet();
+        Ok(inserted)
+    }
+
+    pub fn delete_template(&mut self, id: &str) -> bool {
+        let before = self.ws.templates.len();
+        self.ws.templates.retain(|t| t.id != id);
+        let changed = before != self.ws.templates.len();
+        if changed {
+            self.save_quiet();
+        }
+        changed
     }
 
     pub fn read_pinned_file(&self, path: &str) -> Result<String> {
@@ -925,9 +1418,7 @@ impl Core {
         let mut entries = Vec::new();
         for entry in std::fs::read_dir(&canonical)?.flatten() {
             let entry_path = entry.path();
-            let Some(kind) = file_kind(&entry_path) else {
-                continue;
-            };
+            let kind = entry_kind(&entry_path);
             let name = entry.file_name().to_string_lossy().to_string();
             entries.push(json!({
                 "name": name,
@@ -1080,4 +1571,139 @@ pub fn valid_date(value: &str) -> bool {
         return false;
     };
     time::Date::from_calendar_date(year, month, day).is_ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn folder_listing_includes_unsupported_files() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("sub")).unwrap();
+        std::fs::write(dir.path().join("notes.md"), "# hi").unwrap();
+        std::fs::write(dir.path().join("script.py"), "print(1)").unwrap();
+        std::fs::write(dir.path().join("image.png"), b"not really a png").unwrap();
+
+        let core = Core::fallback();
+        let listing = core
+            .list_pinned_folder(dir.path().to_str().unwrap())
+            .unwrap();
+        let entries = listing["entries"].as_array().unwrap();
+        let kinds: Vec<(&str, &str)> = entries
+            .iter()
+            .map(|e| {
+                (
+                    e["name"].as_str().unwrap_or(""),
+                    e["kind"].as_str().unwrap_or(""),
+                )
+            })
+            .collect();
+        assert!(kinds.contains(&("sub", "folder")));
+        assert!(kinds.contains(&("notes.md", "markdown")));
+        assert!(kinds.contains(&("image.png", "image")));
+        assert!(kinds.contains(&("script.py", "other")));
+    }
+
+    #[test]
+    fn synced_cards_mirror_content() {
+        let mut core = Core::fallback();
+        let a = core.create_card("note", 0.0, 0.0).unwrap();
+        let b = core.create_card("note", 400.0, 0.0).unwrap();
+        assert!(core.sync_cards(&a.id, &b.id));
+        core.update_card_json(&format!(
+            "{{\"id\":\"{}\",\"text\":\"shared text\",\"title\":\"Shared\"}}",
+            a.id
+        ));
+        let (_, other) = core.ws.card(&b.id).unwrap();
+        assert_eq!(other.text, "shared text");
+        assert_eq!(other.title, "Shared");
+        assert!(core.unsync_card(&a.id));
+        let (_, other) = core.ws.card(&b.id).unwrap();
+        assert!(other.get("syncId").is_none());
+    }
+
+    #[test]
+    fn ai_links_build_context_and_toggle() {
+        let mut core = Core::fallback();
+        let ai = core.create_card("ai", 0.0, 0.0).unwrap();
+        let note = core.create_card("note", 100.0, 0.0).unwrap();
+        assert!(core.toggle_ai_link(&ai.id, &note.id));
+        let (_, ai_now) = core.ws.card(&ai.id).unwrap();
+        assert_eq!(ai_now.get("linkedIds").unwrap(), &json!([note.id]));
+
+        core.update_card_json(&format!(
+            "{{\"id\":\"{}\",\"text\":\"remember the milk\"}}",
+            note.id
+        ));
+        let context = core.ai_context(std::slice::from_ref(&note.id));
+        assert!(context.contains("remember the milk"));
+
+        assert!(core.toggle_ai_link(&ai.id, &note.id));
+        let (_, ai_now) = core.ws.card(&ai.id).unwrap();
+        assert!(ai_now
+            .get("linkedIds")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn large_payloads_are_truncated() {
+        let mut core = Core::fallback();
+        let card = core.create_card("api", 0.0, 0.0).unwrap();
+        let body = "x".repeat(PAYLOAD_CAP + 1024);
+        let patch = serde_json::json!({"id": card.id, "payload": {"lastBody": body}});
+        assert!(core.update_card_json(&patch.to_string()));
+        let (_, stored) = core.ws.card(&card.id).unwrap();
+        let text = stored.str_field("lastBody", "");
+        assert!(text.len() <= PAYLOAD_CAP + 32);
+        assert!(text.ends_with("(truncated)"));
+    }
+
+    #[test]
+    fn move_cards_skips_pinned_cards() {
+        let mut core = Core::fallback();
+        let pinned = core.create_card("note", 10.0, 10.0).unwrap();
+        let loose = core.create_card("note", 100.0, 100.0).unwrap();
+        core.update_card_json(&format!("{{\"id\":\"{}\",\"locked\":true}}", pinned.id));
+
+        assert!(core.move_cards(&[pinned.id.clone(), loose.id.clone()], 10.0, 5.0));
+
+        let (_, pinned_now) = core.ws.card(&pinned.id).unwrap();
+        assert_eq!((pinned_now.x, pinned_now.y), (10.0, 10.0));
+        let (_, loose_now) = core.ws.card(&loose.id).unwrap();
+        assert_eq!((loose_now.x, loose_now.y), (110.0, 105.0));
+    }
+
+    #[test]
+    fn pinning_rejects_unsupported_files_but_accepts_folders() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("data")).unwrap();
+        let folder = dir.path().join("sub");
+        std::fs::create_dir(&folder).unwrap();
+        let script = dir.path().join("script.py");
+        std::fs::write(&script, "print(1)").unwrap();
+        let markdown = dir.path().join("notes.md");
+        std::fs::write(&markdown, "# hi").unwrap();
+
+        let mut core = Core::fallback();
+        core.data_dir = dir.path().join("data");
+        assert!(core
+            .pin_path(script.to_str().unwrap(), 0.0, 0.0, None)
+            .is_err());
+        assert_eq!(
+            core.pin_path(folder.to_str().unwrap(), 0.0, 0.0, None)
+                .unwrap()
+                .str_field("fileKind", ""),
+            "folder"
+        );
+        assert_eq!(
+            core.pin_path(markdown.to_str().unwrap(), 0.0, 0.0, None)
+                .unwrap()
+                .str_field("fileKind", ""),
+            "markdown"
+        );
+    }
 }

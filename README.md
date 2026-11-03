@@ -18,7 +18,7 @@ for Linux. No Electron shell, no telemetry, no analytics.
   and any other card, then filter the calendar view per calendar.
 - A dedicated Timbre card for noise and pure-tone audio, with volume, pitch
   and mix controls.
-- Pin images, PDFs, Markdown files and folders as cards.
+- Pin images, Markdown files and folders as cards; PDFs open in your system viewer.
 - Custom SVG icons for every grid, plus a guided Git sync setup wizard.
 - Themes follow the system light/dark appearance, with a separate theme chosen
   for light and dark.
@@ -130,3 +130,5 @@ under CC BY 4.0.
 
 MIT. See [LICENSE](LICENSE). Bundled Inter fonts are under the SIL Open Font
 License; Lucide icons are ISC.
+
+Branding uses TeX Gyre Adventor Bold (GUST Font License).

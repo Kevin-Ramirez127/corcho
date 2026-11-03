@@ -3,7 +3,7 @@ import QtQuick
 CardFrame {
     id: root
 
-    property var items: (card.items) ? card.items : []
+    property var items: (root.card && root.card.items) ? root.card.items : []
     property bool changed: false
 
     readonly property var links: {

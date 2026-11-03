@@ -21,6 +21,8 @@ pub fn default_model(provider: &str) -> &'static str {
         "google" => "gemini-2.5-flash",
         "grok" => "grok-4-1-fast-reasoning",
         "mistral" => "mistral-large-latest",
+        "openrouter" => "openai/gpt-5.4",
+        "opencode-go" => "deepseek-v4.1-flash",
         "local" => "",
         _ => "claude-opus-4-7",
     }
@@ -46,6 +48,8 @@ fn openai_like_base(provider: &str, server_url: &str) -> String {
         "openai" => "https://api.openai.com/v1".to_string(),
         "xai" | "grok" => "https://api.x.ai/v1".to_string(),
         "mistral" => "https://api.mistral.ai/v1".to_string(),
+        "openrouter" => "https://openrouter.ai/api/v1".to_string(),
+        "opencode-go" => "https://opencode.ai/inference/openai/v1".to_string(),
         "local" => server_url.trim_end_matches('/').to_string(),
         _ => "https://api.openai.com/v1".to_string(),
     }
@@ -219,12 +223,15 @@ async fn openai_like(req: AIRequest, on_chunk: &mut (impl FnMut(&str) + Send)) -
         "stream": true,
         "max_tokens": 4096
     });
-    let r = c
+    let mut request = c
         .post(format!("{base}/chat/completions"))
-        .bearer_auth(auth_header(&req))
-        .json(&body)
-        .send()
-        .await?;
+        .bearer_auth(auth_header(&req));
+    if req.provider == "openrouter" {
+        request = request
+            .header("HTTP-Referer", "https://corcho.app")
+            .header("X-Title", "Corcho");
+    }
+    let r = request.json(&body).send().await?;
     if !r.status().is_success() {
         return Err(anyhow!(
             "AI request failed: {}",

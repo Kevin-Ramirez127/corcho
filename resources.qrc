@@ -4,6 +4,8 @@
   <file>assets/fonts/inter_medium.ttf</file>
   <file>assets/fonts/inter_regular.ttf</file>
   <file>assets/fonts/inter_semibold.ttf</file>
+  <file>assets/fonts/texgyreadventor-LICENSE.txt</file>
+  <file>assets/fonts/texgyreadventor-bold.otf</file>
   <file>assets/icons/aperture.svg</file>
   <file>assets/icons/app-window.svg</file>
   <file>assets/icons/arrow-down.svg</file>
@@ -38,6 +40,7 @@
   <file>assets/icons/cloud-off.svg</file>
   <file>assets/icons/cloud.svg</file>
   <file>assets/icons/code.svg</file>
+  <file>assets/icons/coffee.svg</file>
   <file>assets/icons/compass.svg</file>
   <file>assets/icons/construction.svg</file>
   <file>assets/icons/cookie.svg</file>
@@ -49,16 +52,19 @@
   <file>assets/icons/ellipsis.svg</file>
   <file>assets/icons/external-link.svg</file>
   <file>assets/icons/file-text.svg</file>
+  <file>assets/icons/file.svg</file>
   <file>assets/icons/flask-conical.svg</file>
   <file>assets/icons/flip-horizontal-2.svg</file>
   <file>assets/icons/folder-plus.svg</file>
   <file>assets/icons/gauge.svg</file>
   <file>assets/icons/gift.svg</file>
+  <file>assets/icons/git-branch.svg</file>
   <file>assets/icons/git-commit-horizontal.svg</file>
   <file>assets/icons/git-compare.svg</file>
   <file>assets/icons/github.svg</file>
   <file>assets/icons/globe.svg</file>
   <file>assets/icons/grip-vertical.svg</file>
+  <file>assets/icons/group.svg</file>
   <file>assets/icons/hard-drive.svg</file>
   <file>assets/icons/heading.svg</file>
   <file>assets/icons/heart-filled.svg</file>
@@ -75,6 +81,7 @@
   <file>assets/icons/laptop.svg</file>
   <file>assets/icons/layout-dashboard.svg</file>
   <file>assets/icons/layout-grid.svg</file>
+  <file>assets/icons/layout-template.svg</file>
   <file>assets/icons/library-big.svg</file>
   <file>assets/icons/link.svg</file>
   <file>assets/icons/list-checks.svg</file>
@@ -125,6 +132,7 @@
   <file>assets/icons/smartphone.svg</file>
   <file>assets/icons/sprout.svg</file>
   <file>assets/icons/square-pen.svg</file>
+  <file>assets/icons/square.svg</file>
   <file>assets/icons/stone.svg</file>
   <file>assets/icons/sun.svg</file>
   <file>assets/icons/table.svg</file>
@@ -134,6 +142,7 @@
   <file>assets/icons/triangle-alert.svg</file>
   <file>assets/icons/type.svg</file>
   <file>assets/icons/undo-2.svg</file>
+  <file>assets/icons/ungroup.svg</file>
   <file>assets/icons/unlock.svg</file>
   <file>assets/icons/upload.svg</file>
   <file>assets/icons/video.svg</file>

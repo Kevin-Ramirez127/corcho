@@ -8,6 +8,102 @@ Item {
     property var settings
     property var cards: []
     property string selectedId: ""
+    property var selectedIds: []
+    property string activeAiId: ""
+    property real linkPhase: 0
+
+    function activateAi(id) {
+        root.activeAiId = id;
+        root.linkPhase = 0;
+        aiPulseStop.restart();
+    }
+
+    Timer {
+        interval: 33
+        repeat: true
+        running: root.activeAiId !== ""
+        onTriggered: root.linkPhase += 0.035
+    }
+
+    Timer {
+        id: aiPulseStop
+        interval: 4500
+        onTriggered: root.activeAiId = ""
+    }
+    property bool marqueeActive: false
+    property point marqueeStart: Qt.point(0, 0)
+    property rect marqueeRect: Qt.rect(0, 0, 0, 0)
+
+    function setSelection(ids) {
+        selectedIds = ids;
+        selectedId = ids.length === 1 ? ids[0] : "";
+    }
+
+    function selectCard(id, additive) {
+        var list = selectedIds.slice();
+        if (additive) {
+            var at = list.indexOf(id);
+            if (at >= 0) list.splice(at, 1); else list.push(id);
+        } else {
+            list = [id];
+        }
+        setSelection(list);
+    }
+
+    function marqueeSelection() {
+        var z = Math.max(0.2, app.zoom);
+        var wx = (marqueeRect.x - app.panX) / z;
+        var wy = (marqueeRect.y - app.panY) / z;
+        var ww = marqueeRect.width / z;
+        var wh = marqueeRect.height / z;
+        var ids = [];
+        for (var i = 0; i < cards.length; i++) {
+            var c = cards[i];
+            if (c.x < wx + ww && c.x + c.width > wx && c.y < wy + wh && c.y + c.height > wy)
+                ids.push(c.id);
+        }
+        return ids;
+    }
+
+    function cardById(id) {
+        for (var i = 0; i < cards.length; i++) if (cards[i].id === id) return cards[i];
+        return null;
+    }
+
+    function handleMoved(id, dx, dy) {
+        var ids = [];
+        var card = cardById(id);
+        if (selectedIds.length > 1 && selectedIds.indexOf(id) >= 0) {
+            ids = selectedIds.filter(function (value) { return value !== id; });
+        } else if (card && card.group) {
+            for (var i = 0; i < cards.length; i++) {
+                if (cards[i].group === card.group && cards[i].id !== id) ids.push(cards[i].id);
+            }
+        }
+        if (ids.length > 0) app.moveCards(JSON.stringify(ids), dx, dy);
+    }
+
+    readonly property var groupBounds: {
+        var groups = {};
+        for (var i = 0; i < cards.length; i++) {
+            var c = cards[i];
+            if (!c.group) continue;
+            var g = groups[c.group];
+            if (!g) g = groups[c.group] = { id: c.group, x: c.x, y: c.y, right: c.x + c.width, bottom: c.y + c.height };
+            else {
+                g.x = Math.min(g.x, c.x);
+                g.y = Math.min(g.y, c.y);
+                g.right = Math.max(g.right, c.x + c.width);
+                g.bottom = Math.max(g.bottom, c.y + c.height);
+            }
+        }
+        var out = [];
+        for (var key in groups) {
+            var b = groups[key];
+            out.push({ x: b.x - 12, y: b.y - 28, width: b.right - b.x + 24, height: b.bottom - b.y + 40 });
+        }
+        return out;
+    }
 
     signal menuRequested(var card, real globalX, real globalY)
     signal dateLinkRequested(string sourceCardId, string sourceItemId, string linkId, string defaultDate)
@@ -83,8 +179,24 @@ Item {
         case "pomodoro": return "CardBodyPomodoro.qml";
         case "mpris": return "CardBodyMpris.qml";
         case "file": return "CardBodyFile.qml";
+        case "git": return "CardBodyGit.qml";
         default: return "CardBodyNote.qml";
         }
+    }
+
+    readonly property bool hasWebsiteCards: {
+        var list = cards || [];
+        for (var i = 0; i < list.length; i++) if (list[i].type === "website") return true;
+        return false;
+    }
+
+    readonly property var webProfile: profileHost.item ? profileHost.item.profile : null
+
+    Loader {
+        id: profileHost
+        active: root.hasWebsiteCards && !(root.settings && root.settings.web_shared_profile === false)
+        source: "WebProfileHost.qml"
+        asynchronous: false
     }
 
     function inView(card) {
@@ -93,7 +205,7 @@ Item {
         var top = -app.panY / z;
         var right = left + width / z;
         var bottom = top + height / z;
-        var m = 320;
+        var m = card.type === "website" ? 48 : 320;
         return card.x + card.width > left - m && card.x < right + m && card.y + card.height > top - m && card.y < bottom + m;
     }
 
@@ -150,30 +262,160 @@ Item {
         }
     }
 
+    focus: true
+
+    Keys.onPressed: function (event) {
+        var step = (event.modifiers & Qt.ShiftModifier) ? 220 : 70;
+        if (event.key === Qt.Key_Left) root.app.setView(root.app.panX + step, root.app.panY, root.app.zoom);
+        else if (event.key === Qt.Key_Right) root.app.setView(root.app.panX - step, root.app.panY, root.app.zoom);
+        else if (event.key === Qt.Key_Up) root.app.setView(root.app.panX, root.app.panY + step, root.app.zoom);
+        else if (event.key === Qt.Key_Down) root.app.setView(root.app.panX, root.app.panY - step, root.app.zoom);
+        else if (event.key === Qt.Key_Home) root.centerAt(0, 0);
+        else return;
+        event.accepted = true;
+    }
+
+    Canvas {
+        id: linkCanvas
+        anchors.fill: parent
+
+        property real panX: root.app.panX
+        property real panY: root.app.panY
+        property real panZoom: root.app.zoom
+        property var cardList: root.cards
+        property string activeId: root.activeAiId
+        property real phase: root.linkPhase
+
+        onPanXChanged: requestPaint()
+        onPanYChanged: requestPaint()
+        onPanZoomChanged: requestPaint()
+        onCardListChanged: requestPaint()
+        onActiveIdChanged: requestPaint()
+        onPhaseChanged: requestPaint()
+        onWidthChanged: requestPaint()
+        onHeightChanged: requestPaint()
+
+        function screenX(card) { return panX + (card.x + card.width / 2) * panZoom; }
+        function screenY(card) { return panY + (card.y + card.height / 2) * panZoom; }
+        function edge(card, tx, ty) {
+            var cx = screenX(card);
+            var cy = screenY(card);
+            var hw = card.width * panZoom / 2;
+            var hh = card.height * panZoom / 2;
+            var dx = tx - cx;
+            var dy = ty - cy;
+            if (dx === 0 && dy === 0) return { x: cx, y: cy };
+            var sx = dx !== 0 ? hw / Math.abs(dx) : 1e9;
+            var sy = dy !== 0 ? hh / Math.abs(dy) : 1e9;
+            var s = Math.min(sx, sy);
+            return { x: cx + dx * s, y: cy + dy * s };
+        }
+        function byId(id) {
+            for (var i = 0; i < cardList.length; i++) if (cardList[i].id === id) return cardList[i];
+            return null;
+        }
+
+        onPaint: {
+            var ctx = getContext("2d");
+            ctx.clearRect(0, 0, width, height);
+            if (!cardList) return;
+            for (var i = 0; i < cardList.length; i++) {
+                var ai = cardList[i];
+                if (ai.type !== "ai" || !ai.linkedIds) continue;
+                var active = ai.id === activeId;
+                for (var j = 0; j < ai.linkedIds.length; j++) {
+                    var src = byId(ai.linkedIds[j]);
+                    if (!src) continue;
+                    var ax = screenX(ai), ay = screenY(ai);
+                    var sx = screenX(src), sy = screenY(src);
+                    var a = edge(ai, sx, sy);
+                    var b = edge(src, ax, ay);
+                    var mx = (a.x + b.x) / 2;
+                    var my = (a.y + b.y) / 2;
+                    var dx = b.x - a.x, dy = b.y - a.y;
+                    var len = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+                    var bend = Math.min(70, len * 0.18);
+                    var cx = mx - dy / len * bend;
+                    var cy = my + dx / len * bend;
+
+                    ctx.save();
+                    ctx.strokeStyle = root.th.accent;
+                    ctx.globalAlpha = active ? 0.65 : 0.22;
+                    ctx.lineWidth = active ? 2.4 : 1.5;
+                    ctx.lineCap = "round";
+                    if (active) {
+                        ctx.setLineDash([7, 7]);
+                        ctx.lineDashOffset = -phase * 45;
+                    } else {
+                        ctx.setLineDash([]);
+                    }
+                    ctx.beginPath();
+                    ctx.moveTo(a.x, a.y);
+                    ctx.quadraticCurveTo(cx, cy, b.x, b.y);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                    ctx.fillStyle = root.th.accent;
+                    ctx.globalAlpha = active ? 0.95 : 0.45;
+                    var r = active ? 3.6 : 2.4;
+                    ctx.beginPath();
+                    ctx.arc(a.x, a.y, r, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.beginPath();
+                    ctx.arc(b.x, b.y, r, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                }
+            }
+        }
+    }
+
     MouseArea {
         id: background
         anchors.fill: parent
         acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton | Qt.BackButton
+        cursorShape: panning ? Qt.ClosedHandCursor : Qt.ArrowCursor
         property point lastPoint
         property bool panning: false
 
         onPressed: function (mouse) {
+            if (!root.activeFocus) root.forceActiveFocus();
             lastPoint = Qt.point(mouse.x, mouse.y);
-            panning = mouse.button === Qt.MiddleButton || mouse.button === Qt.LeftButton;
-            root.panning = panning;
-            root.selectedId = "";
+            var pan = mouse.button === Qt.MiddleButton
+                || (mouse.button === Qt.LeftButton && (mouse.modifiers & Qt.ShiftModifier));
+            panning = pan;
+            root.panning = pan;
+            if (pan) return;
+            if (mouse.button === Qt.LeftButton) {
+                root.marqueeActive = true;
+                root.marqueeStart = Qt.point(mouse.x, mouse.y);
+                root.marqueeRect = Qt.rect(mouse.x, mouse.y, 0, 0);
+                if (!(mouse.modifiers & Qt.ControlModifier)) root.setSelection([]);
+            }
         }
         onPositionChanged: function (mouse) {
-            if (!panning) return;
-            var dx = mouse.x - lastPoint.x;
-            var dy = mouse.y - lastPoint.y;
-            lastPoint = Qt.point(mouse.x, mouse.y);
-            root.app.setView(root.app.panX + dx, root.app.panY + dy, root.app.zoom);
+            if (panning) {
+                var dx = mouse.x - lastPoint.x;
+                var dy = mouse.y - lastPoint.y;
+                lastPoint = Qt.point(mouse.x, mouse.y);
+                root.app.setView(root.app.panX + dx, root.app.panY + dy, root.app.zoom);
+                return;
+            }
+            if (!root.marqueeActive) return;
+            var x0 = Math.max(0, Math.min(root.marqueeStart.x, mouse.x));
+            var y0 = Math.max(0, Math.min(root.marqueeStart.y, mouse.y));
+            var x1 = Math.min(width, Math.max(root.marqueeStart.x, mouse.x));
+            var y1 = Math.min(height, Math.max(root.marqueeStart.y, mouse.y));
+            root.marqueeRect = Qt.rect(x0, y0, x1 - x0, y1 - y0);
         }
         onReleased: {
             if (panning) root.app.saveNow();
             panning = false;
             root.panning = false;
+            if (root.marqueeActive) {
+                root.marqueeActive = false;
+                if (root.marqueeRect.width > 4 || root.marqueeRect.height > 4)
+                    root.setSelection(root.marqueeSelection());
+            }
             if (root.settings && root.settings.minimap_display === "panning") {
                 minimapHideTimer.restart();
             }
@@ -192,15 +434,21 @@ Item {
         }
         onDoubleClicked: function (mouse) {
             var z = Math.max(0.2, root.app.zoom);
-            root.createRequested((mouse.x - root.app.panX) / z, (mouse.y - root.app.panY) / z);
+            var wx = (mouse.x - root.app.panX) / z;
+            var wy = (mouse.y - root.app.panY) / z;
+            for (var i = 0; i < root.cards.length; i++) {
+                var card = root.cards[i];
+                if (wx >= card.x && wx <= card.x + card.width && wy >= card.y && wy <= card.y + card.height)
+                    return;
+            }
+            root.createRequested(wx, wy);
         }
         onWheel: function (wheel) {
-            var wantPan = !root.settings || root.settings.trackpad_pan !== false;
-            if (wheel.modifiers & Qt.ControlModifier || !wantPan) {
-                root.zoomAt(wheel.angleDelta.y > 0 ? 1.12 : 0.89, wheel.x, wheel.y);
-            } else {
-                root.app.setView(root.app.panX - wheel.angleDelta.x * 0.7, root.app.panY - wheel.angleDelta.y * 0.7, root.app.zoom);
-            }
+            if (active) return;
+            var wantPan = !(wheel.modifiers & Qt.ControlModifier)
+                && (!root.settings || root.settings.trackpad_pan !== false);
+            if (!wantPan) root.zoomAt(wheel.angleDelta.y > 0 ? 1.12 : 0.89, wheel.x, wheel.y);
+            else root.app.setView(root.app.panX - wheel.angleDelta.x * 0.7, root.app.panY - wheel.angleDelta.y * 0.7, root.app.zoom);
         }
     }
 
@@ -210,6 +458,23 @@ Item {
         y: root.app.panY
         scale: root.app.zoom
         transformOrigin: Item.TopLeft
+
+        Repeater {
+            model: root.groupBounds
+
+            delegate: Rectangle {
+                required property var modelData
+                x: modelData.x
+                y: modelData.y
+                width: modelData.width
+                height: modelData.height
+                radius: root.th.radiusCard + 8
+                color: Qt.alpha(root.th.accent, 0.07)
+                border.width: 2
+                border.color: Qt.alpha(root.th.accent, 0.55)
+                z: 0
+            }
+        }
 
         Repeater {
             model: cardModel
@@ -228,12 +493,16 @@ Item {
                     item.card = card;
                     item.app = Qt.binding(function () { return root.app; });
                     item.th = Qt.binding(function () { return root.th; });
-                    item.settings = Qt.binding(function () { return root.settings; });
                     item.gridId = Qt.binding(function () { return root.app.activeGridId; });
-                    item.selected = Qt.binding(function () { return root.selectedId === cardLoader.card.id; });
-                    item.selectRequested.connect(function () { root.selectedId = cardLoader.card.id; });
+                    if (cardLoader.card.type === "website")
+                        item.webProfile = Qt.binding(function () { return root.webProfile; });
+                    if (cardLoader.card.type === "ai")
+                        item.activated.connect(function () { root.activateAi(cardLoader.card.id); });
+                    item.selected = Qt.binding(function () { return root.selectedIds.indexOf(cardLoader.card.id) >= 0; });
+                    item.selectRequested.connect(function (additive) { root.selectCard(cardLoader.card.id, !!additive); });
+                    item.movedBy.connect(function (dx, dy) { root.handleMoved(cardLoader.card.id, dx, dy); });
                     item.menuRequested.connect(function (cardData, gx, gy) {
-                        root.selectedId = cardData.id;
+                        if (root.selectedIds.indexOf(cardData.id) < 0) root.setSelection([cardData.id]);
                         root.menuRequested(cardData, gx, gy);
                     });
                     item.dateLinkRequested.connect(function (cardId, itemId, linkId, defaultDate) {
@@ -302,6 +571,55 @@ Item {
         id: minimapHideTimer
         interval: 900
         onTriggered: root.minimapVisible = false
+    }
+
+    Rectangle {
+        visible: root.marqueeActive
+        x: root.marqueeRect.x
+        y: root.marqueeRect.y
+        width: root.marqueeRect.width
+        height: root.marqueeRect.height
+        color: Qt.alpha(root.th.accent, 0.10)
+        border.width: 1
+        border.color: root.th.accent
+        z: 50
+    }
+
+    MouseArea {
+        anchors.fill: parent
+        z: 4
+        acceptedButtons: Qt.MiddleButton
+        property point lastPoint
+        property bool active: false
+        cursorShape: active ? Qt.ClosedHandCursor : Qt.ArrowCursor
+
+        onPressed: function (mouse) {
+            if (!root.activeFocus) root.forceActiveFocus();
+            active = true;
+            root.panning = true;
+            lastPoint = Qt.point(mouse.x, mouse.y);
+            mouse.accepted = true;
+        }
+        onPositionChanged: function (mouse) {
+            if (!active) return;
+            var dx = mouse.x - lastPoint.x;
+            var dy = mouse.y - lastPoint.y;
+            lastPoint = Qt.point(mouse.x, mouse.y);
+            root.app.setView(root.app.panX + dx, root.app.panY + dy, root.app.zoom);
+        }
+        onReleased: {
+            if (!active) return;
+            active = false;
+            root.panning = false;
+            root.app.saveNow();
+        }
+        onWheel: function (wheel) {
+            if (active) return;
+            var wantPan = !(wheel.modifiers & Qt.ControlModifier)
+                && (!root.settings || root.settings.trackpad_pan !== false);
+            if (!wantPan) root.zoomAt(wheel.angleDelta.y > 0 ? 1.12 : 0.89, wheel.x, wheel.y);
+            else root.app.setView(root.app.panX - wheel.angleDelta.x * 0.7, root.app.panY - wheel.angleDelta.y * 0.7, root.app.zoom);
+        }
     }
 
     Minimap {

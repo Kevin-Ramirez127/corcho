@@ -429,3 +429,121 @@ Known limits, deliberately documented rather than hidden:
   stdio and HTTP.
 - AppImage/Flatpak manifests are recipes; they need `linuxdeploy`/`flatpak-builder`
   on the build machine.
+
+---
+
+## 19. Stability and UI polish (post-plan pass)
+
+- [x] Resize grip moved inside the card border, with a hover hint:
+      “Ctrl + right-click to resize”.
+- [x] Ctrl + right-click drag on any card resizes it (Hyprland-style),
+      in addition to the corner grip.
+- [x] Settings → Appearance → **Card roundness** slider (0–28 px) applied to
+      every card and persisted as `card_radius`.
+- [x] Folder entries open a new folder card; image/Markdown entries open a
+      dedicated file card; PDFs and other files open in the system default viewer.
+- [x] Compact “open in default application” button on every file card.
+- [x] Opening files no longer blocks the GUI thread (`open::that_detached`).
+- [x] File logs, Qt message capture, panic backtraces and crash dumps under
+      `~/.local/share/corcho/logs/`; `--crash-test` verifies the pipeline.
+- [x] QML guards for cards created before `card`/`th`/`app` are attached, and a
+      watchdog that exits if the QML window never initializes.
+
+---
+
+## 20. RAM footprint pass
+
+Measured with `smaps_rollup`, debug build, 1900x1034 window:
+
+| State | RSS | PSS |
+| --- | --- | --- |
+| Notes only | 253 MB | 150 MB |
+| One website card | 729 MB | 411 MB |
+| Headless MCP server | 48 MB | 5.7 MB |
+
+After the pass, release build: notes-only **139 MB PSS** (253 MB RSS), one
+website **409 MB PSS** (727 MB RSS), three websites **473 MB PSS** (997 MB RSS).
+A sleeping website released its ~80 MB renderer; the two zygotes and the
+in-process QtWebEngine state remain.
+
+A single website costs ~270 MB PSS: one renderer plus two zygotes on top of
+QtWebEngine's in-process network/GPU state; each additional visible site adds
+roughly 30 MB. The changes below target that,
+without removing features:
+
+- [x] One shared `WebEngineProfile` for all website cards (settings toggle for
+      per-card isolation), created lazily by `WebProfileHost.qml` only when a
+      website card exists.
+- [x] `WebEngineView` is created through a `Loader` only when a URL exists and
+      the card is awake, so blank cards cost nothing.
+- [x] Website cards sleep after 10 minutes by default (configurable 0–60 in
+      Settings > General). A coffee button on each card keeps it awake and
+      persists `noSleep` with the card.
+- [x] PDFs no longer start QtWebEngine; PDF entries and cards open in the
+      system viewer.
+- [x] Website cards use a 48 px culling margin instead of 320 px.
+- [x] `MALLOC_ARENA_MAX=2`, a throttled `malloc_trim(0)` after saves, and a
+      256 KiB cap on persisted API/AI bodies.
+- [x] Optional low-memory mode (Settings > General): restart-scoped Chromium
+      flags `--renderer-process-limit=2 --process-per-site`,
+      `--js-flags=--max-old-space-size=256` and `--aggressive-cache-discard`.
+
+---
+
+## 21. UI audit fixes
+
+Manual pass over every shell surface and all 15 card kinds found and fixed:
+
+- Toggle switch thumb sat high in its track; now vertically centered.
+- Ctrl-click selected nothing additively on the card header because the title
+  input swallowed the event. Header now uses a MouseArea with a real
+  `mouse.modifiers` check; title editing moved to double-click.
+- Double-clicking a card header could fall through and create a background note;
+  the background create gesture now ignores points inside an existing card.
+- Group outlines and the marquee were invisible because they built colors from
+  `accent.r/g/b` on a color string; switched to `Qt.alpha(accent, …)`.
+- Group create/ungroup now refresh the card model, so grouped moves move every
+  member and the outline appears immediately.
+- Website header was fixed-width and broke below 512 px; it now uses a
+  RowLayout and hides zoom/coffee controls at narrow widths.
+- Removed startup TypeErrors from SelectField and the Kanban column delegates
+  evaluating theme tokens before `th` is attached.
+
+---
+
+## 22. AI context links and providers
+
+- AI cards can link other cards from their own "linked" picker. Links are stored
+  as `linkedIds` on the AI card; toggling uses `Core::toggle_ai_link`.
+- On Run, `Core::ai_context` serializes each linked card into readable context:
+  note text, calendar dates, kanban columns/items, checklist state, API body,
+  script, timbre, pomodoro, portal target, file path and media player.
+- Linked cards are drawn as curved node lines under the cards. Lines are static
+  normally and switch to an animated dashed flow for 4.5 s when the AI card is
+  activated.
+- AI remains provider-agnostic: the card reads the provider/model from Settings.
+  Added OpenRouter (`https://openrouter.ai/api/v1`) and OpenCode Go
+  (`https://opencode.ai/inference/openai/v1`) with settings entries and model
+  presets.
+
+---
+
+## 23. Git cards, AI presets and card sync
+
+- **Git card:** new `git` kind tracks a repository URL. GitHub (api.github.com),
+  GitLab (`/api/v4`) and Forgejo/Gitea (`/api/v1`) are detected from the host;
+  `owner/repo` shorthand defaults to GitHub. Shows open issues, open pull
+  requests, latest commit, and CI state. Tokens are separate reusable Settings
+  fields per provider (`repo_token_github|gitlab|forgejo`), never stored on the
+  card.
+- **AI presets:** Settings → AI now has reusable presets of name + provider +
+  model. Credentials stay in the per-provider key store; a preset only
+  references the provider. AI cards choose a preset (or "Settings default")
+  and Run uses that provider/model.
+- **Card sync:** card context menu has “Sync with card” (same-kind cards, any
+  grid) and “Stop syncing”. Synced cards share content/title/payload; geometry,
+  colour, group and pinning stay per-card. Editing either side mirrors changes.
+- **Minimum sizes:** card resize now enforces per-kind minimums (Calendar
+  420×500, Git/Kanban 360×260, AI 300 px tall, etc.).
+- **Calendar readability:** larger weekday/day type, roomier chips, agenda rows
+  and dots; new calendars default to 520×560.

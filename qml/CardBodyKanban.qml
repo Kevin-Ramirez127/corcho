@@ -87,7 +87,7 @@ CardFrame {
                 required property var modelData
                 required property int index
 
-                width: (parent.width - root.th.spaceSnug * Math.max(0, root.columns.length - 1))
+                width: (parent.width - (root.th && root.th.spaceSnug !== undefined ? root.th.spaceSnug : 10) * Math.max(0, root.columns.length - 1))
                        / Math.max(1, root.columns.length)
                 height: parent.height
 

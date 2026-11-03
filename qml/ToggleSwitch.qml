@@ -35,7 +35,7 @@ Item {
         width: root.th.switchThumb
         height: root.th.switchThumb
         radius: root.th.radiusBadge
-        y: root.th.borderWidth
+        y: (root.height - root.th.switchThumb) / 2
         x: root.checked ? root.width - width - root.th.borderWidth : root.th.borderWidth
         color: root.checked ? root.th.accentInk : root.th.text2
         Behavior on x { NumberAnimation { duration: 130; easing.type: Easing.OutCubic } }

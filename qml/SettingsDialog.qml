@@ -12,6 +12,9 @@ Item {
     property string keyField: ""
     property string keyStatus: ""
     property string folderMessage: ""
+    property string presetName: ""
+    property string presetProvider: "claude"
+    property string presetModel: ""
 
     signal closed()
     signal gitWizardRequested()
@@ -48,6 +51,24 @@ Item {
     }
     function provider() {
         return val("aiProvider", "claude");
+    }
+    function presets() {
+        var list = val("aiPresets", []);
+        return Array.isArray(list) ? list : [];
+    }
+    function presetModelOptions(provider) {
+        return (modelsList[provider] || []).map(function (m) { return { value: m.id, label: m.name }; });
+    }
+    function addPreset() {
+        var name = root.presetName.trim();
+        if (name === "" || root.presetModel === "") return;
+        var list = root.presets();
+        list.push({ id: Date.now().toString(), name: name, provider: root.presetProvider, model: root.presetModel });
+        root.set("aiPresets", list);
+        root.presetName = "";
+    }
+    function removePreset(id) {
+        root.set("aiPresets", root.presets().filter(function (p) { return p.id !== id; }));
     }
     function providerLabel(p) {
         return ({ claude: "Anthropic (Claude)", openai: "OpenAI (ChatGPT)", google: "Google (Gemini)", grok: "xAI (Grok)", mistral: "Mistral", local: "Local server" })[p] || p;
@@ -332,6 +353,47 @@ Item {
                             }
                             SettingRow {
                                 th: root.th
+                                title: "Share web sessions"
+                                description: "One profile and cache for every website card. Restart to apply."
+                                ToggleSwitch {
+                                    th: root.th
+                                    checked: root.val("web_shared_profile", true)
+                                    onToggled: function (value) { root.set("web_shared_profile", value); }
+                                }
+                            }
+                            SettingRow {
+                                th: root.th
+                                title: "Sleep inactive websites"
+                                description: "Unload a web card after this long to save memory. 0 keeps them awake."
+                                SliderField {
+                                    width: 180
+                                    th: root.th
+                                    from: 0
+                                    to: 60
+                                    value: root.val("web_sleep_minutes", 10)
+                                    onMoved: function (value) { root.set("web_sleep_minutes", Math.round(value)); }
+                                }
+                                Text {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: 28
+                                    text: root.val("web_sleep_minutes", 10)
+                                    color: root.th.muted
+                                    font.family: root.th.fontMono
+                                    font.pixelSize: root.th.fontSizeSmall
+                                }
+                            }
+                            SettingRow {
+                                th: root.th
+                                title: "Low memory mode"
+                                description: "Restart required. Limits web renderers and caps script memory."
+                                ToggleSwitch {
+                                    th: root.th
+                                    checked: root.val("low_memory_mode", false)
+                                    onToggled: function (value) { root.set("low_memory_mode", value); }
+                                }
+                            }
+                            SettingRow {
+                                th: root.th
                                 title: "Launcher shortcut"
                                 description: "Spawn the command palette from anywhere."
                                 Keycap { th: root.th; text: "Ctrl K" }
@@ -574,11 +636,11 @@ Item {
                                                 th: root.th
                                                 inputHeight: 30
                                                 text: {
-                                                    var c = root.val("customTheme", {});
+                                                    var c = root.val("customTheme", null) || {};
                                                     return c[colorRow.modelData.key] || "#121417";
                                                 }
                                                 onCommitted: function (value) {
-                                                    var c = Object.assign({}, root.val("customTheme", {}));
+                                                    var c = Object.assign({}, root.val("customTheme", null) || {});
                                                     c[colorRow.modelData.key] = value;
                                                     root.set("customTheme", c);
                                                 }
@@ -599,6 +661,27 @@ Item {
                                     value: root.val("font", "inter")
                                     options: root.fontsList.map(function (f) { return { value: f.id, label: f.name }; })
                                     onSelected: function (value) { root.set("font", value); }
+                                }
+                            }
+                            SettingRow {
+                                th: root.th
+                                title: "Card roundness"
+                                description: "Corner radius of every card."
+                                SliderField {
+                                    width: 180
+                                    th: root.th
+                                    from: 0
+                                    to: 28
+                                    value: root.val("card_radius", 14)
+                                    onMoved: function (value) { root.set("card_radius", Math.round(value)); }
+                                }
+                                Text {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: 28
+                                    text: Math.round(root.val("card_radius", 14))
+                                    color: root.th.muted
+                                    font.family: "JetBrains Mono"
+                                    font.pixelSize: 11
                                 }
                             }
                             SettingRow {
@@ -840,6 +923,45 @@ Item {
                             }
                             SettingRow {
                                 th: root.th
+                                title: "GitHub card token"
+                                description: "Used by Git cards for private repositories."
+                                AppTextField {
+                                    width: 220
+                                    th: root.th
+                                    password: true
+                                    text: root.val("repo_token_github", "")
+                                    placeholder: "Token"
+                                    onCommitted: function (value) { root.set("repo_token_github", value); }
+                                }
+                            }
+                            SettingRow {
+                                th: root.th
+                                title: "GitLab card token"
+                                description: "Used by Git cards for private repositories."
+                                AppTextField {
+                                    width: 220
+                                    th: root.th
+                                    password: true
+                                    text: root.val("repo_token_gitlab", "")
+                                    placeholder: "Token"
+                                    onCommitted: function (value) { root.set("repo_token_gitlab", value); }
+                                }
+                            }
+                            SettingRow {
+                                th: root.th
+                                title: "Forgejo card token"
+                                description: "Used by Git cards for Forgejo and Gitea repositories."
+                                AppTextField {
+                                    width: 220
+                                    th: root.th
+                                    password: true
+                                    text: root.val("repo_token_forgejo", "")
+                                    placeholder: "Token"
+                                    onCommitted: function (value) { root.set("repo_token_forgejo", value); }
+                                }
+                            }
+                            SettingRow {
+                                th: root.th
                                 title: "Git status"
                                 description: root.git.lastError ? ("Error: " + root.git.lastError) : (root.git.lastSync ? ("Last sync: " + root.git.lastSync) : "Not synced yet")
                                 AppButton {
@@ -919,6 +1041,8 @@ Item {
                                         { value: "google", label: "Google (Gemini)" },
                                         { value: "grok", label: "xAI (Grok)" },
                                         { value: "mistral", label: "Mistral" },
+                                        { value: "openrouter", label: "OpenRouter" },
+                                        { value: "opencode-go", label: "OpenCode Go" },
                                         { value: "local", label: "Local server" }
                                     ]
                                     onSelected: function (value) { root.set("aiProvider", value); root.keyStatus = ""; }
@@ -959,6 +1083,106 @@ Item {
                                         var models = Object.assign({}, root.val("aiModel", {}));
                                         models[root.provider()] = value;
                                         root.set("aiModel", models);
+                                    }
+                                }
+                            }
+                            Column {
+                                width: parent.width
+                                spacing: root.th.space1
+                                Text {
+                                    text: "AI presets"
+                                    color: root.th.text2
+                                    font.family: root.th.fontFamily
+                                    font.pixelSize: root.th.fontSizeSmall
+                                    font.weight: root.th.fontWeightMedium
+                                }
+                                Repeater {
+                                    model: root.presets()
+                                    delegate: Item {
+                                        required property var modelData
+                                        width: parent.width
+                                        height: 34
+                                        Row {
+                                            anchors.fill: parent
+                                            spacing: root.th.space2
+                                            Text {
+                                                width: parent.width - 250
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                text: modelData.name
+                                                color: root.th.text
+                                                elide: Text.ElideRight
+                                                font.family: root.th.fontFamily
+                                                font.pixelSize: root.th.fontSizeBody
+                                            }
+                                            Text {
+                                                width: 130
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                text: root.providerLabel(modelData.provider)
+                                                color: root.th.muted
+                                                elide: Text.ElideRight
+                                                font.family: root.th.fontFamily
+                                                font.pixelSize: root.th.fontSizeSmall
+                                            }
+                                            Text {
+                                                width: 90
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                text: modelData.model
+                                                color: root.th.muted
+                                                elide: Text.ElideRight
+                                                font.family: root.th.fontMono
+                                                font.pixelSize: root.th.fontSizeSmall
+                                            }
+                                            AppButton {
+                                                th: root.th
+                                                icon: "trash-2"
+                                                onClicked: root.removePreset(modelData.id)
+                                            }
+                                        }
+                                    }
+                                }
+                                Row {
+                                    width: parent.width
+                                    spacing: root.th.space2
+                                    AppTextField {
+                                        width: 130
+                                        th: root.th
+                                        placeholder: "Preset name"
+                                        onEdited: function (value) { root.presetName = value; }
+                                    }
+                                    SelectField {
+                                        width: 150
+                                        th: root.th
+                                        value: root.presetProvider
+                                        options: [
+                                            { value: "claude", label: "Claude" },
+                                            { value: "openai", label: "OpenAI" },
+                                            { value: "google", label: "Google" },
+                                            { value: "grok", label: "Grok" },
+                                            { value: "mistral", label: "Mistral" },
+                                            { value: "openrouter", label: "OpenRouter" },
+                                            { value: "opencode-go", label: "OpenCode Go" },
+                                            { value: "local", label: "Local" }
+                                        ]
+                                        onSelected: function (value) {
+                                            root.presetProvider = value;
+                                            var options = root.presetModelOptions(value);
+                                            root.presetModel = options.length > 0 ? options[0].value : "";
+                                        }
+                                    }
+                                    SelectField {
+                                        width: 160
+                                        th: root.th
+                                        value: root.presetModel
+                                        placeholder: "Model"
+                                        options: root.presetModelOptions(root.presetProvider)
+                                        onSelected: function (value) { root.presetModel = value; }
+                                    }
+                                    AppButton {
+                                        th: root.th
+                                        icon: "plus"
+                                        text: "Add"
+                                        enabledButton: root.presetName.trim() !== "" && root.presetModel !== ""
+                                        onClicked: root.addPreset()
                                     }
                                 }
                             }

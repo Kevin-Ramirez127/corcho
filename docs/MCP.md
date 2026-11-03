@@ -88,7 +88,7 @@ include `expected_revision` for optimistic concurrency; a mismatch returns
 | `card.list` | `gridId`, `kind?`, `query?` | Cards |
 | `card.get` | `cardId` | Card + payload |
 | `card.create` | `gridId`, `kind`, `x`, `y`, `title?`, `payload?` | Create |
-| `file.pin` | `path`, `gridId?`, `x?`, `y?` | Pin image, PDF, Markdown or folder |
+| `file.pin` | `path`, `gridId?`, `x?`, `y?` | Pin image, Markdown or folder (PDFs open externally) |
 | `card.update` | `cardId`, `patch` (geometry, title, text, color, icon, locked, payload) | Patch |
 | `card.delete` | `cardId` | Delete |
 | `card.duplicate` | `cardId`, `offset?` | Duplicate |

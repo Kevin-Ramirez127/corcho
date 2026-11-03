@@ -148,6 +148,6 @@ pub fn install(path: &Path) -> Result<()> {
         perms.set_mode(0o755);
         std::fs::set_permissions(path, perms)?;
     }
-    open::that(path)?;
+    open::that_detached(path)?;
     Ok(())
 }

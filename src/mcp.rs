@@ -1611,7 +1611,7 @@ fn call_tool(core: &mut Core, name: &str, args: &Value) -> Result<String> {
             if !url.starts_with("http://") && !url.starts_with("https://") {
                 return Err(anyhow!("only http and https URLs are allowed"));
             }
-            open::that(&url)?;
+            open::that_detached(&url)?;
             Ok("opened".into())
         }
         "app.relaunch" => {

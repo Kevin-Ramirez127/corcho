@@ -185,7 +185,7 @@ CardFrame {
         height: childrenRect.height
         spacing: root.th.spaceTight
         Rectangle {
-            height: 22
+            height: 28
             width: allLabel.width + 16
             radius: root.th.radiusWide
             color: root.selectedIds.length === 0 ? root.th.hover : "transparent"
@@ -198,7 +198,7 @@ CardFrame {
                 text: "All"
                 color: root.th.text2
                 font.family: root.th.fontFamily
-                font.pixelSize: root.th.fontSizeCaption
+                font.pixelSize: root.th.fontSizeSmall
                 font.weight: root.th.fontWeightMedium
             }
             TapHandler { onTapped: root.showAll() }
@@ -209,7 +209,7 @@ CardFrame {
 
             delegate: Rectangle {
                 required property var modelData
-                height: 22
+                height: 28
                 width: chipLabel.width + 26
                 radius: root.th.radiusWide
                 color: root.selectedIds.indexOf(modelData.id) >= 0 ? root.th.hover : "transparent"
@@ -233,7 +233,7 @@ CardFrame {
                     text: modelData.name
                     color: root.th.text2
                     font.family: root.th.fontFamily
-                    font.pixelSize: root.th.fontSizeCaption
+                    font.pixelSize: root.th.fontSizeSmall
                 }
                 TapHandler { onTapped: root.toggleCalendar(modelData.id) }
             }
@@ -245,8 +245,8 @@ CardFrame {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: filters.bottom
-        anchors.topMargin: 6
-        height: Math.min(width * 0.82, parent.height * 0.52)
+        anchors.topMargin: 8
+        height: Math.min(width * 0.86, parent.height * 0.6)
         th: root.th
         year: root.viewYear
         month: root.viewMonth
@@ -261,7 +261,7 @@ CardFrame {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: grid.bottom
-        anchors.topMargin: 6
+        anchors.topMargin: 8
         height: 1
         color: root.th.border
     }
@@ -271,12 +271,12 @@ CardFrame {
         anchors.right: parent.right
         anchors.top: divider.bottom
         anchors.bottom: parent.bottom
-        anchors.topMargin: 6
+        anchors.topMargin: 8
 
         Row {
             id: agendaHeader
             width: parent.width
-            height: 24
+            height: 30
             spacing: root.th.spaceCompact
             Text {
                 anchors.verticalCenter: parent.verticalCenter
@@ -285,7 +285,7 @@ CardFrame {
                 color: root.th.text2
                 elide: Text.ElideRight
                 font.family: root.th.fontFamily
-                font.pixelSize: root.th.fontSizeCaption
+                font.pixelSize: root.th.fontSizeSmall
                 font.weight: root.th.fontWeightMedium
             }
             AppButton {
@@ -312,7 +312,7 @@ CardFrame {
             delegate: Item {
                 required property var modelData
                 width: agenda.width
-                height: 30
+                height: 36
 
                 Rectangle {
                     anchors.fill: parent
@@ -337,7 +337,7 @@ CardFrame {
                     text: modelData.title || "(untitled)"
                     color: modelData.done ? root.th.muted : root.th.text
                     font.family: root.th.fontFamily
-                    font.pixelSize: root.th.fontSizeSmall
+                    font.pixelSize: root.th.fontSizeBody
                     font.strikeout: modelData.done
                     elide: Text.ElideRight
                 }
@@ -348,7 +348,7 @@ CardFrame {
                     text: modelData.sourceKind || "reminder"
                     color: root.th.muted
                     font.family: root.th.fontFamily
-                    font.pixelSize: root.th.fontSizeMicro
+                    font.pixelSize: root.th.fontSizeSmall
                 }
                 Icon {
                     anchors.right: parent.right

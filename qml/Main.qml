@@ -18,6 +18,7 @@ ApplicationWindow {
     FontLoader { id: fontRegular; source: "qrc:/assets/fonts/inter_regular.ttf" }
     FontLoader { id: fontMedium; source: "qrc:/assets/fonts/inter_medium.ttf" }
     FontLoader { id: fontSemi; source: "qrc:/assets/fonts/inter_semibold.ttf" }
+    FontLoader { id: fontBrand; source: "qrc:/assets/fonts/texgyreadventor-bold.otf" }
 
     AppController { id: app }
 
@@ -34,6 +35,7 @@ ApplicationWindow {
     readonly property var settings: parseJson(app.settingsJson, {})
     readonly property var grids: parseJson(app.gridsJson, [])
     readonly property var cards: parseJson(app.cardsJson, [])
+    readonly property var allCards: parseJson(app.allCardsJson, [])
     readonly property var folders: parseJson(app.foldersJson, [])
     readonly property var themes: parseJson(app.themesJson, [])
     readonly property var fonts: parseJson(app.fontsJson, [])
@@ -64,6 +66,8 @@ ApplicationWindow {
 
     property var menuActions: []
     property var menuCard: null
+    property string promptKind: ""
+    property var templateTarget: []
     property var menuGrid: null
     property var menuFolder: null
     property var menuWorld: ({ x: 0, y: 0 })
@@ -82,25 +86,37 @@ ApplicationWindow {
     function openCreateMenu(px, py, wx, wy) {
         menuWorld = { x: wx, y: wy };
         showMenu(px, py, [
-            { label: "Add note", icon: "file-text", action: "create:note" },
-            { label: "Add website", icon: "globe", action: "create:website" },
-            { label: "Add bookmark", icon: "bookmark", action: "create:bookmark" },
-            { label: "Add file", icon: "file-text", action: "pick-file" },
-            { label: "Add folder", icon: "folder-plus", action: "pick-folder" },
-            { label: "Add API data", icon: "database", action: "create:api" },
-            { label: "Add AI node", icon: "cpu", action: "create:ai" },
-            { label: "Add calendar", icon: "calendar", action: "create:calendar" },
-            { label: "Add timbre", icon: "audio-lines", action: "create:timbre" },
-            { label: "Add script", icon: "terminal", action: "create:script" },
-            { label: "Add checklist", icon: "list-checks", action: "create:checklist" },
-            { label: "Add kanban", icon: "kanban", action: "create:kanban" },
-            { label: "Add whiteboard", icon: "pencil", action: "create:whiteboard" },
-            { label: "Add pomodoro", icon: "timer", action: "create:pomodoro" },
-            { label: "Add now playing", icon: "music-2", action: "create:mpris" },
-            { label: "Add grid portal", icon: "arrow-right", action: "create:portal" },
+            { label: "Add card", icon: "plus", children: [
+                { label: "Text", icon: "file-text", children: [
+                    { label: "Note", icon: "file-text", action: "create:note" },
+                    { label: "Checklist", icon: "list-checks", action: "create:checklist" },
+                    { label: "Kanban", icon: "kanban", action: "create:kanban" },
+                    { label: "Whiteboard", icon: "pencil", action: "create:whiteboard" }
+                ] },
+                { label: "Web", icon: "globe", children: [
+                    { label: "Website", icon: "globe", action: "create:website" },
+                    { label: "Bookmark", icon: "bookmark", action: "create:bookmark" },
+                    { label: "API data", icon: "database", action: "create:api" },
+                    { label: "Grid portal", icon: "arrow-right", action: "create:portal" }
+                ] },
+                { label: "Media & files", icon: "folder", children: [
+                    { label: "File", icon: "file-text", action: "pick-file" },
+                    { label: "Folder", icon: "folder-plus", action: "pick-folder" },
+                    { label: "Timbre", icon: "audio-lines", action: "create:timbre" },
+                    { label: "Now playing", icon: "music-2", action: "create:mpris" }
+                ] },
+                { label: "Tools", icon: "cpu", children: [
+                    { label: "AI node", icon: "cpu", action: "create:ai" },
+                    { label: "Script", icon: "terminal", action: "create:script" },
+                    { label: "Calendar", icon: "calendar", action: "create:calendar" },
+                    { label: "Pomodoro", icon: "timer", action: "create:pomodoro" },
+                    { label: "Git repository", icon: "git-branch", action: "create:git" }
+                ] }
+            ] },
             { separator: true, label: "" },
             { label: "New grid", icon: "layout-grid", action: "new-grid" },
-            { label: "New folder", icon: "folder-plus", action: "new-folder" }
+            { label: "New folder", icon: "folder-plus", action: "new-folder" },
+            { label: "Templates", icon: "layout-template", action: "templates" }
         ]);
     }
 
@@ -110,15 +126,39 @@ ApplicationWindow {
             { label: "Duplicate card", icon: "copy", action: "card:duplicate" },
             { label: "Pin colour", icon: "palette", action: "card:color" },
             { label: "Link date", icon: "calendar", action: "card:link-date" },
-            { label: card.locked ? "Unlock card" : "Lock card", icon: card.locked ? "unlock" : "lock", action: "card:lock" }
+            { label: card.locked ? "Unpin card" : "Pin card", icon: card.locked ? "pin-off" : "pin", action: "card:lock" }
         ];
+        if (canvas.selectedIds.length > 1)
+            actions.push({ label: "Create group", icon: "group", action: "card:group" });
+        if (card.group)
+            actions.push({ label: "Ungroup", icon: "ungroup", action: "card:ungroup" });
+        if (card.syncId) {
+            actions.push({ label: "Stop syncing", icon: "unlink", action: "card:unsync" });
+        } else {
+            var syncTargets = [];
+            for (var t = 0; t < allCards.length; t++) {
+                var other = allCards[t];
+                if (other.id === card.id || other.type !== card.type) continue;
+                syncTargets.push({
+                    label: (other.title || other.type) + " · " + (other.gridName || "grid"),
+                    icon: "link",
+                    action: "card:sync:" + other.id
+                });
+            }
+            if (syncTargets.length > 0)
+                actions.push({ label: "Sync with card", icon: "link", children: syncTargets });
+        }
+        actions.push({ label: "Save as template", icon: "layout-template", action: "card:template" });
         if (card.url)
             actions.push({ label: "Open link", icon: "external-link", action: "card:open" });
         actions.push({ separator: true, label: "" });
+        var sendTargets = [];
         for (var i = 0; i < grids.length; i++) {
             if (grids[i].id === app.activeGridId) continue;
-            actions.push({ label: "Send to " + grids[i].name, icon: "arrow-right", action: "card:send:" + grids[i].id });
+            sendTargets.push({ label: grids[i].name, icon: "arrow-right", action: "card:send:" + grids[i].id });
         }
+        if (sendTargets.length > 0)
+            actions.push({ label: "Send to grid", icon: "arrow-right", children: sendTargets });
         actions.push({ separator: true, label: "" });
         actions.push({ label: "Delete card", icon: "trash-2", action: "card:delete", danger: true });
         showMenu(px, py, actions);
@@ -149,9 +189,7 @@ ApplicationWindow {
         ]);
     }
 
-    function menuAction(index) {
-        if (index < 0 || index >= menuActions.length) return;
-        var action = menuActions[index].action || "";
+    function runMenuAction(action) {
         var parts = action.split(":");
         var kind = parts[0];
         var arg = parts.length > 1 ? parts.slice(1).join(":") : "";
@@ -164,6 +202,7 @@ ApplicationWindow {
         if (action === "new-folder") { app.createFolder("New Folder"); return; }
         if (action === "pick-file") { pinFileDialog.open(); return; }
         if (action === "pick-folder") { pinFolderDialog.open(); return; }
+        if (action === "templates") { templatesDialog.open(); return; }
 
         if (kind === "card" && menuCard) {
             if (arg === "duplicate") app.duplicateCard(menuCard.id);
@@ -175,6 +214,19 @@ ApplicationWindow {
                 dateLinkDialog.openFor(menuCard.id, "", "", "");
             } else if (arg === "lock") {
                 app.updateCard(JSON.stringify({ id: menuCard.id, locked: !menuCard.locked }));
+            } else if (arg === "group") {
+                app.setCardGroup(JSON.stringify(canvas.selectedIds), "g" + Date.now());
+            } else if (arg === "ungroup") {
+                app.setCardGroup(JSON.stringify([menuCard.id]), "");
+            } else if (arg === "unsync") {
+                app.unsyncCard(menuCard.id);
+            } else if (arg.indexOf("sync:") === 0) {
+                if (!app.syncCards(menuCard.id, arg.slice(5)))
+                    toastHost.show("error", "Cards must be the same type");
+            } else if (arg === "template") {
+                root.templateTarget = canvas.selectedIds.length > 0 ? canvas.selectedIds.slice() : [menuCard.id];
+                root.promptKind = "template";
+                prompt.open("Save as template", "", "Template name");
             } else if (arg === "open") {
                 app.openExternal(menuCard.url);
             } else if (arg === "delete") {
@@ -255,7 +307,7 @@ ApplicationWindow {
         interval: 1500
         running: true
         repeat: true
-        onTriggered: root.app.reloadIfChanged()
+        onTriggered: app.reloadIfChanged()
     }
 
     Shortcut { sequences: ["Ctrl+K"]; onActivated: launcher.open() }
@@ -505,7 +557,7 @@ ApplicationWindow {
             "Markdown (*.md *.markdown)"
         ]
         onAccepted: {
-            var result = String(root.app.pinPath(root.filePath(selectedFile), menuWorld.x, menuWorld.y, ""));
+            var result = String(app.pinPath(root.filePath(selectedFile), menuWorld.x, menuWorld.y, ""));
             if (result.indexOf("error:") === 0) app.toast(result.slice(6));
         }
     }
@@ -514,7 +566,7 @@ ApplicationWindow {
         id: pinFolderDialog
         title: "Pin a folder"
         onAccepted: {
-            var result = String(root.app.pinPath(root.filePath(selectedFolder), menuWorld.x, menuWorld.y, ""));
+            var result = String(app.pinPath(root.filePath(selectedFolder), menuWorld.x, menuWorld.y, ""));
             if (result.indexOf("error:") === 0) app.toast(result.slice(6));
         }
     }
@@ -523,7 +575,7 @@ ApplicationWindow {
         id: gridIconDialog
         title: "Choose a grid icon"
         nameFilters: ["SVG images (*.svg)"]
-        onAccepted: if (menuGrid) root.app.setGridIcon(menuGrid.id, root.filePath(selectedFile))
+        onAccepted: if (menuGrid) app.setGridIcon(menuGrid.id, root.filePath(selectedFile))
     }
 
     ContextMenu {
@@ -531,7 +583,7 @@ ApplicationWindow {
         parent: root.contentItem
         th: root.th
         actions: root.menuActions
-        onTriggered: function (index) { root.menuAction(index) }
+        onTriggered: function (action) { root.runMenuAction(action) }
     }
 
     PromptDialog {
@@ -540,6 +592,12 @@ ApplicationWindow {
         th: root.th
         onAccepted: function (text) {
             if (text.trim() === "") return;
+            if (root.promptKind === "template") {
+                var raw = String(app.createTemplate(text.trim(), JSON.stringify(root.templateTarget)));
+                root.promptKind = "";
+                if (raw.indexOf("error:") === 0) toastHost.show("error", raw.slice(6));
+                return;
+            }
             if (root.renameTarget.kind === "grid") app.renameGrid(root.renameTarget.id, text.trim());
             else if (root.renameTarget.kind === "folder") app.renameFolder(root.renameTarget.id, text.trim());
         }
@@ -569,6 +627,13 @@ ApplicationWindow {
 
     GitSyncWizard {
         id: gitWizard
+        app: app
+        th: root.th
+    }
+
+    TemplatesDialog {
+        id: templatesDialog
+        parent: root.contentItem
         app: app
         th: root.th
     }

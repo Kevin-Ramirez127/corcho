@@ -63,9 +63,9 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     text: "Corcho"
                     color: root.th.text
-                    font.family: root.th.fontFamily
-                    font.pixelSize: root.th.fontSizeTitle
-                    font.weight: root.th.fontWeightMedium
+                    font.family: root.th.brandFont
+                    font.pixelSize: root.th.fontSizeLarge
+                    font.weight: Font.Bold
                 }
             }
 

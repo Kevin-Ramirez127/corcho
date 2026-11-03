@@ -3,9 +3,11 @@ mod audio;
 mod bridge;
 mod core;
 mod deeplink;
+mod gitcard;
 mod gitsync;
 mod history;
 mod integrations;
+mod logging;
 mod mcp;
 mod model;
 mod search;
@@ -17,7 +19,60 @@ mod updates;
 
 use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QUrl};
 
+fn append_chromium_flags(flags: &str) {
+    let key = "QTWEBENGINE_CHROMIUM_FLAGS";
+    let existing = std::env::var(key).unwrap_or_default();
+    let mut added: Vec<&str> = Vec::new();
+    for flag in flags.split_whitespace() {
+        let name = flag.split('=').next().unwrap_or(flag);
+        if !existing.split_whitespace().any(|f| f.starts_with(name)) {
+            added.push(flag);
+        }
+    }
+    if added.is_empty() {
+        return;
+    }
+    let joined = added.join(" ");
+    let value = if existing.is_empty() {
+        joined
+    } else {
+        format!("{existing} {joined}")
+    };
+    std::env::set_var(key, value);
+}
+
 fn main() {
+    if std::env::var_os("RUST_BACKTRACE").is_none() {
+        std::env::set_var("RUST_BACKTRACE", "1");
+    }
+    if std::env::var_os("MALLOC_ARENA_MAX").is_none() {
+        std::env::set_var("MALLOC_ARENA_MAX", "2");
+    }
+    let args: Vec<String> = std::env::args().collect();
+    let mcp_mode = args.iter().any(|a| a == "--mcp" || a == "--mcp-http")
+        || std::env::var("CORCHO_MCP").as_deref() == Ok("1");
+    if !mcp_mode {
+        let low_memory = storage::load_workspace(&storage::default_data_dir())
+            .map(|ws| ws.settings.low_memory_mode)
+            .unwrap_or(false);
+        if low_memory {
+            append_chromium_flags(
+                "--renderer-process-limit=2 --process-per-site --js-flags=--max-old-space-size=256 --aggressive-cache-discard",
+            );
+        }
+    }
+    let (log_path, crash_path) = logging::init(!mcp_mode);
+    unsafe {
+        extern "C" {
+            fn corcho_install_log_handler();
+        }
+        corcho_install_log_handler();
+    }
+    if args.iter().any(|a| a == "--crash-test") {
+        eprintln!("[corcho] crash test armed; log {log_path:?} crash {crash_path:?}");
+        logging::arm_crash_test();
+    }
+
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -25,7 +80,6 @@ fn main() {
         )
         .init();
 
-    let args: Vec<String> = std::env::args().collect();
     let http_index = args.iter().position(|a| a == "--mcp-http");
     if let Some(index) = http_index {
         let addr = args
@@ -55,6 +109,14 @@ fn main() {
     if let Some(engine) = engine.as_mut() {
         engine.load(&QUrl::from("qrc:/qt/qml/Corcho/qml/Main.qml"));
     }
+
+    std::thread::spawn(|| {
+        std::thread::sleep(std::time::Duration::from_secs(5));
+        if !deeplink::is_registered() {
+            eprintln!("[corcho] QML window did not initialize; exiting");
+            std::process::exit(1);
+        }
+    });
 
     if let Some(app) = app.as_mut() {
         app.exec();

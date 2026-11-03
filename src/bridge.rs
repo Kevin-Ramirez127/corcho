@@ -49,6 +49,7 @@ pub mod qobject {
         #[qml_element]
         #[qproperty(QString, grids_json, cxx_name = "gridsJson")]
         #[qproperty(QString, cards_json, cxx_name = "cardsJson")]
+        #[qproperty(QString, all_cards_json, cxx_name = "allCardsJson")]
         #[qproperty(QString, folders_json, cxx_name = "foldersJson")]
         #[qproperty(QString, calendar_json, cxx_name = "calendarJson")]
         #[qproperty(QString, settings_json, cxx_name = "settingsJson")]
@@ -56,6 +57,8 @@ pub mod qobject {
         #[qproperty(f64, pan_x, cxx_name = "panX")]
         #[qproperty(f64, pan_y, cxx_name = "panY")]
         #[qproperty(f64, zoom, cxx_name = "zoom")]
+        #[qproperty(f64, viewport_width, cxx_name = "viewportWidth")]
+        #[qproperty(f64, viewport_height, cxx_name = "viewportHeight")]
         #[qproperty(QString, status_text, cxx_name = "statusText")]
         #[qproperty(bool, syncing, cxx_name = "syncing")]
         #[qproperty(bool, ai_busy, cxx_name = "aiBusy")]
@@ -176,6 +179,51 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "sendCardToGrid"]
         fn send_card_to_grid(self: Pin<&mut Self>, card_id: &QString, grid_id: &QString) -> bool;
+
+        #[qinvokable]
+        #[cxx_name = "moveCards"]
+        fn move_cards(self: Pin<&mut Self>, ids_json: &QString, dx: f64, dy: f64) -> bool;
+
+        #[qinvokable]
+        #[cxx_name = "setCardGroup"]
+        fn set_card_group(self: Pin<&mut Self>, ids_json: &QString, group: &QString) -> bool;
+
+        #[qinvokable]
+        #[qinvokable]
+        #[cxx_name = "syncCards"]
+        fn sync_cards(self: Pin<&mut Self>, source_id: &QString, target_id: &QString) -> bool;
+
+        #[qinvokable]
+        #[cxx_name = "unsyncCard"]
+        fn unsync_card(self: Pin<&mut Self>, card_id: &QString) -> bool;
+
+        #[qinvokable]
+        #[cxx_name = "toggleAiLink"]
+        fn toggle_ai_link(self: Pin<&mut Self>, ai_id: &QString, card_id: &QString) -> bool;
+
+        #[qinvokable]
+        #[cxx_name = "aiContext"]
+        fn ai_context(&self, ids_json: &QString) -> QString;
+
+        #[qinvokable]
+        #[cxx_name = "gitCardRefresh"]
+        fn git_card_refresh(self: Pin<&mut Self>, card_id: &QString);
+
+        #[qinvokable]
+        #[cxx_name = "createTemplate"]
+        fn create_template(self: Pin<&mut Self>, name: &QString, ids_json: &QString) -> QString;
+
+        #[qinvokable]
+        #[cxx_name = "insertTemplate"]
+        fn insert_template(self: Pin<&mut Self>, id: &QString, x: f64, y: f64) -> QString;
+
+        #[qinvokable]
+        #[cxx_name = "deleteTemplate"]
+        fn delete_template(self: Pin<&mut Self>, id: &QString) -> bool;
+
+        #[qinvokable]
+        #[cxx_name = "templatesJson"]
+        fn templates_json(self: &Self) -> QString;
 
         #[qinvokable]
         #[cxx_name = "createGrid"]
@@ -536,6 +584,7 @@ pub struct AppControllerRust {
     core: Arc<Mutex<Core>>,
     grids_json: QString,
     cards_json: QString,
+    all_cards_json: QString,
     folders_json: QString,
     calendar_json: QString,
     settings_json: QString,
@@ -543,6 +592,8 @@ pub struct AppControllerRust {
     pan_x: f64,
     pan_y: f64,
     zoom: f64,
+    viewport_width: f64,
+    viewport_height: f64,
     status_text: QString,
     syncing: bool,
     ai_busy: bool,
@@ -565,6 +616,7 @@ impl Default for AppControllerRust {
             core: Arc::new(Mutex::new(core)),
             grids_json: QString::default(),
             cards_json: QString::default(),
+            all_cards_json: QString::from("[]"),
             folders_json: QString::default(),
             calendar_json: QString::from("{\"calendars\":[],\"dateLinks\":[]}"),
             settings_json: QString::default(),
@@ -572,6 +624,8 @@ impl Default for AppControllerRust {
             pan_x: 0.0,
             pan_y: 0.0,
             zoom: 1.0,
+            viewport_width: 0.0,
+            viewport_height: 0.0,
             status_text: QString::default(),
             syncing: false,
             ai_busy: false,
@@ -592,12 +646,27 @@ impl qobject::AppController {
     fn refresh_all(mut self: Pin<&mut Self>) {
         let themes_dirty = THEMES_DIRTY.swap(false, Ordering::Relaxed);
         let cached_themes = p(&self.as_ref().rust().themes_json);
-        let (grids, cards, folders, calendar, settings, themes, active, pan, pany, zoom, upd, git) = {
+        let (
+            grids,
+            cards,
+            all_cards,
+            folders,
+            calendar,
+            settings,
+            themes,
+            active,
+            pan,
+            pany,
+            zoom,
+            upd,
+            git,
+        ) = {
             let core_arc = self.as_ref().rust().core.clone();
             let core = core_arc.lock().unwrap();
             (
                 core.grids_json(),
                 core.cards_json(),
+                core.all_cards_json(),
                 core.folders_json(),
                 core.calendar_json(),
                 core.settings_json(),
@@ -623,6 +692,7 @@ impl qobject::AppController {
         }
         set_str!(grids_json, set_grids_json, grids);
         set_str!(cards_json, set_cards_json, cards);
+        set_str!(all_cards_json, set_all_cards_json, all_cards);
         set_str!(folders_json, set_folders_json, folders);
         set_str!(calendar_json, set_calendar_json, calendar);
         set_str!(settings_json, set_settings_json, settings);
@@ -636,6 +706,13 @@ impl qobject::AppController {
         }
         if (self.as_ref().rust().zoom - zoom).abs() > f64::EPSILON {
             self.as_mut().set_zoom(zoom);
+            let (vw, vh) = {
+                let core_arc = self.as_ref().rust().core.clone();
+                let core = core_arc.lock().unwrap();
+                (core.ws.viewport_width, core.ws.viewport_height)
+            };
+            self.as_mut().set_viewport_width(vw);
+            self.as_mut().set_viewport_height(vh);
         }
         set_str!(update_json, set_update_json, upd);
         set_str!(git_json, set_git_json, git);
@@ -748,12 +825,19 @@ impl qobject::AppController {
     }
 
     fn refresh_cards(mut self: Pin<&mut Self>) {
-        let (cards, calendar) = {
+        let (cards, all_cards, calendar) = {
             let core_arc = self.as_ref().rust().core.clone();
             let core = core_arc.lock().unwrap();
-            (core.cards_json(), core.calendar_json())
+            (
+                core.cards_json(),
+                core.all_cards_json(),
+                core.calendar_json(),
+            )
         };
         self.as_mut().set_cards_json(s(cards));
+        if p(&self.as_ref().rust().all_cards_json) != all_cards {
+            self.as_mut().set_all_cards_json(s(all_cards));
+        }
         self.as_mut().set_calendar_json(s(calendar));
     }
 
@@ -939,6 +1023,153 @@ impl qobject::AppController {
         ok
     }
 
+    pub fn move_cards(mut self: Pin<&mut Self>, ids_json: &QString, dx: f64, dy: f64) -> bool {
+        let ids: Vec<String> = serde_json::from_str(&p(ids_json)).unwrap_or_default();
+        let ok = {
+            let core_arc = self.as_ref().rust().core.clone();
+            let mut core = core_arc.lock().unwrap();
+            core.move_cards(&ids, dx, dy)
+        };
+        self.as_mut().refresh_cards();
+        ok
+    }
+
+    pub fn set_card_group(mut self: Pin<&mut Self>, ids_json: &QString, group: &QString) -> bool {
+        let ids: Vec<String> = serde_json::from_str(&p(ids_json)).unwrap_or_default();
+        let ok = {
+            let core_arc = self.as_ref().rust().core.clone();
+            let mut core = core_arc.lock().unwrap();
+            core.set_cards_group(&ids, &p(group))
+        };
+        self.as_mut().refresh_cards();
+        ok
+    }
+
+    pub fn sync_cards(mut self: Pin<&mut Self>, source_id: &QString, target_id: &QString) -> bool {
+        let ok = self
+            .as_ref()
+            .rust()
+            .core
+            .clone()
+            .lock()
+            .unwrap()
+            .sync_cards(&p(source_id), &p(target_id));
+        if ok {
+            self.as_mut().refresh_cards();
+        }
+        ok
+    }
+
+    pub fn unsync_card(mut self: Pin<&mut Self>, card_id: &QString) -> bool {
+        let ok = self
+            .as_ref()
+            .rust()
+            .core
+            .clone()
+            .lock()
+            .unwrap()
+            .unsync_card(&p(card_id));
+        if ok {
+            self.as_mut().refresh_cards();
+        }
+        ok
+    }
+
+    pub fn toggle_ai_link(mut self: Pin<&mut Self>, ai_id: &QString, card_id: &QString) -> bool {
+        let ok = self
+            .as_ref()
+            .rust()
+            .core
+            .clone()
+            .lock()
+            .unwrap()
+            .toggle_ai_link(&p(ai_id), &p(card_id));
+        if ok {
+            self.as_mut().refresh_cards();
+        }
+        ok
+    }
+
+    pub fn git_card_refresh(mut self: Pin<&mut Self>, card_id: &QString) {
+        let (url, tokens) = {
+            let core = self.core.lock().unwrap();
+            let Some((_, card)) = core.ws.card(&p(card_id)) else {
+                return;
+            };
+            let settings = &core.ws.settings;
+            (
+                card.str_field("url", ""),
+                crate::gitcard::RepoTokens {
+                    github: settings.repo_token_github.clone(),
+                    gitlab: settings.repo_token_gitlab.clone(),
+                    forgejo: settings.repo_token_forgejo.clone(),
+                },
+            )
+        };
+        if url.trim().is_empty() {
+            return;
+        }
+        let id = p(card_id);
+        let qt = self.as_mut().qt_thread();
+        runtime().spawn(async move {
+            let data = crate::gitcard::fetch(&url, tokens).await;
+            let _ = qt.queue(move |mut q| {
+                {
+                    let core = q.as_ref().rust().core.clone();
+                    let mut core = core.lock().unwrap();
+                    core.set_git_card_data(&id, &data);
+                }
+                q.as_mut().refresh_cards();
+            });
+        });
+    }
+
+    pub fn ai_context(&self, ids_json: &QString) -> QString {
+        let ids: Vec<String> = serde_json::from_str(&p(ids_json)).unwrap_or_default();
+        let core = self.core.lock().unwrap();
+        s(core.ai_context(&ids))
+    }
+
+    pub fn create_template(self: Pin<&mut Self>, name: &QString, ids_json: &QString) -> QString {
+        let ids: Vec<String> = serde_json::from_str(&p(ids_json)).unwrap_or_default();
+        let result = {
+            let core_arc = self.as_ref().rust().core.clone();
+            let mut core = core_arc.lock().unwrap();
+            core.create_template(&p(name), &ids)
+        };
+        match result {
+            Ok(template) => s(serde_json::to_string(&template).unwrap_or_default()),
+            Err(err) => s(format!("error:{err}")),
+        }
+    }
+
+    pub fn insert_template(mut self: Pin<&mut Self>, id: &QString, x: f64, y: f64) -> QString {
+        let result = {
+            let core_arc = self.as_ref().rust().core.clone();
+            let mut core = core_arc.lock().unwrap();
+            core.insert_template(&p(id), x, y, None)
+        };
+        self.as_mut().refresh_all();
+        match result {
+            Ok(cards) => s(serde_json::to_string(&cards).unwrap_or_default()),
+            Err(err) => s(format!("error:{err}")),
+        }
+    }
+
+    pub fn delete_template(self: Pin<&mut Self>, id: &QString) -> bool {
+        let ok = {
+            let core_arc = self.as_ref().rust().core.clone();
+            let mut core = core_arc.lock().unwrap();
+            core.delete_template(&p(id))
+        };
+        ok
+    }
+
+    pub fn templates_json(&self) -> QString {
+        let core = self.core.lock().unwrap();
+        s(serde_json::to_string(&core.ws.templates).unwrap_or_else(|_| "[]".into()))
+    }
+
     pub fn create_grid(mut self: Pin<&mut Self>, name: &QString) -> QString {
         let g = {
             let core_arc = self.as_ref().rust().core.clone();
@@ -1071,7 +1302,8 @@ impl qobject::AppController {
         ok
     }
 
-    pub fn set_view(self: Pin<&mut Self>, pan_x: f64, pan_y: f64, zoom: f64) {
+    pub fn set_view(mut self: Pin<&mut Self>, pan_x: f64, pan_y: f64, zoom: f64) {
+        let zoom = zoom.clamp(0.2, 3.0);
         self.as_ref()
             .rust()
             .core
@@ -1079,6 +1311,15 @@ impl qobject::AppController {
             .lock()
             .unwrap()
             .set_view(pan_x, pan_y, zoom);
+        if (self.as_ref().rust().pan_x - pan_x).abs() > f64::EPSILON {
+            self.as_mut().set_pan_x(pan_x);
+        }
+        if (self.as_ref().rust().pan_y - pan_y).abs() > f64::EPSILON {
+            self.as_mut().set_pan_y(pan_y);
+        }
+        if (self.as_ref().rust().zoom - zoom).abs() > f64::EPSILON {
+            self.as_mut().set_zoom(zoom);
+        }
     }
 
     pub fn set_viewport(self: Pin<&mut Self>, width: f64, height: f64) {
@@ -1395,7 +1636,7 @@ impl qobject::AppController {
         let (verifier, challenge) = sync::pkce_pair();
         let redirect = "http://127.0.0.1:47823/";
         let url = sync::auth_url(&client_id, redirect, &challenge);
-        let _ = open::that(&url);
+        let _ = open::that_detached(&url);
         let qt = self.as_mut().qt_thread();
         let data_dir = self
             .as_ref()
@@ -1608,7 +1849,7 @@ impl qobject::AppController {
     }
 
     pub fn open_external(&self, url: &QString) {
-        let _ = open::that(p(url));
+        let _ = open::that_detached(p(url));
     }
 
     pub fn pin_path(
@@ -1653,13 +1894,13 @@ impl qobject::AppController {
     }
 
     pub fn open_path(&self, path: &QString) {
-        let _ = open::that(p(path));
+        let _ = open::that_detached(p(path));
     }
 
     pub fn open_themes_folder(&self) {
         let dir = self.core.lock().unwrap().data_dir.join("themes");
         let _ = std::fs::create_dir_all(&dir);
-        let _ = open::that(dir);
+        let _ = open::that_detached(dir);
     }
 
     pub fn create_theme_from_template(mut self: Pin<&mut Self>) -> QString {

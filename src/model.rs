@@ -102,9 +102,9 @@ pub fn default_card_style(kind: &str) -> (f64, f64, &'static str, &'static str, 
         "website" => (512.0, 384.0, "#2f3b45", "globe", "Website"),
         "bookmark" => (320.0, 160.0, "#2f3b45", "bookmark", "Bookmark"),
         "api" => (480.0, 320.0, "#2f3b45", "database", "API Data"),
-        "ai" => (416.0, 288.0, "#3a3348", "cpu", "AI"),
+        "ai" => (416.0, 330.0, "#3a3348", "cpu", "AI"),
         "script" => (416.0, 256.0, "#333a33", "terminal", "Script"),
-        "calendar" => (448.0, 460.0, "#343a3d", "calendar", "Calendar"),
+        "calendar" => (520.0, 560.0, "#343a3d", "calendar", "Calendar"),
         "timbre" => (320.0, 260.0, "#3d3436", "audio-lines", "Timbre"),
         "portal" => (288.0, 128.0, "#323a3d", "arrow-right-circle", "Grid Portal"),
         "checklist" => (352.0, 320.0, "#353a33", "list-checks", "Checklist"),
@@ -113,6 +113,7 @@ pub fn default_card_style(kind: &str) -> (f64, f64, &'static str, &'static str, 
         "pomodoro" => (320.0, 256.0, "#3d3436", "timer", "Pomodoro"),
         "mpris" => (384.0, 192.0, "#333842", "music", "Now Playing"),
         "file" => (480.0, 420.0, "#333a3d", "file-text", ""),
+        "git" => (440.0, 320.0, "#26343a", "git-branch", "Git"),
         _ => (320.0, 240.0, "#3d3f52", "square", ""),
     }
 }
@@ -191,6 +192,18 @@ fn t() -> bool {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AiPreset {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub provider: String,
+    #[serde(default)]
+    pub model: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
     pub theme: String,
@@ -199,6 +212,7 @@ pub struct Settings {
     pub theme_dark: String,
     pub font: String,
     pub grid_opacity: f64,
+    pub card_radius: f64,
     pub minimap_display: String,
     pub minimap_size: String,
     pub trackpad_pan: bool,
@@ -211,6 +225,9 @@ pub struct Settings {
     pub link_behavior: String,
     pub show_card_tooltips: bool,
     pub ad_blocker: bool,
+    pub web_shared_profile: bool,
+    pub web_sleep_minutes: u32,
+    pub low_memory_mode: bool,
     pub undo_steps: usize,
     pub launcher_shortcut: String,
     pub launch_at_startup: bool,
@@ -223,6 +240,8 @@ pub struct Settings {
     pub ai_api_keys: HashMap<String, String>,
     #[serde(rename = "aiModel")]
     pub ai_model: HashMap<String, String>,
+    #[serde(rename = "aiPresets")]
+    pub ai_presets: Vec<AiPreset>,
     pub ai_local_server_url: String,
     pub ai_stream: bool,
     pub ai_web_search: bool,
@@ -254,6 +273,9 @@ pub struct Settings {
     pub git_auto_push: bool,
     pub git_auto_pull: bool,
     pub git_include_attachments: bool,
+    pub repo_token_github: String,
+    pub repo_token_gitlab: String,
+    pub repo_token_forgejo: String,
 }
 
 impl Default for Settings {
@@ -265,6 +287,7 @@ impl Default for Settings {
             theme_dark: "corcho".into(),
             font: "inter".into(),
             grid_opacity: 0.6,
+            card_radius: 14.0,
             minimap_display: "always".into(),
             minimap_size: "medium".into(),
             trackpad_pan: t(),
@@ -277,6 +300,9 @@ impl Default for Settings {
             link_behavior: "integrated".into(),
             show_card_tooltips: t(),
             ad_blocker: false,
+            web_shared_profile: t(),
+            web_sleep_minutes: 10,
+            low_memory_mode: false,
             undo_steps: 20,
             launcher_shortcut: "CmdOrCtrl+K".into(),
             launch_at_startup: false,
@@ -286,6 +312,7 @@ impl Default for Settings {
             ai_provider: "claude".into(),
             ai_api_keys: HashMap::new(),
             ai_model: HashMap::new(),
+            ai_presets: Vec::new(),
             ai_local_server_url: String::new(),
             ai_stream: t(),
             ai_web_search: t(),
@@ -316,6 +343,9 @@ impl Default for Settings {
             git_auto_push: true,
             git_auto_pull: true,
             git_include_attachments: false,
+            repo_token_github: String::new(),
+            repo_token_gitlab: String::new(),
+            repo_token_forgejo: String::new(),
         }
     }
 }
@@ -368,6 +398,14 @@ impl DateLink {
     }
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct Template {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub cards: Vec<Card>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Workspace {
     pub version: u32,
@@ -383,6 +421,8 @@ pub struct Workspace {
     pub date_links: Vec<DateLink>,
     pub grids: Vec<Grid>,
     pub folders: Vec<Folder>,
+    #[serde(default)]
+    pub templates: Vec<Template>,
     pub settings: Settings,
     pub active_grid_id: Option<String>,
 }
@@ -404,6 +444,7 @@ impl Default for Workspace {
             active_grid_id: Some(grid.id.clone()),
             grids: vec![grid],
             folders: Vec::new(),
+            templates: Vec::new(),
             settings: Settings::default(),
         }
     }
@@ -588,6 +629,24 @@ pub fn models_by_provider() -> serde_json::Value {
             {"id":"mistral-large-latest","name":"Mistral Large"},
             {"id":"mistral-small-latest","name":"Mistral Small"}
         ],
+        "openrouter": [
+            {"id":"openai/gpt-5.4","name":"OpenAI GPT-5.4"},
+            {"id":"anthropic/claude-opus-4.7","name":"Claude Opus 4.7"},
+            {"id":"anthropic/claude-sonnet-4.6","name":"Claude Sonnet 4.6"},
+            {"id":"google/gemini-3-pro-preview","name":"Gemini 3 Pro"},
+            {"id":"x-ai/grok-4.1-fast","name":"Grok 4.1 Fast"},
+            {"id":"mistralai/mistral-large","name":"Mistral Large"},
+            {"id":"deepseek/deepseek-v4","name":"DeepSeek V4"},
+            {"id":"nvidia/nemotron-3-ultra-550b-a55b","name":"NVIDIA Nemotron 3 Ultra"}
+        ],
+        "opencode-go": [
+            {"id":"deepseek-v4.1-flash","name":"DeepSeek V4.1 Flash"},
+            {"id":"deepseek-v4","name":"DeepSeek V4"},
+            {"id":"gpt-5.4","name":"GPT-5.4"},
+            {"id":"claude-sonnet-4-6","name":"Claude Sonnet 4.6"},
+            {"id":"gemini-3.5-flash","name":"Gemini 3.5 Flash"},
+            {"id":"grok-4.1-fast","name":"Grok 4.1 Fast"}
+        ],
         "local": []
     })
 }
@@ -668,6 +727,14 @@ mod tests {
         assert!(ws.grids[0].cards.iter().all(|card| card.kind != "aura"));
         assert_eq!(ws.calendars.len(), 1);
         assert_eq!(ws.version, SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn memory_settings_have_safe_defaults() {
+        let settings = Settings::default();
+        assert!(settings.web_shared_profile);
+        assert_eq!(settings.web_sleep_minutes, 10);
+        assert!(!settings.low_memory_mode);
     }
 
     #[test]

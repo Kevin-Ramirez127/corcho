@@ -26,7 +26,7 @@ Item {
         spacing: root.th.spaceHalf
         Row {
             width: parent.width
-            height: 18
+            height: 24
 
             Repeater {
                 model: root.weekDays
@@ -37,7 +37,7 @@ Item {
                     text: modelData
                     color: root.th.muted
                     font.family: root.th.fontFamily
-                    font.pixelSize: root.th.fontSizeCaption
+                    font.pixelSize: root.th.fontSizeSmall
                     font.weight: root.th.fontWeightMedium
                 }
             }
@@ -45,7 +45,7 @@ Item {
 
         Grid {
             width: parent.width
-            height: parent.height - 20
+            height: parent.height - 26
             columns: 7
             rows: 6
 
@@ -82,8 +82,8 @@ Item {
                         text: day
                         color: selected || today ? root.th.text : root.th.text2
                         font.family: root.th.fontFamily
-                        font.pixelSize: root.th.fontSizeSmall
-                        font.weight: selected || today ? 500 : 400
+                        font.pixelSize: root.th.fontSizeBody
+                        font.weight: selected || today ? 600 : 400
                     }
 
                     Row {
@@ -97,9 +97,9 @@ Item {
                             model: Math.min(3, dots.length)
                             delegate: Rectangle {
                                 required property int index
-                                width: 3
-                                height: 3
-                                radius: 1.5
+                                width: 4
+                                height: 4
+                                radius: 2
                                 color: dots[index] || root.th.accent
                             }
                         }

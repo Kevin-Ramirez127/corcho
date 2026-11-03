@@ -43,7 +43,7 @@ Item {
         spacing: root.th.space2
         Text {
             anchors.verticalCenter: parent.verticalCenter
-            width: parent.width - root.th.space5
+            width: parent.width - (root.th && root.th.space5 !== undefined ? root.th.space5 : 24)
             elide: Text.ElideRight
             text: root.current ? root.current.label : root.placeholder
             color: root.current ? root.th.text : root.th.muted

@@ -11,7 +11,7 @@ Item {
         try { return (JSON.parse(root.app.calendarJson).calendars || []); }
         catch (e) { return []; }
     }
-    readonly property var palette: ["#d98e5c", "#7aa2f7", "#86b78a", "#c9a86a", "#d97a72", "#8d8d97"]
+    readonly property var themePalette: ["#d98e5c", "#7aa2f7", "#86b78a", "#c9a86a", "#d97a72", "#8d8d97"]
 
     signal closed()
 

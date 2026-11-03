@@ -150,6 +150,13 @@ static SPECS: LazyLock<Vec<TokenSpec>> = LazyLock::new(|| {
             "UI font family"
         ),
         spec!(
+            "brandFont",
+            "--brand-font",
+            Text,
+            "TeX Gyre Adventor",
+            "Wordmark font family"
+        ),
+        spec!(
             "fontMono",
             "--font-mono",
             Text,
@@ -969,6 +976,7 @@ pub fn build_tokens(
     set("focus", json!(accent));
     set("calendarToday", json!(with_alpha(accent, 0.16)));
     set("fontFamily", json!(font));
+    set("brandFont", json!("TeX Gyre Adventor"));
     tokens
 }
 
