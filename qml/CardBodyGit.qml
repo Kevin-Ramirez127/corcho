@@ -5,6 +5,8 @@ CardFrame {
 
     property string url: (card.url) || ""
     property string errorText: ""
+    property bool refreshing: false
+    property double lastUpdated: 0
     readonly property var gitInfo: {
         try { return card.gitData ? card.gitData : {}; } catch (e) { return {}; }
     }
@@ -13,7 +15,26 @@ CardFrame {
 
     function refresh() {
         if (!root.app || !root.card) return;
-        if (root.url.trim() !== "") root.app.gitCardRefresh(root.card.id);
+        if (root.url.trim() === "") return;
+        root.refreshing = true;
+        root.app.gitCardRefresh(root.card.id);
+    }
+
+    Connections {
+        target: root.app
+        ignoreUnknownSignals: true
+        function onGitCardUpdated(cardId) {
+            if (cardId !== root.card.id) return;
+            root.refreshing = false;
+            root.lastUpdated = Date.now();
+        }
+    }
+
+    Timer {
+        interval: 15000
+        repeat: false
+        running: root.refreshing
+        onTriggered: root.refreshing = false
     }
 
     function relative(value) {
@@ -66,7 +87,8 @@ CardFrame {
             AppButton {
                 th: root.th
                 icon: "refresh-cw"
-                text: "Sync"
+                text: root.refreshing ? "Syncing" : "Sync"
+                enabledButton: !root.refreshing
                 onClicked: root.refresh()
             }
         }
@@ -169,6 +191,7 @@ CardFrame {
             visible: root.lastCommit.sha !== undefined
             text: (root.lastCommit.sha || "") + (root.lastCommit.author ? " · " + root.lastCommit.author : "")
                   + (root.lastCommit.date ? " · " + root.relative(root.lastCommit.date) : "")
+                  + (root.lastUpdated > 0 ? " · updated now" : "")
             color: root.th.muted
             elide: Text.ElideRight
             font.family: root.th.fontFamily

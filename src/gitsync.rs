@@ -168,11 +168,7 @@ impl GitSync {
             let _ = git(data_dir, &["config", "credential.helper", ""]);
             git(
                 data_dir,
-                &[
-                    "config",
-                    "credential.helper",
-                    "!gh auth git-credential",
-                ],
+                &["config", "credential.helper", "!gh auth git-credential"],
             )?;
             if https_remote {
                 let _ = git(data_dir, &["config", &rewrite_key, &config.remote]);

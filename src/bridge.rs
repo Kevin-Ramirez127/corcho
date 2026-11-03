@@ -88,6 +88,10 @@ pub mod qobject {
         fn ai_error(self: Pin<&mut Self>, id: QString, message: QString);
 
         #[qsignal]
+        #[cxx_name = "gitCardUpdated"]
+        fn git_card_updated(self: Pin<&mut Self>, card_id: QString);
+
+        #[qsignal]
         #[cxx_name = "notice"]
         fn notice(self: Pin<&mut Self>, kind: QString, message: QString);
 
@@ -1121,6 +1125,7 @@ impl qobject::AppController {
                     core.set_git_card_data(&id, &data);
                 }
                 q.as_mut().refresh_cards();
+                q.as_mut().git_card_updated(s(id.clone()));
             });
         });
     }
