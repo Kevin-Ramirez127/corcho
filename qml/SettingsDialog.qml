@@ -176,11 +176,21 @@ Item {
                             property bool hoveredNow: false
                             width: parent.width
                             height: 36
+                            activeFocusOnTab: true
+                            Accessible.role: Accessible.Button
+                            Accessible.name: modelData.label + " settings"
+                            Accessible.selected: root.tab === modelData.id
+                            Accessible.onPressAction: root.tab = modelData.id
+                            Keys.onSpacePressed: root.tab = modelData.id
+                            Keys.onReturnPressed: root.tab = modelData.id
+                            Keys.onEnterPressed: root.tab = modelData.id
 
                             Rectangle {
                                 anchors.fill: parent
                                 radius: root.th.radiusControl
                                 color: root.tab === modelData.id ? root.th.surfaceStrong : (tabItem.hoveredNow ? root.th.hover : "transparent")
+                                border.width: tabItem.activeFocus ? root.th.borderWidthFocus : 0
+                                border.color: root.th.accent
                             }
                             Row {
                                 anchors.left: parent.left
@@ -227,21 +237,54 @@ Item {
                         font.weight: root.th.fontWeightMedium
                     }
                     Item { width: parent.width - 70; height: 1 }
-                    Icon {
+                    Item {
+                        id: closeButton
+                        width: 28
+                        height: 28
                         anchors.verticalCenter: parent.verticalCenter
-                        name: "x"
-                        size: root.th.iconBody
-                        color: root.th.muted
+                        activeFocusOnTab: true
+                        Accessible.role: Accessible.Button
+                        Accessible.name: "Close settings"
+                        Accessible.onPressAction: root.closed()
+                        Keys.onSpacePressed: root.closed()
+                        Keys.onReturnPressed: root.closed()
+                        Keys.onEnterPressed: root.closed()
+
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: root.th.radiusControl
+                            color: "transparent"
+                            border.width: closeButton.activeFocus ? root.th.borderWidthFocus : 0
+                            border.color: root.th.accent
+                        }
+                        Icon {
+                            anchors.centerIn: parent
+                            name: "x"
+                            size: root.th.iconBody
+                            color: root.th.muted
+                        }
                         TapHandler { onTapped: root.closed() }
                     }
                 }
 
                 Flickable {
+                    id: settingsScroll
                     width: parent.width
                     height: parent.height - 44
                     clip: true
                     contentHeight: content.height
                     boundsBehavior: Flickable.StopAtBounds
+
+                    WheelHandler {
+                        onWheel: function(event) {
+                            var step = event.pixelDelta.y !== 0 ? event.pixelDelta.y : event.angleDelta.y;
+                            if (step === 0) return;
+                            settingsScroll.cancelFlick();
+                            settingsScroll.contentY = Math.max(0, Math.min(settingsScroll.contentHeight - settingsScroll.height,
+                                                                         settingsScroll.contentY - step));
+                            event.accepted = true;
+                        }
+                    }
 
                     Column {
                         id: content

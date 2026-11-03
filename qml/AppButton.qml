@@ -12,7 +12,6 @@ Item {
     property bool isHovered: false
 
     signal clicked()
-    focus: true
     activeFocusOnTab: true
     Accessible.role: Accessible.Button
     Accessible.name: root.text !== "" ? root.text : root.icon

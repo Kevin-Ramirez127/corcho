@@ -9,7 +9,6 @@ Item {
 
     signal toggled(bool value)
     property string accessibleName: ""
-    focus: true
     activeFocusOnTab: true
     Accessible.role: Accessible.CheckBox
     Accessible.name: root.accessibleName

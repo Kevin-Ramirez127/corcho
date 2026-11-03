@@ -154,14 +154,27 @@ Item {
             }
 
             Item {
+                id: collapseToggle
                 anchors.right: parent.right
                 anchors.rightMargin: root.collapsed ? 4 : 12
                 anchors.verticalCenter: parent.verticalCenter
                 width: 24
                 height: 24
+                activeFocusOnTab: true
                 Accessible.role: Accessible.Button
                 Accessible.name: root.collapsed ? "Expand sidebar" : "Collapse sidebar"
+                Accessible.onPressAction: root.toggleCollapsed()
+                Keys.onSpacePressed: root.toggleCollapsed()
+                Keys.onReturnPressed: root.toggleCollapsed()
+                Keys.onEnterPressed: root.toggleCollapsed()
 
+                Rectangle {
+                    anchors.fill: parent
+                    radius: root.th.radiusControl
+                    color: "transparent"
+                    border.width: collapseToggle.activeFocus ? root.th.borderWidthFocus : root.th.borderWidth
+                    border.color: collapseToggle.activeFocus ? root.th.accent : "transparent"
+                }
                 Icon {
                     anchors.centerIn: parent
                     name: "panel-left"
@@ -185,6 +198,16 @@ Item {
         contentHeight: listColumn.height
         boundsBehavior: Flickable.StopAtBounds
 
+        WheelHandler {
+            onWheel: function(event) {
+                var step = event.pixelDelta.y !== 0 ? event.pixelDelta.y : event.angleDelta.y;
+                if (step === 0) return;
+                list.cancelFlick();
+                list.contentY = Math.max(0, Math.min(list.contentHeight - list.height, list.contentY - step));
+                event.accepted = true;
+            }
+        }
+
         Column {
             id: listColumn
             width: list.width
@@ -197,8 +220,25 @@ Item {
                     width: listColumn.width
 
                     Item {
+                        id: folderHeader
                         width: parent.width
                         height: root.th.menuItemHeight
+                        activeFocusOnTab: true
+                        Accessible.role: Accessible.Button
+                        Accessible.name: modelData.name + (modelData.collapsed ? ", collapsed folder" : ", expanded folder")
+                        Accessible.onPressAction: root.app.toggleFolder(modelData.id)
+                        Keys.onSpacePressed: root.app.toggleFolder(modelData.id)
+                        Keys.onReturnPressed: root.app.toggleFolder(modelData.id)
+                        Keys.onEnterPressed: root.app.toggleFolder(modelData.id)
+
+                        Rectangle {
+                            anchors.fill: parent
+                            anchors.margins: 2
+                            radius: root.th.radiusControl
+                            color: "transparent"
+                            border.width: folderHeader.activeFocus ? root.th.borderWidthFocus : 0
+                            border.color: root.th.accent
+                        }
 
                         Row {
                             anchors.left: parent.left
@@ -266,6 +306,14 @@ Item {
 
             width: listColumn.width
             height: root.th.controlHeight
+            activeFocusOnTab: true
+            Accessible.role: Accessible.Button
+            Accessible.name: modelData.name + ", " + modelData.cards.length + " cards"
+            Accessible.selected: root.activeGridId === modelData.id
+            Accessible.onPressAction: root.gridSelected(row.modelData.id)
+            Keys.onSpacePressed: root.gridSelected(row.modelData.id)
+            Keys.onReturnPressed: root.gridSelected(row.modelData.id)
+            Keys.onEnterPressed: root.gridSelected(row.modelData.id)
 
             Rectangle {
                 anchors.fill: parent
@@ -273,6 +321,8 @@ Item {
                 anchors.rightMargin: root.th.space2
                 radius: root.th.radiusControl
                 color: root.activeGridId === modelData.id ? root.th.surfaceStrong : (row.hoveredNow ? root.th.hover : "transparent")
+                border.width: row.activeFocus ? root.th.borderWidthFocus : 0
+                border.color: root.th.accent
             }
 
             Row {

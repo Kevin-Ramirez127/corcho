@@ -31,9 +31,10 @@ ones. The High Contrast theme is the fallback for low-vision users.
 
 ## Focus and keyboard
 
-- Every button, field, toggle, select and menu row is tab-reachable.
+- Every button, field, toggle, select, sidebar row and settings tab is tab-reachable.
 - Focus is a 1.5–2 px ember ring, not a glow.
-- Space/Return activates buttons, toggles and selects.
+- Space/Return activates buttons, toggles, selects, sidebar rows and settings tabs.
+- Menus support Up/Down/Return/Escape, including nested submenu back navigation.
 - Escape closes overlays; Ctrl+K opens the Launcher; Ctrl+Z/Y undo/redo.
 
 ## Screen readers

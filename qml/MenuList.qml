@@ -17,6 +17,25 @@ Popup {
     modal: false
     focus: true
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+    property int currentIndex: 0
+
+    function firstSelectable() {
+        for (var i = 0; i < items.length; i++)
+            if (items[i] && items[i].separator !== true) return i;
+        return 0;
+    }
+
+    function moveCurrent(delta) {
+        if (items.length === 0) return;
+        var i = currentIndex;
+        for (var n = 0; n < items.length; n++) {
+            i = (i + delta + items.length) % items.length;
+            if (items[i] && items[i].separator !== true) {
+                currentIndex = i;
+                return;
+            }
+        }
+    }
 
     function place(px, py) {
         var w = areaW > 0 ? areaW : Screen.width;
@@ -28,18 +47,30 @@ Popup {
     function showAt(px, py) {
         stack = [];
         place(px, py);
+        currentIndex = firstSelectable();
         open();
     }
 
     function push(label, children) {
         stack = stack.concat([{ label: label, items: items }]);
         items = [{ label: label, icon: "chevron-left", action: "__back" }, { separator: true, label: "" }].concat(children);
+        currentIndex = firstSelectable();
     }
 
     function back() {
         if (stack.length === 0) return;
         items = stack[stack.length - 1].items;
         stack = stack.slice(0, stack.length - 1);
+        currentIndex = firstSelectable();
+    }
+
+    Keys.onUpPressed: menu.moveCurrent(-1)
+    Keys.onDownPressed: menu.moveCurrent(1)
+    Keys.onReturnPressed: menu.activate(menu.currentIndex)
+    Keys.onEnterPressed: menu.activate(menu.currentIndex)
+    Keys.onEscapePressed: {
+        if (menu.stack.length > 0) menu.back();
+        else menu.close();
     }
 
     function activate(index) {
@@ -79,6 +110,10 @@ Popup {
 
                 width: menu.width - menu.padding * 2
                 height: actionData.separator ? menu.th.space2 : menu.th.menuItemHeight
+                Accessible.role: actionData.separator === true ? Accessible.Separator : Accessible.MenuItem
+                Accessible.name: actionData.separator === true ? "" : (actionData.label || "")
+                Accessible.selected: menu.currentIndex === row.index
+                Accessible.onPressAction: if (actionData.separator !== true) menu.activate(row.index)
 
                 Rectangle {
                     visible: actionData.separator === true
@@ -92,7 +127,7 @@ Popup {
                     visible: actionData.separator !== true
                     anchors.fill: parent
                     radius: menu.th.radiusKeycap
-                    color: row.hoveredNow ? menu.th.hover : "transparent"
+                    color: (row.hoveredNow || menu.currentIndex === row.index) ? menu.th.hover : "transparent"
                 }
 
                 Row {

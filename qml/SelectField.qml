@@ -9,7 +9,6 @@ Item {
     property string placeholder: "Select"
 
     signal selected(string value)
-    focus: true
     activeFocusOnTab: true
     Accessible.role: Accessible.Button
     Accessible.name: root.current ? root.current.label : root.placeholder
