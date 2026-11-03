@@ -64,6 +64,18 @@ ApplicationWindow {
     property bool onboardingDismissed: false
     property bool sidebarCollapsed: false
 
+    // True while a dialog, wizard or popup covers the canvas. The canvas
+    // ignores wheel and navigation input so it cannot scroll behind a modal.
+    readonly property bool modalOpen: launcher.opened
+        || settingsOpen
+        || onboarding.opened
+        || gitWizard.opened
+        || templatesDialog.opened
+        || dateLinkDialog.opened
+        || calendarManager.opened
+        || prompt.opened
+        || contextMenu.visible
+
     property var menuActions: []
     property var menuCard: null
     property string promptKind: ""
@@ -474,6 +486,7 @@ ApplicationWindow {
                 th: root.th
                 settings: root.settings
                 cards: root.cards
+                modalOpen: root.modalOpen
                 onMenuRequested: function (card, x, y) { root.openCardMenu(card, x, y) }
                 onDateLinkRequested: function (cardId, itemId, linkId, date) {
                     dateLinkDialog.openFor(cardId, itemId, linkId, date);
