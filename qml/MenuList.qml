@@ -14,7 +14,7 @@ Popup {
 
     width: 224
     padding: 8
-    modal: false
+    modal: true
     focus: true
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
     property int currentIndex: 0
@@ -174,9 +174,10 @@ Popup {
 
                 HoverHandler { onHoveredChanged: row.hoveredNow = hovered }
 
-                TapHandler {
+                MouseArea {
+                    anchors.fill: parent
                     enabled: actionData.separator !== true
-                    onTapped: menu.activate(row.index)
+                    onClicked: menu.activate(row.index)
                 }
             }
         }
