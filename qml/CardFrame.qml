@@ -6,6 +6,8 @@ FocusScope {
     property var app
     property var th
     property var card
+    // The owning CanvasView, used by bodies that need to override global UI.
+    property var canvasView: null
     readonly property var settings: {
         try { return JSON.parse(root.app.settingsJson); } catch (e) { return ({}); }
     }

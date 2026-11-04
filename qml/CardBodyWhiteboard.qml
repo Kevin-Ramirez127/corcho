@@ -20,6 +20,12 @@ CardFrame {
     // The card's drag handler is what normally owns the cursor, so it has to
     // blank it out too while the drawing cursor is shown.
     dragCursorShape: root.cursorInside ? Qt.BlankCursor : Qt.SizeAllCursor
+    onCursorInsideChanged: {
+        if (root.canvasView) root.canvasView.hidePointer = root.cursorInside;
+    }
+    Component.onDestruction: {
+        if (root.canvasView) root.canvasView.hidePointer = false;
+    }
 
     function syncFromCard() {
         if (!root.card) return;
@@ -101,59 +107,70 @@ CardFrame {
     Column {
         anchors.fill: parent
         spacing: root.th.spaceCompact
-        Row {
-            spacing: root.th.spaceCompact
-            Repeater {
-                model: [root.th.accent, root.th.text, "#86b78a", "#7aa2f7", root.th.danger]
+        Item {
+            id: toolbar
+            width: parent.width
+            height: Math.max(16, root.th.iconBody)
 
-                delegate: Item {
-                    required property var modelData
-                    width: 16
-                    height: 16
+            Row {
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: root.th.spaceCompact
 
-                    Rectangle {
-                        anchors.fill: parent
-                        radius: root.th.radiusControl
-                        color: modelData
-                        border.width: root.penColor === modelData ? 2 : 0
-                        border.color: root.th.text
-                    }
-                    TapHandler {
-                        onTapped: {
-                            root.penColor = modelData;
-                            root.tool = "draw";
-                            root.persist();
+                Repeater {
+                    model: [root.th.accent, root.th.text, "#86b78a", "#7aa2f7", root.th.danger]
+
+                    delegate: Item {
+                        required property var modelData
+                        width: 16
+                        height: 16
+
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: root.th.radiusControl
+                            color: modelData
+                            border.width: root.penColor === modelData ? 2 : 0
+                            border.color: root.th.text
+                        }
+                        TapHandler {
+                            onTapped: {
+                                root.penColor = modelData;
+                                root.tool = "draw";
+                                root.persist();
+                            }
                         }
                     }
                 }
-            }
 
-            Item { width: 6; height: 1 }
+                Item { width: 6; height: 1 }
 
-            Icon {
-                name: "pencil"
-                size: root.th.iconBody
-                color: root.tool === "draw" ? root.th.accent : root.th.muted
-                TapHandler {
-                    onTapped: root.tool = "draw"
+                Icon {
+                    name: "pencil"
+                    size: root.th.iconBody
+                    color: root.tool === "draw" ? root.th.accent : root.th.muted
+                    TapHandler {
+                        onTapped: root.tool = "draw"
+                    }
+                }
+
+                Icon {
+                    name: "eraser"
+                    size: root.th.iconBody
+                    color: root.tool === "erase" ? root.th.accent : root.th.muted
+                    TapHandler {
+                        onTapped: root.tool = "erase"
+                    }
                 }
             }
 
+            // Clear is kept at the far right, away from the drawing tools.
             Icon {
-                name: "eraser"
-                size: root.th.iconBody
-                color: root.tool === "erase" ? root.th.accent : root.th.muted
-                TapHandler {
-                    onTapped: root.tool = "erase"
-                }
-            }
-
-            Item { width: 6; height: 1 }
-
-            Icon {
+                objectName: "clearStrokes"
                 name: "trash-2"
                 size: root.th.iconBody
                 color: root.th.muted
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
                 TapHandler {
                     onTapped: {
                         root.strokes = [];
@@ -167,7 +184,7 @@ CardFrame {
         Canvas {
             id: canvas
             width: parent.width
-            height: parent.height - 26
+            height: parent.height - toolbar.height - root.th.spaceCompact
             renderStrategy: Canvas.Cooperative
 
             onPaint: {

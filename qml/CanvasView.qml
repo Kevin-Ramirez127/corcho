@@ -115,6 +115,8 @@ Item {
     property bool panning: false
     property bool syncingModel: false
     property bool modalOpen: false
+    // Set by card bodies that display their own cursor over the canvas.
+    property bool hidePointer: false
 
     ListModel { id: cardModel }
 
@@ -499,6 +501,7 @@ Item {
                     item.card = card;
                     item.app = Qt.binding(function () { return root.app; });
                     item.th = Qt.binding(function () { return root.th; });
+                    item.canvasView = root;
                     item.gridId = Qt.binding(function () { return root.app.activeGridId; });
                     if (cardLoader.card.type === "website")
                         item.webProfile = Qt.binding(function () { return root.webProfile; });
@@ -597,7 +600,9 @@ Item {
         acceptedButtons: Qt.MiddleButton
         property point lastPoint
         property bool active: false
-        cursorShape: active ? Qt.ClosedHandCursor : Qt.ArrowCursor
+        cursorShape: root.hidePointer
+            ? Qt.BlankCursor
+            : (active ? Qt.ClosedHandCursor : Qt.ArrowCursor)
 
         onPressed: function (mouse) {
             if (!root.activeFocus) root.forceActiveFocus();
