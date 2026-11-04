@@ -536,6 +536,17 @@ Item {
                                     onToggled: function (value) { root.set("show_card_tooltips", value); }
                                 }
                             }
+                            SettingRow {
+                                th: root.th
+                                title: "Stylus pressure"
+                                description: "Vary whiteboard stroke width with pen pressure."
+                                ToggleSwitch {
+                                    objectName: "whiteboardPressure"
+                                    th: root.th
+                                    checked: root.val("whiteboard_pressure", true)
+                                    onToggled: function (value) { root.set("whiteboard_pressure", value); }
+                                }
+                            }
                         }
 
                         // ── Appearance ──────────────────────────────────────

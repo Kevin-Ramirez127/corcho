@@ -225,6 +225,26 @@ Item {
         app.saveNow();
     }
 
+    function cardAtWorld(wx, wy) {
+        var cards = root.cards || [];
+        for (var i = 0; i < cards.length; i++) {
+            var card = cards[i];
+            if (wx >= card.x && wx <= card.x + card.width
+                    && wy >= card.y && wy <= card.y + card.height)
+                return card;
+        }
+        return null;
+    }
+
+    // Shared by right-click and the pen long-press so both open the exact
+    // same creation menu at the same spot.
+    function requestBackgroundMenu(px, py) {
+        var g = root.mapToItem(null, px, py);
+        var z = Math.max(0.2, root.app.zoom);
+        root.backgroundMenuRequested(g.x, g.y,
+            (px - root.app.panX) / z, (py - root.app.panY) / z);
+    }
+
     Rectangle {
         anchors.fill: parent
         color: root.th.bg
@@ -430,11 +450,8 @@ Item {
                 ripple.y = mouse.y - 24;
                 rippleAnim.restart();
             }
-            if (mouse.button === Qt.RightButton) {
-                var g = root.mapToItem(null, mouse.x, mouse.y);
-                var z = Math.max(0.2, root.app.zoom);
-                root.backgroundMenuRequested(g.x, g.y, (mouse.x - root.app.panX) / z, (mouse.y - root.app.panY) / z);
-            }
+            if (mouse.button === Qt.RightButton)
+                root.requestBackgroundMenu(mouse.x, mouse.y);
         }
         onDoubleClicked: function (mouse) {
             var z = Math.max(0.2, root.app.zoom);
@@ -457,6 +474,23 @@ Item {
                 && (!root.settings || root.settings.trackpad_pan !== false);
             if (!wantPan) root.zoomAt(wheel.angleDelta.y > 0 ? 1.12 : 0.89, wheel.x, wheel.y);
             else root.app.setView(root.app.panX - wheel.angleDelta.x * 0.7, root.app.panY - wheel.angleDelta.y * 0.7, root.app.zoom);
+        }
+
+        // Pen-only long press on empty canvas opens the creation menu, the
+        // same one right-click uses. Presses that land on a card are ignored,
+        // and TapHandler's drag threshold cancels the hold if the pen moves.
+        TapHandler {
+            objectName: "penLongPress"
+            acceptedDevices: PointerDevice.Pen
+            acceptedButtons: Qt.LeftButton
+            longPressThreshold: 800
+            onLongPressed: function (point) {
+                var z = Math.max(0.2, root.app.zoom);
+                var wx = (point.position.x - root.app.panX) / z;
+                var wy = (point.position.y - root.app.panY) / z;
+                if (root.cardAtWorld(wx, wy)) return;
+                root.requestBackgroundMenu(point.position.x, point.position.y);
+            }
         }
     }
 
