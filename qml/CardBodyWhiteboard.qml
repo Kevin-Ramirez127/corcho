@@ -12,6 +12,11 @@ CardFrame {
     property bool erasing: false
     property bool eraseDirty: false
     readonly property real eraserRadius: 10
+    // True only while the pointer is actually over the drawing canvas, so the
+    // custom cursor disappears as soon as it leaves the drawing area.
+    readonly property bool cursorInside: mouseArea.containsMouse
+        && mouseArea.mouseX >= 0 && mouseArea.mouseX <= mouseArea.width
+        && mouseArea.mouseY >= 0 && mouseArea.mouseY <= mouseArea.height
 
     function syncFromCard() {
         if (!root.card) return;
@@ -188,8 +193,10 @@ CardFrame {
             }
 
             MouseArea {
+                id: mouseArea
                 anchors.fill: parent
-                cursorShape: root.tool === "erase" ? Qt.CrossCursor : Qt.ArrowCursor
+                hoverEnabled: true
+                cursorShape: root.cursorInside ? Qt.BlankCursor : Qt.ArrowCursor
                 onPressed: function (mouse) {
                     if (root.tool === "erase") {
                         root.erasing = true;
@@ -239,6 +246,35 @@ CardFrame {
                     root.eraseDirty = false;
                     root.current = [];
                     canvas.requestPaint();
+                }
+
+                // Pencil cursor: a dot matching the current stroke size.
+                Rectangle {
+                    objectName: "pencilCursor"
+                    visible: root.cursorInside && root.tool === "draw"
+                    width: Math.max(1, root.penWidth)
+                    height: width
+                    radius: width / 2
+                    color: root.penColor
+                    antialiasing: true
+                    x: mouseArea.mouseX - width / 2
+                    y: mouseArea.mouseY - height / 2
+                }
+
+                // Eraser cursor: an empty circle matching the eraser size.
+                Rectangle {
+                    objectName: "eraserCursor"
+                    visible: root.cursorInside && root.tool === "erase"
+                    width: Math.max(4, root.eraserRadius * 2)
+                    height: width
+                    radius: width / 2
+                    color: "transparent"
+                    border.width: 1
+                    border.color: root.th.text
+                    opacity: 0.9
+                    antialiasing: true
+                    x: mouseArea.mouseX - width / 2
+                    y: mouseArea.mouseY - height / 2
                 }
             }
         }
