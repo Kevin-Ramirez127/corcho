@@ -25,6 +25,8 @@ FocusScope {
     property bool cardHovered: false
     property bool menuHovered: false
     property bool resizeHovered: false
+    // Bodies can override the cursor shown while the card is draggable.
+    property int dragCursorShape: Qt.SizeAllCursor
     property real parallaxX: 0
     property real parallaxY: 0
 
@@ -308,7 +310,7 @@ FocusScope {
             target: null
             enabled: !root.card.locked && !root.editingTitle
             grabPermissions: PointerHandler.CanTakeOverFromAnything
-            cursorShape: Qt.SizeAllCursor
+            cursorShape: root.dragCursorShape
             property real lastX: 0
             property real lastY: 0
             property real totalX: 0

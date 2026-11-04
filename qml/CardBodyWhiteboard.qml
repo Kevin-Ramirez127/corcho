@@ -17,6 +17,9 @@ CardFrame {
     readonly property bool cursorInside: mouseArea.containsMouse
         && mouseArea.mouseX >= 0 && mouseArea.mouseX <= mouseArea.width
         && mouseArea.mouseY >= 0 && mouseArea.mouseY <= mouseArea.height
+    // The card's drag handler is what normally owns the cursor, so it has to
+    // blank it out too while the drawing cursor is shown.
+    dragCursorShape: root.cursorInside ? Qt.BlankCursor : Qt.SizeAllCursor
 
     function syncFromCard() {
         if (!root.card) return;
