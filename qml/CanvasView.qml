@@ -245,6 +245,10 @@ Item {
             (px - root.app.panX) / z, (py - root.app.panY) / z);
     }
 
+    function longPressMenuEnabled() {
+        return !root.settings || root.settings.canvas_long_press_menu !== false;
+    }
+
     Rectangle {
         anchors.fill: parent
         color: root.th.bg
@@ -400,9 +404,30 @@ Item {
         cursorShape: panning ? Qt.ClosedHandCursor : Qt.ArrowCursor
         property point lastPoint
         property bool panning: false
+        property point pressPoint: Qt.point(0, 0)
+        // Kept set until the next press so the release that follows an
+        // already-opened menu does not also fire the ripple/click path.
+        property bool longPressFired: false
+
+        Timer {
+            id: longPressTimer
+            interval: 800
+            repeat: false
+            onTriggered: {
+                if (!background.pressed || background.panning) return;
+                var z = Math.max(0.2, root.app.zoom);
+                var wx = (background.pressPoint.x - root.app.panX) / z;
+                var wy = (background.pressPoint.y - root.app.panY) / z;
+                if (root.cardAtWorld(wx, wy)) return;
+                background.longPressFired = true;
+                root.requestBackgroundMenu(background.pressPoint.x, background.pressPoint.y);
+            }
+        }
 
         onPressed: function (mouse) {
             if (!root.activeFocus) root.forceActiveFocus();
+            longPressTimer.stop();
+            longPressFired = false;
             lastPoint = Qt.point(mouse.x, mouse.y);
             var pan = mouse.button === Qt.MiddleButton
                 || (mouse.button === Qt.LeftButton && (mouse.modifiers & Qt.ShiftModifier));
@@ -410,6 +435,8 @@ Item {
             root.panning = pan;
             if (pan) return;
             if (mouse.button === Qt.LeftButton) {
+                pressPoint = Qt.point(mouse.x, mouse.y);
+                if (root.longPressMenuEnabled()) longPressTimer.restart();
                 root.marqueeActive = true;
                 root.marqueeStart = Qt.point(mouse.x, mouse.y);
                 root.marqueeRect = Qt.rect(mouse.x, mouse.y, 0, 0);
@@ -424,6 +451,11 @@ Item {
                 root.app.setView(root.app.panX + dx, root.app.panY + dy, root.app.zoom);
                 return;
             }
+            if (longPressTimer.running) {
+                var mdx = mouse.x - pressPoint.x;
+                var mdy = mouse.y - pressPoint.y;
+                if (mdx * mdx + mdy * mdy > 100) longPressTimer.stop();
+            }
             if (!root.marqueeActive) return;
             var x0 = Math.max(0, Math.min(root.marqueeStart.x, mouse.x));
             var y0 = Math.max(0, Math.min(root.marqueeStart.y, mouse.y));
@@ -432,6 +464,7 @@ Item {
             root.marqueeRect = Qt.rect(x0, y0, x1 - x0, y1 - y0);
         }
         onReleased: {
+            longPressTimer.stop();
             if (panning) root.app.saveNow();
             panning = false;
             root.panning = false;
@@ -444,7 +477,9 @@ Item {
                 minimapHideTimer.restart();
             }
         }
+        onCanceled: longPressTimer.stop()
         onClicked: function (mouse) {
+            if (mouse.button === Qt.LeftButton && longPressFired) return;
             if (mouse.button === Qt.LeftButton && root.settings && root.settings.grid_ripple && !root.settings.reduced_motion) {
                 ripple.x = mouse.x - 24;
                 ripple.y = mouse.y - 24;
@@ -474,23 +509,6 @@ Item {
                 && (!root.settings || root.settings.trackpad_pan !== false);
             if (!wantPan) root.zoomAt(wheel.angleDelta.y > 0 ? 1.12 : 0.89, wheel.x, wheel.y);
             else root.app.setView(root.app.panX - wheel.angleDelta.x * 0.7, root.app.panY - wheel.angleDelta.y * 0.7, root.app.zoom);
-        }
-
-        // Pen-only long press on empty canvas opens the creation menu, the
-        // same one right-click uses. Presses that land on a card are ignored,
-        // and TapHandler's drag threshold cancels the hold if the pen moves.
-        TapHandler {
-            objectName: "penLongPress"
-            acceptedDevices: PointerDevice.Pen
-            acceptedButtons: Qt.LeftButton
-            longPressThreshold: 800
-            onLongPressed: function (point) {
-                var z = Math.max(0.2, root.app.zoom);
-                var wx = (point.position.x - root.app.panX) / z;
-                var wy = (point.position.y - root.app.panY) / z;
-                if (root.cardAtWorld(wx, wy)) return;
-                root.requestBackgroundMenu(point.position.x, point.position.y);
-            }
         }
     }
 

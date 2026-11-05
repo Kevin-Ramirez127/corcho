@@ -305,9 +305,15 @@ CardFrame {
 
         Canvas {
             id: canvas
+            objectName: "whiteboardCanvas"
             width: parent.width
             height: parent.height - toolbar.height - root.th.spaceCompact
             renderStrategy: Canvas.Cooperative
+            // Resizing the card grows or shrinks the drawing area. Repainting
+            // at the new size keeps strokes at their original coordinates
+            // instead of letting Qt scale the old raster buffer.
+            onWidthChanged: requestPaint()
+            onHeightChanged: requestPaint()
 
             onPaint: {
                 var ctx = getContext("2d");
