@@ -1736,9 +1736,9 @@ mod tests {
         assert_eq!(stroke_count(&core, &card.id), 1);
 
         // Erasing removes every stroke in one checkpoint.
-        assert!(core.update_card_json(
-            &json!({"id": card.id, "payload": {"strokes": []}}).to_string()
-        ));
+        assert!(
+            core.update_card_json(&json!({"id": card.id, "payload": {"strokes": []}}).to_string())
+        );
         assert_eq!(stroke_count(&core, &card.id), 0);
 
         assert!(core.undo());
