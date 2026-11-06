@@ -35,6 +35,11 @@ CardFrame {
             clip: true
             onActiveFocusChanged: if (!activeFocus) root.commit({ script: text, lastOutput: root.output })
 
+            TapHandler {
+                acceptedButtons: Qt.LeftButton
+                onTapped: root.requestBodySelect(point.modifiers)
+            }
+
             Text {
                 anchors.fill: parent
                 visible: editor.text.length === 0
@@ -65,6 +70,11 @@ CardFrame {
             font.pixelSize: root.th.fontSizeSmall
             wrapMode: TextEdit.WrapAnywhere
             clip: true
+
+            TapHandler {
+                acceptedButtons: Qt.LeftButton
+                onTapped: root.requestBodySelect(point.modifiers)
+            }
 
             Text {
                 anchors.fill: parent

@@ -536,6 +536,28 @@ Item {
                                     onToggled: function (value) { root.set("show_card_tooltips", value); }
                                 }
                             }
+                            SettingRow {
+                                th: root.th
+                                title: "Stylus pressure"
+                                description: "Vary whiteboard stroke width with pen pressure."
+                                ToggleSwitch {
+                                    objectName: "whiteboardPressure"
+                                    th: root.th
+                                    checked: root.val("whiteboard_pressure", true)
+                                    onToggled: function (value) { root.set("whiteboard_pressure", value); }
+                                }
+                            }
+                            SettingRow {
+                                th: root.th
+                                title: "Long-press menu"
+                                description: "Hold on empty canvas to open the creation menu."
+                                ToggleSwitch {
+                                    objectName: "canvasLongPressMenu"
+                                    th: root.th
+                                    checked: root.val("canvas_long_press_menu", true)
+                                    onToggled: function (value) { root.set("canvas_long_press_menu", value); }
+                                }
+                            }
                         }
 
                         // ── Appearance ──────────────────────────────────────

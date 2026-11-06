@@ -6,6 +6,8 @@ FocusScope {
     property var app
     property var th
     property var card
+    // The owning CanvasView, used by bodies that need to override global UI.
+    property var canvasView: null
     readonly property var settings: {
         try { return JSON.parse(root.app.settingsJson); } catch (e) { return ({}); }
     }
@@ -25,6 +27,8 @@ FocusScope {
     property bool cardHovered: false
     property bool menuHovered: false
     property bool resizeHovered: false
+    // Bodies can override the cursor shown while the card is draggable.
+    property int dragCursorShape: Qt.SizeAllCursor
     property real parallaxX: 0
     property real parallaxY: 0
 
@@ -113,6 +117,29 @@ FocusScope {
 
     function snapValue(value) {
         return (root.settings && root.settings.grid_magnetic) ? Math.round(value / 32) * 32 : value;
+    }
+
+    // Text editors inside card bodies consume mouse presses for caret
+    // placement, so the card's own TapHandler never sees those clicks. Bodies
+    // call this from a TapHandler on their editor to select the card.
+    // `modifiers` must come from the handler's point (a QQuickHandlerPoint),
+    // because the tapped signal argument is a QEventPoint without modifiers.
+    //
+    // A tap can reach both the card handler and a body handler; the first one
+    // wins so an additive click doesn't toggle the selection twice.
+    property bool tapSelectHandled: false
+
+    function applyTapSelection(modifiers) {
+        if (tapSelectHandled) return;
+        tapSelectHandled = true;
+        // Clear after the current event loop so the other handler that saw the
+        // same tap is ignored, while the next click starts fresh.
+        Qt.callLater(function () { root.tapSelectHandled = false; });
+        root.selectRequested(!!(modifiers & Qt.ControlModifier));
+    }
+
+    function requestBodySelect(modifiers) {
+        root.applyTapSelection(modifiers);
     }
 
     function commitGeometry() {
@@ -308,7 +335,7 @@ FocusScope {
             target: null
             enabled: !root.card.locked && !root.editingTitle
             grabPermissions: PointerHandler.CanTakeOverFromAnything
-            cursorShape: Qt.SizeAllCursor
+            cursorShape: root.dragCursorShape
             property real lastX: 0
             property real lastY: 0
             property real totalX: 0
@@ -437,9 +464,7 @@ FocusScope {
 
     TapHandler {
         acceptedButtons: Qt.LeftButton
-        onTapped: function (point, button) {
-            root.selectRequested(!!(point.modifiers & Qt.ControlModifier));
-        }
+        onTapped: root.applyTapSelection(point.modifiers)
     }
 
     MouseArea {

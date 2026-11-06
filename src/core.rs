@@ -162,11 +162,11 @@ impl Core {
 
     /// Snapshot the pre-mutation state so undo can restore it.
     pub fn checkpoint(&mut self) {
-        self.history.push(&self.ws);
+        self.history.checkpoint(&self.ws);
     }
 
     pub fn undo(&mut self) -> bool {
-        if let Some(ws) = self.history.undo() {
+        if let Some(ws) = self.history.undo(&self.ws) {
             self.ws = ws;
             self.save_quiet();
             true
@@ -1705,5 +1705,46 @@ mod tests {
                 .str_field("fileKind", ""),
             "markdown"
         );
+    }
+
+    #[test]
+    fn whiteboard_stroke_changes_are_undoable() {
+        let mut core = Core::fallback();
+        let card = core.create_card("whiteboard", 0.0, 0.0).unwrap();
+        let stroke = json!({
+            "color": "#ffffff",
+            "width": 3,
+            "points": [{"x": 1, "y": 1}, {"x": 20, "y": 20}]
+        });
+        assert!(core.update_card_json(
+            &json!({
+                "id": card.id,
+                "payload": {"strokes": [stroke], "penColor": "#ffffff", "penWidth": 3}
+            })
+            .to_string()
+        ));
+
+        fn stroke_count(core: &Core, id: &str) -> usize {
+            core.ws
+                .card(id)
+                .and_then(|(_, c)| c.get("strokes"))
+                .and_then(|v| v.as_array())
+                .map(|a| a.len())
+                .unwrap_or(0)
+        }
+
+        assert_eq!(stroke_count(&core, &card.id), 1);
+
+        // Erasing removes every stroke in one checkpoint.
+        assert!(
+            core.update_card_json(&json!({"id": card.id, "payload": {"strokes": []}}).to_string())
+        );
+        assert_eq!(stroke_count(&core, &card.id), 0);
+
+        assert!(core.undo());
+        assert_eq!(stroke_count(&core, &card.id), 1);
+
+        assert!(core.redo());
+        assert_eq!(stroke_count(&core, &card.id), 0);
     }
 }

@@ -115,6 +115,8 @@ Item {
     property bool panning: false
     property bool syncingModel: false
     property bool modalOpen: false
+    // Set by card bodies that display their own cursor over the canvas.
+    property bool hidePointer: false
 
     ListModel { id: cardModel }
 
@@ -221,6 +223,30 @@ Item {
     function centerAt(wx, wy) {
         app.setView(width / 2 - wx * app.zoom, height / 2 - wy * app.zoom, app.zoom);
         app.saveNow();
+    }
+
+    function cardAtWorld(wx, wy) {
+        var cards = root.cards || [];
+        for (var i = 0; i < cards.length; i++) {
+            var card = cards[i];
+            if (wx >= card.x && wx <= card.x + card.width
+                    && wy >= card.y && wy <= card.y + card.height)
+                return card;
+        }
+        return null;
+    }
+
+    // Shared by right-click and the pen long-press so both open the exact
+    // same creation menu at the same spot.
+    function requestBackgroundMenu(px, py) {
+        var g = root.mapToItem(null, px, py);
+        var z = Math.max(0.2, root.app.zoom);
+        root.backgroundMenuRequested(g.x, g.y,
+            (px - root.app.panX) / z, (py - root.app.panY) / z);
+    }
+
+    function longPressMenuEnabled() {
+        return !root.settings || root.settings.canvas_long_press_menu !== false;
     }
 
     Rectangle {
@@ -378,9 +404,30 @@ Item {
         cursorShape: panning ? Qt.ClosedHandCursor : Qt.ArrowCursor
         property point lastPoint
         property bool panning: false
+        property point pressPoint: Qt.point(0, 0)
+        // Kept set until the next press so the release that follows an
+        // already-opened menu does not also fire the ripple/click path.
+        property bool longPressFired: false
+
+        Timer {
+            id: longPressTimer
+            interval: 800
+            repeat: false
+            onTriggered: {
+                if (!background.pressed || background.panning) return;
+                var z = Math.max(0.2, root.app.zoom);
+                var wx = (background.pressPoint.x - root.app.panX) / z;
+                var wy = (background.pressPoint.y - root.app.panY) / z;
+                if (root.cardAtWorld(wx, wy)) return;
+                background.longPressFired = true;
+                root.requestBackgroundMenu(background.pressPoint.x, background.pressPoint.y);
+            }
+        }
 
         onPressed: function (mouse) {
             if (!root.activeFocus) root.forceActiveFocus();
+            longPressTimer.stop();
+            longPressFired = false;
             lastPoint = Qt.point(mouse.x, mouse.y);
             var pan = mouse.button === Qt.MiddleButton
                 || (mouse.button === Qt.LeftButton && (mouse.modifiers & Qt.ShiftModifier));
@@ -388,6 +435,8 @@ Item {
             root.panning = pan;
             if (pan) return;
             if (mouse.button === Qt.LeftButton) {
+                pressPoint = Qt.point(mouse.x, mouse.y);
+                if (root.longPressMenuEnabled()) longPressTimer.restart();
                 root.marqueeActive = true;
                 root.marqueeStart = Qt.point(mouse.x, mouse.y);
                 root.marqueeRect = Qt.rect(mouse.x, mouse.y, 0, 0);
@@ -402,6 +451,11 @@ Item {
                 root.app.setView(root.app.panX + dx, root.app.panY + dy, root.app.zoom);
                 return;
             }
+            if (longPressTimer.running) {
+                var mdx = mouse.x - pressPoint.x;
+                var mdy = mouse.y - pressPoint.y;
+                if (mdx * mdx + mdy * mdy > 100) longPressTimer.stop();
+            }
             if (!root.marqueeActive) return;
             var x0 = Math.max(0, Math.min(root.marqueeStart.x, mouse.x));
             var y0 = Math.max(0, Math.min(root.marqueeStart.y, mouse.y));
@@ -410,6 +464,7 @@ Item {
             root.marqueeRect = Qt.rect(x0, y0, x1 - x0, y1 - y0);
         }
         onReleased: {
+            longPressTimer.stop();
             if (panning) root.app.saveNow();
             panning = false;
             root.panning = false;
@@ -422,17 +477,16 @@ Item {
                 minimapHideTimer.restart();
             }
         }
+        onCanceled: longPressTimer.stop()
         onClicked: function (mouse) {
+            if (mouse.button === Qt.LeftButton && longPressFired) return;
             if (mouse.button === Qt.LeftButton && root.settings && root.settings.grid_ripple && !root.settings.reduced_motion) {
                 ripple.x = mouse.x - 24;
                 ripple.y = mouse.y - 24;
                 rippleAnim.restart();
             }
-            if (mouse.button === Qt.RightButton) {
-                var g = root.mapToItem(null, mouse.x, mouse.y);
-                var z = Math.max(0.2, root.app.zoom);
-                root.backgroundMenuRequested(g.x, g.y, (mouse.x - root.app.panX) / z, (mouse.y - root.app.panY) / z);
-            }
+            if (mouse.button === Qt.RightButton)
+                root.requestBackgroundMenu(mouse.x, mouse.y);
         }
         onDoubleClicked: function (mouse) {
             var z = Math.max(0.2, root.app.zoom);
@@ -499,6 +553,7 @@ Item {
                     item.card = card;
                     item.app = Qt.binding(function () { return root.app; });
                     item.th = Qt.binding(function () { return root.th; });
+                    item.canvasView = root;
                     item.gridId = Qt.binding(function () { return root.app.activeGridId; });
                     if (cardLoader.card.type === "website")
                         item.webProfile = Qt.binding(function () { return root.webProfile; });
@@ -597,7 +652,9 @@ Item {
         acceptedButtons: Qt.MiddleButton
         property point lastPoint
         property bool active: false
-        cursorShape: active ? Qt.ClosedHandCursor : Qt.ArrowCursor
+        cursorShape: root.hidePointer
+            ? Qt.BlankCursor
+            : (active ? Qt.ClosedHandCursor : Qt.ArrowCursor)
 
         onPressed: function (mouse) {
             if (!root.activeFocus) root.forceActiveFocus();

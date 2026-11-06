@@ -165,8 +165,11 @@ CardFrame {
                     onHoveredChanged: checkItem.hoveredNow = hovered
                 }
                 TapHandler {
-                    onTapped: root.toggle(index)
                     acceptedButtons: Qt.LeftButton
+                    onTapped: {
+                        root.requestBodySelect(point.modifiers);
+                        root.toggle(index);
+                    }
                 }
                 TapHandler {
                     acceptedButtons: Qt.RightButton
@@ -186,6 +189,11 @@ CardFrame {
             onAccepted: {
                 root.addItem(text);
                 text = "";
+            }
+
+            TapHandler {
+                acceptedButtons: Qt.LeftButton
+                onTapped: root.requestBodySelect(point.modifiers)
             }
 
             Text {

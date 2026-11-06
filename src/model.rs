@@ -224,6 +224,8 @@ pub struct Settings {
     pub master_volume: i32,
     pub link_behavior: String,
     pub show_card_tooltips: bool,
+    pub whiteboard_pressure: bool,
+    pub canvas_long_press_menu: bool,
     pub ad_blocker: bool,
     pub web_shared_profile: bool,
     pub web_sleep_minutes: u32,
@@ -300,6 +302,8 @@ impl Default for Settings {
             master_volume: 50,
             link_behavior: "integrated".into(),
             show_card_tooltips: t(),
+            whiteboard_pressure: t(),
+            canvas_long_press_menu: t(),
             ad_blocker: false,
             web_shared_profile: t(),
             web_sleep_minutes: 10,
@@ -737,6 +741,21 @@ mod tests {
         assert!(settings.web_shared_profile);
         assert_eq!(settings.web_sleep_minutes, 10);
         assert!(!settings.low_memory_mode);
+    }
+
+    #[test]
+    fn whiteboard_pressure_defaults_on_for_old_workspaces() {
+        assert!(Settings::default().whiteboard_pressure);
+        // Settings written before the key existed must pick up the default.
+        let old: Settings = serde_json::from_str("{}").unwrap();
+        assert!(old.whiteboard_pressure);
+    }
+
+    #[test]
+    fn canvas_long_press_menu_defaults_on_for_old_workspaces() {
+        assert!(Settings::default().canvas_long_press_menu);
+        let old: Settings = serde_json::from_str("{}").unwrap();
+        assert!(old.canvas_long_press_menu);
     }
 
     #[test]

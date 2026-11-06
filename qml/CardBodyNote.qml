@@ -85,6 +85,15 @@ CardFrame {
                 }
             }
 
+            // The editor consumes mouse presses for caret placement, so the
+            // card's own TapHandler never sees clicks in the text area. Select
+            // the card from here as well, otherwise clicking a note's body
+            // leaves the previously selected card selected.
+            TapHandler {
+                acceptedButtons: Qt.LeftButton
+                onTapped: root.requestBodySelect(point.modifiers)
+            }
+
             Text {
                 anchors.fill: parent
                 visible: editor.text.length === 0

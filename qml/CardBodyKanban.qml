@@ -206,6 +206,10 @@ CardFrame {
                             HoverHandler { id: itemHover
                                 onHoveredChanged: kanbanItem.hoveredNow = hovered
                             }
+                            TapHandler {
+                                acceptedButtons: Qt.LeftButton
+                                onTapped: root.requestBodySelect(point.modifiers)
+                            }
                         }
                     }
 
@@ -220,6 +224,10 @@ CardFrame {
                         onAccepted: {
                             root.addItem(column.index, text);
                             text = "";
+                        }
+                        TapHandler {
+                            acceptedButtons: Qt.LeftButton
+                            onTapped: root.requestBodySelect(point.modifiers)
                         }
                         Text {
                             anchors.fill: parent

@@ -78,6 +78,8 @@ ApplicationWindow {
 
     property var menuActions: []
     property var menuCard: null
+    property var menuCardIds: []
+    property bool menuLockTarget: false
     property string promptKind: ""
     property var templateTarget: []
     property var menuGrid: null
@@ -134,19 +136,46 @@ ApplicationWindow {
 
     function openCardMenu(card, px, py) {
         menuCard = card;
+        var multi = canvas.selectedIds.length > 1;
+        var ids = multi ? canvas.selectedIds.slice() : [card.id];
+        if (ids.indexOf(card.id) < 0) ids.push(card.id);
+        menuCardIds = ids;
+
+        var selectedCards = [];
+        for (var c = 0; c < ids.length; c++) {
+            var selected = canvas.cardById(ids[c]);
+            if (selected) selectedCards.push(selected);
+        }
+        var allLocked = selectedCards.length > 0;
+        var allGrouped = selectedCards.length > 0;
+        var allSynced = selectedCards.length > 0;
+        for (var s = 0; s < selectedCards.length; s++) {
+            if (!selectedCards[s].locked) allLocked = false;
+            if (!selectedCards[s].group) allGrouped = false;
+            if (!selectedCards[s].syncId) allSynced = false;
+        }
+        menuLockTarget = !allLocked;
+
         var actions = [
-            { label: "Duplicate card", icon: "copy", action: "card:duplicate" },
-            { label: "Pin colour", icon: "palette", action: "card:color" },
-            { label: "Link date", icon: "calendar", action: "card:link-date" },
-            { label: card.locked ? "Unpin card" : "Pin card", icon: card.locked ? "pin-off" : "pin", action: "card:lock" }
+            { label: multi ? "Duplicate cards" : "Duplicate card", icon: "copy", action: "card:duplicate" },
+            { label: multi ? "Pin colours" : "Pin colour", icon: "palette", action: "card:color" }
         ];
-        if (canvas.selectedIds.length > 1)
+        if (!multi)
+            actions.push({ label: "Link date", icon: "calendar", action: "card:link-date" });
+        actions.push({
+            label: multi
+                ? (menuLockTarget ? "Pin cards" : "Unpin cards")
+                : (menuLockTarget ? "Pin card" : "Unpin card"),
+            icon: menuLockTarget ? "pin" : "pin-off",
+            action: "card:lock"
+        });
+        if (multi)
             actions.push({ label: "Create group", icon: "group", action: "card:group" });
-        if (card.group)
-            actions.push({ label: "Ungroup", icon: "ungroup", action: "card:ungroup" });
-        if (card.syncId) {
-            actions.push({ label: "Stop syncing", icon: "unlink", action: "card:unsync" });
-        } else {
+        if (allGrouped)
+            actions.push({ label: multi ? "Ungroup cards" : "Ungroup", icon: "ungroup", action: "card:ungroup" });
+        if (allSynced) {
+            actions.push({ label: multi ? "Stop syncing cards" : "Stop syncing", icon: "unlink", action: "card:unsync" });
+        } else if (!multi) {
             var syncTargets = [];
             for (var t = 0; t < allCards.length; t++) {
                 var other = allCards[t];
@@ -160,8 +189,12 @@ ApplicationWindow {
             if (syncTargets.length > 0)
                 actions.push({ label: "Sync with card", icon: "link", children: syncTargets });
         }
-        actions.push({ label: "Save as template", icon: "layout-template", action: "card:template" });
-        if (card.url)
+        actions.push({
+            label: multi ? "Save cards as template" : "Save as template",
+            icon: "layout-template",
+            action: "card:template"
+        });
+        if (!multi && card.url)
             actions.push({ label: "Open link", icon: "external-link", action: "card:open" });
         actions.push({ separator: true, label: "" });
         var sendTargets = [];
@@ -170,9 +203,14 @@ ApplicationWindow {
             sendTargets.push({ label: grids[i].name, icon: "arrow-right", action: "card:send:" + grids[i].id });
         }
         if (sendTargets.length > 0)
-            actions.push({ label: "Send to grid", icon: "arrow-right", children: sendTargets });
+            actions.push({ label: multi ? "Send cards to grid" : "Send to grid", icon: "arrow-right", children: sendTargets });
         actions.push({ separator: true, label: "" });
-        actions.push({ label: "Delete card", icon: "trash-2", action: "card:delete", danger: true });
+        actions.push({
+            label: multi ? "Delete cards" : "Delete card",
+            icon: "trash-2",
+            action: "card:delete",
+            danger: true
+        });
         showMenu(px, py, actions);
     }
 
@@ -217,34 +255,51 @@ ApplicationWindow {
         if (action === "templates") { templatesDialog.open(); return; }
 
         if (kind === "card" && menuCard) {
-            if (arg === "duplicate") app.duplicateCard(menuCard.id);
-            else if (arg === "color") {
+            var ids = root.menuCardIds.length > 0 ? root.menuCardIds.slice() : [menuCard.id];
+            var selectedCards = [];
+            for (var i = 0; i < ids.length; i++) {
+                var card = canvas.cardById(ids[i]);
+                if (card) selectedCards.push(card);
+            }
+            if (arg === "duplicate") {
+                for (var d = 0; d < ids.length; d++) app.duplicateCard(ids[d]);
+            } else if (arg === "color") {
                 var colors = ["#d98e5c", "#c9a86a", "#7aa2f7", "#86b78a", "#5aa8a0", "#d97a72", "#8d8d97"];
-                var at = colors.indexOf(menuCard.color);
-                app.updateCard(JSON.stringify({ id: menuCard.id, color: colors[(at + 1) % colors.length] }));
+                for (var c = 0; c < selectedCards.length; c++) {
+                    var at = colors.indexOf(selectedCards[c].color);
+                    app.updateCard(JSON.stringify({
+                        id: selectedCards[c].id,
+                        color: colors[(at + 1) % colors.length]
+                    }));
+                }
             } else if (arg === "link-date") {
                 dateLinkDialog.openFor(menuCard.id, "", "", "");
             } else if (arg === "lock") {
-                app.updateCard(JSON.stringify({ id: menuCard.id, locked: !menuCard.locked }));
+                for (var l = 0; l < ids.length; l++)
+                    app.updateCard(JSON.stringify({ id: ids[l], locked: root.menuLockTarget }));
             } else if (arg === "group") {
-                app.setCardGroup(JSON.stringify(canvas.selectedIds), "g" + Date.now());
+                app.setCardGroup(JSON.stringify(ids), "g" + Date.now());
             } else if (arg === "ungroup") {
-                app.setCardGroup(JSON.stringify([menuCard.id]), "");
+                app.setCardGroup(JSON.stringify(ids), "");
             } else if (arg === "unsync") {
-                app.unsyncCard(menuCard.id);
+                for (var u = 0; u < selectedCards.length; u++)
+                    if (selectedCards[u].syncId) app.unsyncCard(selectedCards[u].id);
             } else if (arg.indexOf("sync:") === 0) {
                 if (!app.syncCards(menuCard.id, arg.slice(5)))
                     toastHost.show("error", "Cards must be the same type");
             } else if (arg === "template") {
-                root.templateTarget = canvas.selectedIds.length > 0 ? canvas.selectedIds.slice() : [menuCard.id];
+                root.templateTarget = ids.slice();
                 root.promptKind = "template";
                 prompt.open("Save as template", "", "Template name");
             } else if (arg === "open") {
                 app.openExternal(menuCard.url);
             } else if (arg === "delete") {
-                app.deleteCard(menuCard.id);
+                for (var del = 0; del < ids.length; del++) app.deleteCard(ids[del]);
+                canvas.setSelection([]);
             } else if (arg.indexOf("send:") === 0) {
-                app.sendCardToGrid(menuCard.id, arg.slice(5));
+                var gridId = arg.slice(5);
+                for (var send = 0; send < ids.length; send++) app.sendCardToGrid(ids[send], gridId);
+                canvas.setSelection([]);
             }
             return;
         }
