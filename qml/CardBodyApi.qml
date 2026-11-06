@@ -106,6 +106,11 @@ CardFrame {
             wrapMode: TextEdit.WrapAnywhere
             clip: true
 
+            TapHandler {
+                acceptedButtons: Qt.LeftButton
+                onTapped: root.requestBodySelect(point.modifiers)
+            }
+
             Text {
                 anchors.fill: parent
                 visible: parent.text.length === 0
