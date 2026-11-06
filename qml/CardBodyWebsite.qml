@@ -352,8 +352,8 @@ CardFrame {
         root.view.runJavaScript(script, function (value) {
             root.debugOutput = String(value || "");
             setTimeout(function () {
-                if (root.view) root.view.runJavaScript("window.__corchoProbe || ''", function (final) {
-                    if (final) root.debugOutput = String(final);
+                if (root.view) root.view.runJavaScript("window.__corchoProbe || ''", function (probeResult) {
+                    if (probeResult) root.debugOutput = String(probeResult);
                 });
             }, 2500);
         });
