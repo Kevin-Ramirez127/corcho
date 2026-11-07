@@ -232,7 +232,7 @@ CardFrame {
         Item {
             id: toolbar
             width: parent.width
-            height: Math.max(16, root.th.iconBody)
+            height: Math.max(22, root.th.iconBody)
 
             Row {
                 anchors.left: parent.left
@@ -285,8 +285,42 @@ CardFrame {
                 }
             }
 
+            // Copy exposes the drawing as SVG markup or as the raw stroke
+            // list, so it can be reused in other tools.
+            Item {
+                id: copyButton
+                objectName: "copyWhiteboard"
+                width: 22
+                height: 22
+                anchors.right: clearButton.left
+                anchors.rightMargin: root.th.space1
+                anchors.verticalCenter: parent.verticalCenter
+                Accessible.role: Accessible.Button
+                Accessible.name: "Copy whiteboard"
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: root.th.radiusKeycap
+                    color: copyHover.hovered ? root.th.hover : "transparent"
+                }
+                Icon {
+                    anchors.centerIn: parent
+                    name: "copy"
+                    size: root.th.iconBody
+                    color: root.th.muted
+                }
+                HoverHandler { id: copyHover }
+                TapHandler {
+                    onTapped: {
+                        var p = copyButton.mapToItem(null, copyButton.width + 4, copyButton.height + 6);
+                        copyMenu.openAt(p.x, p.y);
+                    }
+                }
+            }
+
             // Clear is kept at the far right, away from the drawing tools.
             Icon {
+                id: clearButton
                 objectName: "clearStrokes"
                 name: "trash-2"
                 size: root.th.iconBody
@@ -373,6 +407,23 @@ CardFrame {
                 x: root.cursorPos.x - width / 2
                 y: root.cursorPos.y - height / 2
             }
+        }
+    }
+
+    ContextMenu {
+        id: copyMenu
+        parent: root.Window.window ? root.Window.window.contentItem : null
+        th: root.th
+        actions: [
+            { label: "Copy as SVG", icon: "code", action: "svg" },
+            { label: "Copy as Stroke", icon: "pencil", action: "stroke" }
+        ]
+        onTriggered: function (action) {
+            if (!root.app || !root.card) return;
+            if (action === "svg")
+                root.app.copyWhiteboardSvg(root.card.id, canvas.width, canvas.height);
+            else if (action === "stroke")
+                root.app.copyWhiteboardStrokes(root.card.id);
         }
     }
 }

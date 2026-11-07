@@ -307,6 +307,123 @@ impl Core {
         Some(card)
     }
 
+    /// Create a note card holding text pulled from the clipboard. The first
+    /// non-empty line doubles as the card title so the new card is identifiable
+    /// in the header and in search results.
+    pub fn create_text_card(&mut self, text: &str, x: f64, y: f64) -> Option<Card> {
+        if text.trim().is_empty() {
+            return None;
+        }
+        self.checkpoint();
+        let mut card = Card::new("note", x.round(), y.round());
+        populate_defaults(&mut card, &self.ws);
+        card.text = text.to_string();
+        card.title = text
+            .lines()
+            .map(str::trim)
+            .find(|line| !line.is_empty())
+            .map(|line| clip(line, 64))
+            .unwrap_or_default();
+        {
+            let grid = self.ws.active_grid_mut()?;
+            grid.cards.push(card.clone());
+        }
+        self.save_quiet();
+        Some(card)
+    }
+
+    /// Persist a clipboard image in the attachments folder and create a file
+    /// card that displays it.
+    pub fn create_image_card(
+        &mut self,
+        png: &[u8],
+        width: u32,
+        height: u32,
+        x: f64,
+        y: f64,
+    ) -> Result<Card> {
+        storage::ensure_dirs(&self.data_dir)?;
+        let name = unique_attachment_name(&self.data_dir, "Pasted image", "png");
+        let path = storage::write_attachment(&self.data_dir, &name, png)?;
+        self.checkpoint();
+        let mut card = Card::new("file", x.round(), y.round());
+        card.width = 420.0;
+        card.height = if width > 0 {
+            (420.0 * f64::from(height) / f64::from(width)).clamp(180.0, 720.0)
+        } else {
+            360.0
+        };
+        card.icon = "image".to_string();
+        card.title = "Pasted image".to_string();
+        card.set("path", json!(path.to_string_lossy()));
+        card.set("fileKind", json!("image"));
+        card.set("name", json!(name));
+        {
+            let grid = self
+                .ws
+                .active_grid_mut()
+                .ok_or_else(|| anyhow::anyhow!("grid not found"))?;
+            grid.cards.push(card.clone());
+        }
+        self.save_quiet();
+        Ok(card)
+    }
+
+    /// Persist pasted SVG markup in the attachments folder and create a file
+    /// card that displays it.
+    pub fn create_svg_card(&mut self, markup: &str, x: f64, y: f64) -> Result<Card> {
+        storage::ensure_dirs(&self.data_dir)?;
+        let name = unique_attachment_name(&self.data_dir, "Pasted drawing", "svg");
+        let path = storage::write_attachment(&self.data_dir, &name, markup.as_bytes())?;
+        self.checkpoint();
+        let mut card = Card::new("file", x.round(), y.round());
+        card.width = 420.0;
+        card.height = 360.0;
+        card.icon = "image".to_string();
+        card.title = "Pasted drawing".to_string();
+        card.set("path", json!(path.to_string_lossy()));
+        card.set("fileKind", json!("image"));
+        card.set("name", json!(name));
+        {
+            let grid = self
+                .ws
+                .active_grid_mut()
+                .ok_or_else(|| anyhow::anyhow!("grid not found"))?;
+            grid.cards.push(card.clone());
+        }
+        self.save_quiet();
+        Ok(card)
+    }
+
+    /// Build an SVG document for a whiteboard card so it can be copied to the
+    /// clipboard.
+    pub fn whiteboard_svg(&self, card_id: &str, width: f64, height: f64) -> Option<String> {
+        let (_, card) = self.ws.card(card_id)?;
+        if card.kind != "whiteboard" {
+            return None;
+        }
+        let strokes = card
+            .get("strokes")
+            .and_then(Value::as_array)
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
+        Some(crate::svg::strokes_to_svg(strokes, width, height))
+    }
+
+    /// Serialize a whiteboard card's raw stroke list for "Copy as Stroke".
+    pub fn whiteboard_strokes_json(&self, card_id: &str) -> Option<String> {
+        let (_, card) = self.ws.card(card_id)?;
+        if card.kind != "whiteboard" {
+            return None;
+        }
+        let strokes = card
+            .get("strokes")
+            .and_then(Value::as_array)
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
+        Some(crate::svg::strokes_to_json(strokes))
+    }
+
     pub fn update_card_json(&mut self, json_str: &str) -> bool {
         let Ok(value) = serde_json::from_str::<Value>(json_str) else {
             return false;
@@ -931,6 +1048,22 @@ fn file_kind(path: &std::path::Path) -> Option<&'static str> {
         "png" | "jpg" | "jpeg" | "webp" | "gif" | "bmp" | "svg" => Some("image"),
         "md" | "markdown" => Some("markdown"),
         _ => None,
+    }
+}
+
+fn unique_attachment_name(data_dir: &std::path::Path, base: &str, ext: &str) -> String {
+    let dir = storage::attachments_dir(data_dir);
+    let mut index = 1;
+    loop {
+        let name = if index == 1 {
+            format!("{base}.{ext}")
+        } else {
+            format!("{base} {index}.{ext}")
+        };
+        if !dir.join(&name).exists() {
+            return name;
+        }
+        index += 1;
     }
 }
 
@@ -1705,6 +1838,90 @@ mod tests {
                 .str_field("fileKind", ""),
             "markdown"
         );
+    }
+
+    #[test]
+    fn pasted_text_creates_a_note_card() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut core = Core::fallback();
+        core.data_dir = dir.path().to_path_buf();
+
+        let card = core.create_text_card("hello\nworld", 10.4, 20.6).unwrap();
+        assert_eq!(card.kind, "note");
+        assert_eq!(card.text, "hello\nworld");
+        assert_eq!(card.title, "hello");
+        assert_eq!((card.x, card.y), (10.0, 21.0));
+        assert!(core.ws.card(&card.id).is_some());
+
+        assert!(core.create_text_card("   \n", 0.0, 0.0).is_none());
+    }
+
+    #[test]
+    fn pasted_image_creates_a_file_card_and_attachment() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut core = Core::fallback();
+        core.data_dir = dir.path().to_path_buf();
+
+        let png = [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
+        let card = core.create_image_card(&png, 800, 600, 0.0, 0.0).unwrap();
+        assert_eq!(card.kind, "file");
+        assert_eq!(card.str_field("fileKind", ""), "image");
+        assert_eq!(card.str_field("name", ""), "Pasted image.png");
+        assert_eq!(card.title, "Pasted image");
+        assert_eq!((card.width, card.height), (420.0, 315.0));
+        let path = card.str_field("path", "");
+        assert_eq!(std::fs::read(&path).unwrap(), png);
+
+        let second = core.create_image_card(&png, 800, 600, 0.0, 0.0).unwrap();
+        assert_eq!(second.str_field("name", ""), "Pasted image 2.png");
+    }
+
+    #[test]
+    fn pasted_svg_creates_an_image_card() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut core = Core::fallback();
+        core.data_dir = dir.path().to_path_buf();
+
+        let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>"#;
+        let card = core.create_svg_card(svg, 1.2, 2.8).unwrap();
+        assert_eq!(card.kind, "file");
+        assert_eq!(card.str_field("fileKind", ""), "image");
+        assert_eq!(card.str_field("name", ""), "Pasted drawing.svg");
+        assert_eq!(card.title, "Pasted drawing");
+        assert_eq!((card.x, card.y), (1.0, 3.0));
+        let path = card.str_field("path", "");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), svg);
+
+        let second = core.create_svg_card(svg, 0.0, 0.0).unwrap();
+        assert_eq!(second.str_field("name", ""), "Pasted drawing 2.svg");
+    }
+
+    #[test]
+    fn whiteboard_exports_svg_and_stroke_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut core = Core::fallback();
+        core.data_dir = dir.path().to_path_buf();
+        let card = core.create_card("whiteboard", 0.0, 0.0).unwrap();
+        let strokes = json!([{
+            "color": "#d98e5c",
+            "width": 3,
+            "points": [{"x": 4, "y": 5}, {"x": 40, "y": 50}]
+        }]);
+        assert!(core.update_card_json(
+            &json!({"id": card.id, "payload": {"strokes": strokes}}).to_string()
+        ));
+
+        let svg = core.whiteboard_svg(&card.id, 300.0, 200.0).unwrap();
+        assert!(svg.contains("viewBox=\"0 0 300 200\""));
+        assert!(svg.contains("d=\"M 4 5 L 40 50\""));
+        assert!(svg.contains("stroke=\"#d98e5c\""));
+
+        let raw = core.whiteboard_strokes_json(&card.id).unwrap();
+        let parsed: Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(parsed, strokes);
+
+        assert!(core.whiteboard_svg("missing", 100.0, 100.0).is_none());
+        assert!(core.whiteboard_strokes_json("missing").is_none());
     }
 
     #[test]

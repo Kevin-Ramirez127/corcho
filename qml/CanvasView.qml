@@ -11,6 +11,11 @@ Item {
     property var selectedIds: []
     property string activeAiId: ""
     property real linkPhase: 0
+    // Last pointer position inside the canvas, in canvas coordinates. Used to
+    // place cards created by pasting from the clipboard.
+    property real hoverX: 0
+    property real hoverY: 0
+    property bool hoverValid: false
 
     function activateAi(id) {
         root.activeAiId = id;
@@ -225,6 +230,16 @@ Item {
         app.saveNow();
     }
 
+    function pasteClipboard() {
+        if (!root.app) return false;
+        var px = root.hoverValid ? root.hoverX : root.width / 2;
+        var py = root.hoverValid ? root.hoverY : root.height / 2;
+        var z = Math.max(0.2, root.app.zoom);
+        var wx = (px - root.app.panX) / z;
+        var wy = (py - root.app.panY) / z;
+        return String(root.app.pasteClipboard(wx, wy)) !== "empty";
+    }
+
     function cardAtWorld(wx, wy) {
         var cards = root.cards || [];
         for (var i = 0; i < cards.length; i++) {
@@ -293,6 +308,10 @@ Item {
 
     Keys.onPressed: function (event) {
         if (root.modalOpen) return;
+        if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_V) {
+            if (root.pasteClipboard()) event.accepted = true;
+            return;
+        }
         var step = (event.modifiers & Qt.ShiftModifier) ? 220 : 70;
         if (event.key === Qt.Key_Left) root.app.setView(root.app.panX + step, root.app.panY, root.app.zoom);
         else if (event.key === Qt.Key_Right) root.app.setView(root.app.panX - step, root.app.panY, root.app.zoom);
@@ -687,6 +706,16 @@ Item {
             if (!wantPan) root.zoomAt(wheel.angleDelta.y > 0 ? 1.12 : 0.89, wheel.x, wheel.y);
             else root.app.setView(root.app.panX - wheel.angleDelta.x * 0.7, root.app.panY - wheel.angleDelta.y * 0.7, root.app.zoom);
         }
+    }
+
+    HoverHandler {
+        id: canvasHover
+        onPointChanged: {
+            root.hoverX = point.position.x;
+            root.hoverY = point.position.y;
+            root.hoverValid = true;
+        }
+        onHoveredChanged: if (!hovered) root.hoverValid = false
     }
 
     Minimap {

@@ -127,6 +127,23 @@ pub mod qobject {
         fn create_card(self: Pin<&mut Self>, kind: &QString, x: f64, y: f64) -> QString;
 
         #[qinvokable]
+        #[cxx_name = "pasteClipboard"]
+        fn paste_clipboard(self: Pin<&mut Self>, x: f64, y: f64) -> QString;
+
+        #[qinvokable]
+        #[cxx_name = "copyWhiteboardSvg"]
+        fn copy_whiteboard_svg(
+            self: Pin<&mut Self>,
+            card_id: &QString,
+            width: f64,
+            height: f64,
+        ) -> bool;
+
+        #[qinvokable]
+        #[cxx_name = "copyWhiteboardStrokes"]
+        fn copy_whiteboard_strokes(self: Pin<&mut Self>, card_id: &QString) -> bool;
+
+        #[qinvokable]
         #[cxx_name = "updateCard"]
         fn update_card(self: Pin<&mut Self>, json: &QString) -> bool;
 
@@ -860,6 +877,84 @@ impl qobject::AppController {
         self.as_mut().refresh_all();
         card.map(|c| s(serde_json::to_string(&c).unwrap_or_default()))
             .unwrap_or_default()
+    }
+
+    pub fn paste_clipboard(mut self: Pin<&mut Self>, x: f64, y: f64) -> QString {
+        let content = crate::clipboard::read();
+        let created = {
+            let core_arc = self.as_ref().rust().core.clone();
+            let mut core = core_arc.lock().unwrap();
+            match content {
+                crate::clipboard::ClipboardContent::Empty => None,
+                crate::clipboard::ClipboardContent::Text(text) => {
+                    if let Some(markup) = crate::svg::extract_svg(&text) {
+                        Some(match core.create_svg_card(markup, x, y) {
+                            Ok(card) => serde_json::to_string(&card).unwrap_or_default(),
+                            Err(err) => {
+                                tracing::warn!("paste svg: {err}");
+                                format!("error:{err}")
+                            }
+                        })
+                    } else {
+                        core.create_text_card(&text, x, y)
+                            .map(|card| serde_json::to_string(&card).unwrap_or_default())
+                    }
+                }
+                crate::clipboard::ClipboardContent::Image { png, width, height } => {
+                    Some(match core.create_image_card(&png, width, height, x, y) {
+                        Ok(card) => serde_json::to_string(&card).unwrap_or_default(),
+                        Err(err) => {
+                            tracing::warn!("paste image: {err}");
+                            format!("error:{err}")
+                        }
+                    })
+                }
+            }
+        };
+        match created {
+            Some(result) => {
+                self.as_mut().refresh_all();
+                s(result)
+            }
+            None => s("empty"),
+        }
+    }
+
+    pub fn copy_whiteboard_svg(
+        mut self: Pin<&mut Self>,
+        card_id: &QString,
+        width: f64,
+        height: f64,
+    ) -> bool {
+        let svg = {
+            let core_arc = self.as_ref().rust().core.clone();
+            let core = core_arc.lock().unwrap();
+            core.whiteboard_svg(&p(card_id), width, height)
+        };
+        let copied = svg
+            .as_deref()
+            .map(crate::clipboard::write_text)
+            .unwrap_or(false);
+        if copied {
+            self.as_mut().toast(s("Copied whiteboard as SVG"));
+        }
+        copied
+    }
+
+    pub fn copy_whiteboard_strokes(mut self: Pin<&mut Self>, card_id: &QString) -> bool {
+        let strokes = {
+            let core_arc = self.as_ref().rust().core.clone();
+            let core = core_arc.lock().unwrap();
+            core.whiteboard_strokes_json(&p(card_id))
+        };
+        let copied = strokes
+            .as_deref()
+            .map(crate::clipboard::write_text)
+            .unwrap_or(false);
+        if copied {
+            self.as_mut().toast(s("Copied whiteboard strokes"));
+        }
+        copied
     }
 
     pub fn update_card(mut self: Pin<&mut Self>, json: &QString) -> bool {
