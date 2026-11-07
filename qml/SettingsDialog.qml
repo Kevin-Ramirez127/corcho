@@ -132,7 +132,15 @@ Item {
     Rectangle {
         anchors.fill: parent
         color: Qt.rgba(0, 0, 0, 0.55)
-        MouseArea { anchors.fill: parent; onClicked: root.closed() }
+        MouseArea {
+            id: dismissArea
+            anchors.fill: parent
+            onPressed: function(mouse) {
+                var p = panel.mapFromItem(dismissArea, mouse.x, mouse.y);
+                if (!panel.contains(p))
+                    root.closed();
+            }
+        }
     }
 
     Rectangle {
