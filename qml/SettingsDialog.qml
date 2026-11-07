@@ -224,23 +224,27 @@ Item {
                 width: parent.width - 216
                 height: parent.height
                 spacing: root.th.space3
-                Row {
+                Item {
                     width: parent.width
                     height: 40
 
                     Text {
+                        anchors.left: parent.left
+                        anchors.right: closeButton.left
+                        anchors.rightMargin: root.th.space2
                         anchors.verticalCenter: parent.verticalCenter
+                        elide: Text.ElideRight
                         text: ({ general: "General", interface: "Interface", appearance: "Appearance", data: "Data", ai: "AI", security: "Security", about: "About" })[root.tab]
                         color: root.th.text
                         font.family: root.th.fontFamily
                         font.pixelSize: root.th.fontSizePage
                         font.weight: root.th.fontWeightMedium
                     }
-                    Item { width: parent.width - 70; height: 1 }
                     Item {
                         id: closeButton
                         width: 28
                         height: 28
+                        anchors.right: parent.right
                         anchors.verticalCenter: parent.verticalCenter
                         activeFocusOnTab: true
                         Accessible.role: Accessible.Button
