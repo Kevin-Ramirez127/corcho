@@ -167,7 +167,7 @@ CardFrame {
                 TapHandler {
                     acceptedButtons: Qt.LeftButton
                     onTapped: {
-                        root.requestBodySelect(point.modifiers);
+                        root.requestBodySelect(point.modifiers, point.scenePosition.x, point.scenePosition.y);
                         root.toggle(index);
                     }
                 }
@@ -193,7 +193,7 @@ CardFrame {
 
             TapHandler {
                 acceptedButtons: Qt.LeftButton
-                onTapped: root.requestBodySelect(point.modifiers)
+                onTapped: root.requestBodySelect(point.modifiers, point.scenePosition.x, point.scenePosition.y)
             }
 
             Text {
