@@ -76,6 +76,7 @@ Item {
         property real space6: 24
         property real spaceCompact: 8
         property real spaceHalf: 4
+        property real menuItemHeight: 32
         property real spaceSnug: 10
         property color surface: "#1e1e1e"
     }
@@ -246,6 +247,30 @@ Item {
             wait(60);
             compare(loader.item.selectedIds.length, 1);
             compare(loader.item.selectedIds[0], "w");
+        }
+
+        function test_whiteboard_delete_requires_confirmation() {
+            setCards([{ id: "w", type: "whiteboard", x: 100, y: 100, width: 320, height: 260,
+                        title: "board", text: "", penWidth: 3, locked: false,
+                        strokes: [{ color: "#ffffff", width: 3,
+                                    points: [{ x: 10, y: 10 }, { x: 40, y: 40 }] }] }]);
+            var board = cardItem("w");
+            verify(board !== null);
+            compare(board.strokes.length, 1);
+
+            var clearButton = findChild(board, "clearStrokes");
+            verify(clearButton !== null);
+            mouseClick(clearButton, clearButton.width / 2, clearButton.height / 2);
+            wait(60);
+            // The content stays until the confirmation action is chosen.
+            compare(board.strokes.length, 1);
+
+            var menu = board.clearMenuPopup;
+            verify(menu !== null);
+            verify(menu.opened);
+            menu.activate(0);
+            wait(60);
+            compare(board.strokes.length, 0);
         }
 
         // Ctrl-click on a body must be additive just like the header.

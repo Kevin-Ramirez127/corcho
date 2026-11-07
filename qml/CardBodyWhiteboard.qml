@@ -6,6 +6,7 @@ CardFrame {
     property var strokes: []
     property string penColor: root.th ? root.th.accent : "#d98e5c"
     property real penWidth: 3
+    property alias clearMenuPopup: clearMenu
     property string tool: "draw"
     property var current: []
     property bool drawing: false
@@ -50,6 +51,12 @@ CardFrame {
 
     function persist() {
         root.commit({ strokes: root.strokes, penColor: root.penColor, penWidth: root.penWidth });
+    }
+
+    function clearContent() {
+        root.strokes = [];
+        root.persist();
+        canvas.requestPaint();
     }
 
     function distanceToSegmentSq(px, py, ax, ay, bx, by) {
@@ -324,14 +331,15 @@ CardFrame {
                 objectName: "clearStrokes"
                 name: "trash-2"
                 size: root.th.iconBody
+                width: 22
+                height: 22
                 color: root.th.muted
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
                 TapHandler {
                     onTapped: {
-                        root.strokes = [];
-                        root.persist();
-                        canvas.requestPaint();
+                        var p = clearButton.mapToItem(null, clearButton.width + 4, clearButton.height + 6);
+                        clearMenu.openAt(p.x, p.y);
                     }
                 }
             }
@@ -424,6 +432,26 @@ CardFrame {
                 root.app.copyWhiteboardSvg(root.card.id, canvas.width, canvas.height);
             else if (action === "stroke")
                 root.app.copyWhiteboardStrokes(root.card.id);
+        }
+    }
+
+    ContextMenu {
+        id: clearMenu
+        objectName: "whiteboardClearMenu"
+        parent: root.Window.window ? root.Window.window.contentItem : null
+        width: 260
+        th: root.th
+        actions: [
+            {
+                label: "Delete whiteboard content",
+                icon: "trash-2",
+                action: "clear",
+                danger: true,
+                dangerFill: true
+            }
+        ]
+        onTriggered: function (action) {
+            if (action === "clear") root.clearContent();
         }
     }
 }
