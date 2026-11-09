@@ -379,6 +379,56 @@ Item {
             compare(loader.item.selectedIds[0], "check");
         }
 
+        function checklistBody() {
+            var cardLoader = findChild(loader.item, "cardLoader_check");
+            verify(cardLoader !== null);
+            return cardLoader.item;
+        }
+
+        function test_checklist_date_button_does_not_complete_task() {
+            setCards([{ id: "check", type: "checklist", x: 100, y: 100, width: 300, height: 260,
+                        title: "tasks", text: "", locked: false,
+                        items: [{ id: "i1", text: "task one", done: false }] }]);
+            var body = checklistBody();
+            var dateButton = findChild(body, "checklistDate_0");
+            verify(dateButton !== null);
+
+            mouseClick(dateButton, dateButton.width / 2, dateButton.height / 2);
+            wait(60);
+            compare(body.items.length, 1);
+            compare(body.items[0].done, false);
+        }
+
+        function test_checklist_remove_button_removes_task() {
+            setCards([{ id: "check", type: "checklist", x: 100, y: 100, width: 300, height: 260,
+                        title: "tasks", text: "", locked: false,
+                        items: [{ id: "i1", text: "task one", done: false }] }]);
+            var body = checklistBody();
+            var removeButton = findChild(body, "checklistRemove_0");
+            verify(removeButton !== null);
+
+            mouseClick(removeButton, removeButton.width / 2, removeButton.height / 2);
+            wait(60);
+            compare(body.items.length, 0);
+        }
+
+        function test_click_above_card_does_not_toggle_covered_checklist_task() {
+            setCards([{ id: "check", type: "checklist", x: 100, y: 100, width: 300, height: 260,
+                        title: "tasks", text: "", locked: false,
+                        items: [{ id: "i1", text: "task one", done: false }] },
+                       noteCard("top", 100, 100)]);
+            var body = checklistBody();
+            compare(body.items[0].done, false);
+
+            // This point is over a checklist task row, but the note card is on
+            // top of it and must receive the click on its own.
+            mouseClick(loader.item, 200, 163);
+            wait(60);
+            compare(loader.item.selectedIds[0], "top");
+            compare(body.items.length, 1);
+            compare(body.items[0].done, false);
+        }
+
         function test_kanban_item_click_selects_card() {
             setCards([{ id: "board", type: "kanban", x: 100, y: 100, width: 380, height: 300,
                         title: "board", text: "", locked: false,

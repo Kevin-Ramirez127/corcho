@@ -29,6 +29,14 @@ CardFrame {
         root.commit({ items: root.items });
     }
 
+    // Pointer handlers on overlapping cards can all receive the same tap, so
+    // only the card that is actually on top at the event position may react.
+    function canInteractAt(sceneX, sceneY) {
+        if (!root.card) return false;
+        return !root.canvasView
+            || root.canvasView.isTopCardAtScene(root.card.id, sceneX, sceneY);
+    }
+
     function addItem(text) {
         if (text.trim() === "") return;
         var next = items.slice();
@@ -125,25 +133,38 @@ CardFrame {
                         font.pixelSize: root.th.fontSizeMicro
                     }
                     Icon {
+                        objectName: "checklistDate_" + index
                         anchors.verticalCenter: parent.verticalCenter
                         name: "calendar"
                         size: root.th.iconSmall
                         color: checkItem.link !== null ? root.th.accent : root.th.muted
                         opacity: (checkItem.link !== null || checkItem.hoveredNow) ? 1 : 0
                         TapHandler {
-                            onTapped: root.dateLinkRequested(
-                                root.card.id,
-                                modelData.id,
-                                checkItem.link ? checkItem.link.id : "",
-                                checkItem.link ? checkItem.link.date : "")
+                            onTapped: {
+                                if (!root.canInteractAt(point.scenePosition.x, point.scenePosition.y))
+                                    return;
+                                root.dateLinkRequested(
+                                    root.card.id,
+                                    modelData.id,
+                                    checkItem.link ? checkItem.link.id : "",
+                                    checkItem.link ? checkItem.link.date : "");
+                            }
                         }
                     }
                     Icon {
+                        objectName: "checklistRemove_" + index
                         anchors.verticalCenter: parent.verticalCenter
                         name: "x"
                         size: root.th.iconSmall
                         color: root.th.muted
                         opacity: checkItem.hoveredNow ? 1 : 0
+                        TapHandler {
+                            acceptedButtons: Qt.LeftButton
+                            onTapped: {
+                                if (root.canInteractAt(point.scenePosition.x, point.scenePosition.y))
+                                    root.remove(index);
+                            }
+                        }
                     }
                 }
 
@@ -161,19 +182,33 @@ CardFrame {
                     font.strikeout: modelData.done
                 }
 
+                // The done toggle only covers the row before the date and
+                // remove controls, so those buttons never mark the task done.
+                Item {
+                    anchors.left: parent.left
+                    anchors.right: rightRow.left
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    TapHandler {
+                        acceptedButtons: Qt.LeftButton
+                        onTapped: {
+                            if (!root.canInteractAt(point.scenePosition.x, point.scenePosition.y))
+                                return;
+                            root.requestBodySelect(point.modifiers, point.scenePosition.x, point.scenePosition.y);
+                            root.toggle(index);
+                        }
+                    }
+                }
+
                 HoverHandler { id: rowHover
                     onHoveredChanged: checkItem.hoveredNow = hovered
                 }
                 TapHandler {
-                    acceptedButtons: Qt.LeftButton
-                    onTapped: {
-                        root.requestBodySelect(point.modifiers, point.scenePosition.x, point.scenePosition.y);
-                        root.toggle(index);
-                    }
-                }
-                TapHandler {
                     acceptedButtons: Qt.RightButton
-                    onTapped: root.remove(index)
+                    onTapped: {
+                        if (root.canInteractAt(point.scenePosition.x, point.scenePosition.y))
+                            root.remove(index);
+                    }
                 }
             }
         }
