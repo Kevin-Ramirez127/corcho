@@ -146,9 +146,10 @@ ApplicationWindow {
         var order = floatingOrder.filter(function (value) { return value !== id; });
         if (order.length !== floatingOrder.length)
             floatingOrder = order;
-        Qt.callLater(root.reflowFloatingWindows);
-        root.floatingReflowPasses = 3;
-        floatingReflowTimer.restart();
+        // Do not reflow the remaining windows here: returning one card must
+        // leave the other PiP windows exactly where the user has them.
+        root.floatingReflowPasses = 0;
+        floatingReflowTimer.stop();
     }
 
     function closeFloatingCard(id) {
