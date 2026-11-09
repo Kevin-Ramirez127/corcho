@@ -277,41 +277,46 @@ ApplicationWindow {
         contextMenu.openAt(px, py);
     }
 
+    function createCardActions() {
+        return [
+            { label: "Text", icon: "file-text", children: [
+                { label: "Note", icon: "file-text", action: "create:note" },
+                { label: "Checklist", icon: "list-checks", action: "create:checklist" },
+                { label: "Kanban", icon: "kanban", action: "create:kanban" },
+                { label: "Whiteboard", icon: "pencil", action: "create:whiteboard" }
+            ] },
+            { label: "Web", icon: "globe", children: [
+                { label: "Website", icon: "globe", action: "create:website" },
+                { label: "Bookmark", icon: "bookmark", action: "create:bookmark" },
+                { label: "API data", icon: "database", action: "create:api" },
+                { label: "Grid portal", icon: "arrow-right", action: "create:portal" }
+            ] },
+            { label: "Media & files", icon: "folder", children: [
+                { label: "File", icon: "file-text", action: "pick-file" },
+                { label: "Folder", icon: "folder-plus", action: "pick-folder" },
+                { label: "Timbre", icon: "audio-lines", action: "create:timbre" },
+                { label: "Now playing", icon: "music-2", action: "create:mpris" }
+            ] },
+            { label: "Tools", icon: "cpu", children: [
+                { label: "AI node", icon: "cpu", action: "create:ai" },
+                { label: "Script", icon: "terminal", action: "create:script" },
+                { label: "Calendar", icon: "calendar", action: "create:calendar" },
+                { label: "Pomodoro", icon: "timer", action: "create:pomodoro" },
+                { label: "Git repository", icon: "git-branch", action: "create:git" }
+            ] }
+        ];
+    }
+
     function openCreateMenu(px, py, wx, wy) {
         menuWorld = { x: wx, y: wy };
         showMenu(px, py, [
-            { label: "Add card", icon: "plus", children: [
-                { label: "Text", icon: "file-text", children: [
-                    { label: "Note", icon: "file-text", action: "create:note" },
-                    { label: "Checklist", icon: "list-checks", action: "create:checklist" },
-                    { label: "Kanban", icon: "kanban", action: "create:kanban" },
-                    { label: "Whiteboard", icon: "pencil", action: "create:whiteboard" }
-                ] },
-                { label: "Web", icon: "globe", children: [
-                    { label: "Website", icon: "globe", action: "create:website" },
-                    { label: "Bookmark", icon: "bookmark", action: "create:bookmark" },
-                    { label: "API data", icon: "database", action: "create:api" },
-                    { label: "Grid portal", icon: "arrow-right", action: "create:portal" }
-                ] },
-                { label: "Media & files", icon: "folder", children: [
-                    { label: "File", icon: "file-text", action: "pick-file" },
-                    { label: "Folder", icon: "folder-plus", action: "pick-folder" },
-                    { label: "Timbre", icon: "audio-lines", action: "create:timbre" },
-                    { label: "Now playing", icon: "music-2", action: "create:mpris" }
-                ] },
-                { label: "Tools", icon: "cpu", children: [
-                    { label: "AI node", icon: "cpu", action: "create:ai" },
-                    { label: "Script", icon: "terminal", action: "create:script" },
-                    { label: "Calendar", icon: "calendar", action: "create:calendar" },
-                    { label: "Pomodoro", icon: "timer", action: "create:pomodoro" },
-                    { label: "Git repository", icon: "git-branch", action: "create:git" }
-                ] }
-            ] },
-            { separator: true, label: "" },
-            { label: "New grid", icon: "layout-grid", action: "new-grid" },
-            { label: "New folder", icon: "folder-plus", action: "new-folder" },
-            { label: "Templates", icon: "layout-template", action: "templates" }
+            { label: "Add card", icon: "plus", children: createCardActions() }
         ]);
+    }
+
+    function openCanvasMenu(px, py, wx, wy) {
+        menuWorld = { x: wx, y: wy };
+        showMenu(px, py, createCardActions());
     }
 
     function openCardMenu(card, px, py) {
@@ -444,11 +449,8 @@ ApplicationWindow {
             app.createCard(arg, menuWorld.x, menuWorld.y);
             return;
         }
-        if (action === "new-grid") { app.createGrid("New Grid"); return; }
-        if (action === "new-folder") { app.createFolder("New Folder"); return; }
         if (action === "pick-file") { pinFileDialog.open(); return; }
         if (action === "pick-folder") { pinFolderDialog.open(); return; }
-        if (action === "templates") { templatesDialog.open(); return; }
 
         if (kind === "card" && menuCard) {
             var ids = root.menuCardIds.length > 0 ? root.menuCardIds.slice() : [menuCard.id];
@@ -618,6 +620,7 @@ ApplicationWindow {
             onGridSelected: function (id) { app.switchGrid(id) }
             onNewGridRequested: app.createGrid("New Grid")
             onNewFolderRequested: app.createFolder("New Folder")
+            onTemplatesRequested: templatesDialog.open()
             onSettingsRequested: root.openSettings("general")
             onToggleCollapsed: root.sidebarCollapsed = !root.sidebarCollapsed
             onGridMenuRequested: function (grid, x, y) { root.openGridMenu(grid, x, y) }
@@ -750,7 +753,7 @@ ApplicationWindow {
                 }
                 onCalendarManagerRequested: calendarManager.open()
                 onReturnCardRequested: function (id) { root.closeFloatingCard(id) }
-                onBackgroundMenuRequested: function (gx, gy, wx, wy) { root.openCreateMenu(gx, gy, wx, wy) }
+                onBackgroundMenuRequested: function (gx, gy, wx, wy) { root.openCanvasMenu(gx, gy, wx, wy) }
                 onCreateRequested: function (wx, wy) { app.createCard("note", wx, wy) }
             }
 

@@ -15,6 +15,7 @@ Item {
     signal gridSelected(string id)
     signal newGridRequested()
     signal newFolderRequested()
+    signal templatesRequested()
     signal settingsRequested()
     signal toggleCollapsed()
     signal gridMenuRequested(var grid, real x, real y)
@@ -212,6 +213,59 @@ Item {
             id: listColumn
             width: list.width
             spacing: root.th.spaceHalf
+            Item {
+                id: templatesRow
+                width: listColumn.width
+                height: root.th.controlHeight
+                property bool hoveredNow: false
+                activeFocusOnTab: true
+                Accessible.role: Accessible.Button
+                Accessible.name: "Templates"
+                Accessible.onPressAction: root.templatesRequested()
+                Keys.onSpacePressed: root.templatesRequested()
+                Keys.onReturnPressed: root.templatesRequested()
+                Keys.onEnterPressed: root.templatesRequested()
+
+                Rectangle {
+                    anchors.fill: parent
+                    anchors.leftMargin: root.th.space2
+                    anchors.rightMargin: root.th.space2
+                    radius: root.th.radiusControl
+                    color: templatesRow.hoveredNow ? root.th.hover : "transparent"
+                    border.width: templatesRow.activeFocus ? root.th.borderWidthFocus : 0
+                    border.color: root.th.accent
+                }
+
+                Row {
+                    x: root.collapsed ? (templatesRow.width - width) / 2 : 20
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: root.th.space2
+
+                    Icon {
+                        anchors.verticalCenter: parent.verticalCenter
+                        name: "layout-template"
+                        size: root.th.iconBody
+                        color: root.th.text2
+                    }
+                    Text {
+                        visible: !root.collapsed
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: "Templates"
+                        color: root.th.text2
+                        font.family: root.th.fontFamily
+                        font.pixelSize: root.th.fontSizeBody
+                    }
+                }
+
+                HoverHandler {
+                    onHoveredChanged: templatesRow.hoveredNow = hovered
+                }
+                TapHandler {
+                    acceptedButtons: Qt.LeftButton
+                    onTapped: root.templatesRequested()
+                }
+            }
+
             Repeater {
                 model: root.folders
 
