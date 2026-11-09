@@ -104,6 +104,50 @@ ApplicationWindow {
         else forgetFloatingCard(id);
     }
 
+    // Find a free slot next to the existing picture-in-picture windows instead
+    // of stacking every new window on the same cascade point.
+    function nextFloatingPosition(width, height) {
+        var gap = 16;
+        var margin = 24;
+        var screenW = root.screen ? root.screen.width : Screen.width;
+        var screenH = root.screen ? root.screen.height : Screen.height;
+        var startX = Math.max(margin, Math.min(root.x + 48, screenW - width - margin));
+        var startY = Math.max(margin, Math.min(root.y + 96, screenH - height - margin));
+        var candidates = [{ x: startX, y: startY }];
+
+        for (var id in floatingCards) {
+            var win = floatingCards[id];
+            if (!win || !win.visible || !isFinite(win.x) || !isFinite(win.y)) continue;
+            // Right of an existing window, or below it when the row is full.
+            candidates.push({ x: win.x + win.width + gap, y: win.y });
+            candidates.push({ x: startX, y: win.y + win.height + gap });
+        }
+
+        var best = null;
+        for (var i = 0; i < candidates.length; i++) {
+            var c = candidates[i];
+            if (c.x < margin || c.y < margin
+                    || c.x + width > screenW - margin
+                    || c.y + height > screenH - margin)
+                continue;
+            var free = true;
+            for (var oid in floatingCards) {
+                var other = floatingCards[oid];
+                if (!other || !other.visible) continue;
+                if (c.x < other.x + other.width && c.x + width > other.x
+                        && c.y < other.y + other.height && c.y + height > other.y) {
+                    free = false;
+                    break;
+                }
+            }
+            if (!free) continue;
+            if (!best || c.y < best.y - 0.5
+                    || (Math.abs(c.y - best.y) <= 0.5 && c.x < best.x))
+                best = c;
+        }
+        return best ? best : { x: startX, y: startY };
+    }
+
     function openFloatingCard(id) {
         if (floatingCards[id]) {
             floatingCards[id].raise();
@@ -119,10 +163,9 @@ ApplicationWindow {
             return;
         }
 
-        var index = Object.keys(floatingCards).length;
         var width = Math.max(320, card.width);
         var height = Math.max(260, card.height) + 38;
-        var offset = (index % 6) * 26;
+        var position = root.nextFloatingPosition(width, height);
         var win = component.createObject(null, {
             "app": app,
             "th": root.th,
@@ -133,8 +176,8 @@ ApplicationWindow {
             "webProfile": canvas.webProfile,
             "initialWidth": width,
             "initialHeight": height,
-            "x": root.x + Math.max(40, root.width - width - 72) + offset,
-            "y": root.y + 96 + offset
+            "x": position.x,
+            "y": position.y
         });
         if (!win) {
             toastHost.show("error", "Could not open picture-in-picture window");

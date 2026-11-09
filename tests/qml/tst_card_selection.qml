@@ -290,6 +290,7 @@ Item {
             verify(frame !== null);
             compare(frame.detached, true);
             compare(frame.showChrome, false);
+            compare(frame.surfaceless, true);
             compare(frame.width, win.width);
             compare(frame.height, win.height - win.titleBarHeight);
 

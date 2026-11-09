@@ -22,6 +22,9 @@ FocusScope {
     // True for a card that is shown in a picture-in-picture window while this
     // canvas delegate stays behind as a greyed-out placeholder.
     property bool floating: false
+    // The picture-in-picture window paints a single rounded surface behind
+    // the whole card, so the detached copy hides its own card surface.
+    property bool surfaceless: false
     signal returnRequested()
     default property alias bodyData: body.data
 
@@ -178,6 +181,7 @@ FocusScope {
     Rectangle {
         id: surface
         anchors.fill: parent
+        visible: !root.surfaceless
         radius: Math.max(0, Math.min(28, root.settings && root.settings.card_radius !== undefined ? root.settings.card_radius : root.th.radiusCard))
         transform: Translate { x: root.parallaxX; y: root.parallaxY }
         color: root.th.card

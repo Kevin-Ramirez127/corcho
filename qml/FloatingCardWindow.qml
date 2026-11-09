@@ -27,7 +27,9 @@ Window {
     signal calendarManagerRequested()
 
     visible: true
-    color: win.th ? win.th.bg : "#111111"
+    // Transparent window corners: the rounded surface below is the only
+    // painted background, so nothing square shows behind its border radius.
+    color: "transparent"
     flags: Qt.Window | Qt.FramelessWindowHint
            | (win.pinned ? Qt.WindowStaysOnTopHint : 0)
     // Leave the picture-in-picture marker in the title so window rules can
@@ -41,6 +43,14 @@ Window {
     minimumHeight: titleBar.height + 200
 
     readonly property int titleBarHeight: 38
+    readonly property real cornerRadius: {
+        try {
+            var settings = JSON.parse(win.app.settingsJson);
+            if (settings.card_radius !== undefined)
+                return Math.max(0, Math.min(28, settings.card_radius));
+        } catch (e) {}
+        return win.th ? win.th.radiusCard : 8;
+    }
 
     function returnToCanvas() {
         win.cardReturned();
@@ -55,7 +65,8 @@ Window {
 
     Rectangle {
         anchors.fill: parent
-        color: win.th ? win.th.bg : "#111111"
+        radius: win.cornerRadius
+        color: win.th ? win.th.card : "#222222"
         border.width: win.th ? win.th.borderWidth : 1
         border.color: win.th ? win.th.borderStrong : "#444444"
     }
@@ -66,17 +77,7 @@ Window {
         anchors.right: parent.right
         anchors.top: parent.top
         height: win.titleBarHeight
-        color: win.th ? win.th.card : "#222222"
-        radius: win.th ? win.th.radiusCard : 8
-
-        // Square off the bottom corners so it joins the card area below.
-        Rectangle {
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.bottom: parent.bottom
-            height: parent.radius
-            color: parent.color
-        }
+        color: "transparent"
 
         Rectangle {
             anchors.left: parent.left
@@ -219,6 +220,7 @@ Window {
                 // geometry over the window-filling layout.
                 item.detached = true;
                 item.showChrome = false;
+                item.surfaceless = true;
                 item.app = Qt.binding(function () { return win.app; });
                 item.th = Qt.binding(function () { return win.th; });
                 item.gridId = Qt.binding(function () { return win.gridId; });
@@ -242,6 +244,8 @@ Window {
         height: 18
         anchors.right: parent.right
         anchors.bottom: parent.bottom
+        anchors.rightMargin: 5
+        anchors.bottomMargin: 5
         z: 100
 
         Icon {

@@ -106,10 +106,10 @@ Packaging scripts for Debian, AppImage and Flatpak live in
 ## Picture-in-picture and compositor rules
 
 Right-click a card (or a multi-selection) and choose **Open in
-picture-in-picture**. The card opens in a frameless window that can be moved by
-its title bar; use the pin button to keep it on top. The original card stays on
-the canvas as a grey placeholder. Hover it and press **Back card to canvas** to
-close the detached window.
+picture-in-picture**. Each card opens in its own frameless window, placed next
+to the existing ones, that can be moved by its title bar; use the pin button to
+keep it on top. The original card stays on the canvas as a grey placeholder.
+Hover it and press **Back card to canvas** to close the detached window.
 
 The process advertises a stable Wayland `app_id` / X11 `WM_CLASS`:
 
