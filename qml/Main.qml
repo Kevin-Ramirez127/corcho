@@ -86,176 +86,163 @@ ApplicationWindow {
     property var menuFolder: null
     property var menuWorld: ({ x: 0, y: 0 })
     property var renameTarget: ({ kind: "", id: "" })
-    // Cards shown in the picture-in-picture container. They live in one
-    // window and are laid out side by side inside it, because Wayland does not
-    // let clients position separate toplevel windows.
-    property var floatingIds: []
-    property var floatingEntries: []
-    property var floatingWindow: null
+    // Card id -> FloatingCardWindow. Reassigned whenever it changes so QML
+    // bindings that depend on the id list are notified.
+    property var floatingCards: ({})
+    // Creation order, used to lay the detached windows out left to right.
+    property var floatingOrder: []
+    readonly property var floatingIds: Object.keys(floatingCards)
 
-    function floatingCardData(id) {
-        for (var i = 0; i < root.allCards.length; i++)
-            if (root.allCards[i].id === id) return root.allCards[i];
-        return null;
+    // Keep the detached windows in one row with a constant gap. This runs
+    // after a batch has been created, and once more after the windows are
+    // mapped so a window manager cannot leave a fresh window behind another.
+    readonly property int floatingGap: 14
+
+    function reflowFloatingWindows() {
+        var margin = 24;
+        var screenW = root.screen ? root.screen.width : Screen.width;
+        var screenH = root.screen ? root.screen.height : Screen.height;
+        var baseX = Math.max(margin, Math.min(root.x + 48, screenW - margin - 280));
+        var baseY = Math.max(margin, Math.min(root.y + 96, screenH - margin - 200));
+        var x = baseX;
+        var y = baseY;
+        var rowHeight = 0;
+
+        for (var i = 0; i < root.floatingOrder.length; i++) {
+            var win = root.floatingCards[root.floatingOrder[i]];
+            if (!win || !win.visible) continue;
+            var w = win.width > 0 ? win.width : 360;
+            var h = win.height > 0 ? win.height : 260;
+            if (x > baseX && x + w > screenW - margin) {
+                x = baseX;
+                y += rowHeight + root.floatingGap;
+                rowHeight = 0;
+            }
+            win.x = x;
+            win.y = y;
+            x += w + root.floatingGap;
+            rowHeight = Math.max(rowHeight, h);
+        }
     }
 
-    function floatingEntry(id) {
-        for (var i = 0; i < root.floatingEntries.length; i++)
-            if (root.floatingEntries[i].id === id) return root.floatingEntries[i];
-        return null;
+    function forgetFloatingCard(id) {
+        if (floatingCards[id]) {
+            var next = Object.assign({}, floatingCards);
+            delete next[id];
+            floatingCards = next;
+        }
+        var order = floatingOrder.filter(function (value) { return value !== id; });
+        if (order.length !== floatingOrder.length)
+            floatingOrder = order;
+        Qt.callLater(root.reflowFloatingWindows);
+        floatingReflowTimer.restart();
     }
 
-    function makeFloatingEntry(id, card) {
-        var existing = root.floatingEntry(id);
-        return {
-            id: id,
-            card: card,
-            bodySource: existing ? existing.bodySource : canvas.bodyFor(card.type),
-            width: existing ? existing.width : Math.max(320, card.width || 320),
-            height: existing ? existing.height : Math.max(260, card.height || 240)
-        };
+    function closeFloatingCard(id) {
+        var win = floatingCards[id];
+        if (win) win.close();
+        else forgetFloatingCard(id);
     }
 
-    function createFloatingWindow() {
+    function createFloatingCardWindow(id, card) {
         var component = Qt.createComponent("FloatingCardWindow.qml");
         if (component.status !== Component.Ready) {
             toastHost.show("error", "Could not open picture-in-picture window");
-            root.floatingIds = [];
-            root.floatingEntries = [];
             return null;
         }
 
         var win = component.createObject(null, {
             "app": app,
             "th": root.th,
-            "entries": root.floatingEntries.slice(),
+            "cardId": id,
+            "cardData": card,
+            "bodySource": canvas.bodyFor(card.type),
             "gridId": app.activeGridId,
             "webProfile": canvas.webProfile,
+            "initialWidth": Math.max(320, card.width),
+            "initialHeight": Math.max(260, card.height) + 38,
             "x": root.x + 48,
             "y": root.y + 96
         });
         if (!win) {
             toastHost.show("error", "Could not open picture-in-picture window");
-            root.floatingIds = [];
-            root.floatingEntries = [];
             return null;
         }
 
         win.th = Qt.binding(function () { return root.th; });
         win.webProfile = Qt.binding(function () { return canvas.webProfile; });
-        win.cardReturned.connect(function (id) { root.closeFloatingCards([id]); });
-        win.windowClosed.connect(function () { root.clearFloatingCards(); });
+        win.cardReturned.connect(function () { root.forgetFloatingCard(id); });
         win.dateLinkRequested.connect(function (sourceCardId, sourceItemId, linkId, defaultDate) {
             dateLinkDialog.openFor(sourceCardId, sourceItemId, linkId, defaultDate);
         });
         win.calendarManagerRequested.connect(function () { calendarManager.open(); });
-        root.floatingWindow = win;
+
+        var next = Object.assign({}, floatingCards);
+        next[id] = win;
+        floatingCards = next;
+        var order = floatingOrder.slice();
+        order.push(id);
+        floatingOrder = order;
+        // Position immediately so the new window does not flash at the old
+        // cascade point before the end of the batch.
+        root.reflowFloatingWindows();
         return win;
     }
 
     function openFloatingCards(ids) {
-        var nextIds = root.floatingIds.slice();
-        var nextEntries = root.floatingEntries.slice();
-        var changed = false;
+        var opened = false;
         for (var i = 0; i < ids.length; i++) {
             var id = ids[i];
-            if (nextIds.indexOf(id) >= 0) continue;
-            var card = root.floatingCardData(id) || canvas.cardById(id);
+            if (floatingCards[id]) {
+                floatingCards[id].raise();
+                continue;
+            }
+            var card = canvas.cardById(id);
             if (!card) continue;
-            nextIds.push(id);
-            nextEntries.push(root.makeFloatingEntry(id, card));
-            changed = true;
+            if (root.createFloatingCardWindow(id, card)) opened = true;
         }
 
-        if (changed) {
-            root.floatingIds = nextIds;
-            root.floatingEntries = nextEntries;
-            if (root.floatingWindow) {
-                root.floatingWindow.entries = nextEntries;
-                root.floatingWindow.raise();
-                root.floatingWindow.requestActivate();
-            } else {
-                root.createFloatingWindow();
-            }
-        } else if (root.floatingWindow) {
-            root.floatingWindow.raise();
-            root.floatingWindow.requestActivate();
+        if (opened) {
+            root.reflowFloatingWindows();
+            // Reapply once the windows are mapped: some window managers move
+            // a fresh floating window after the initial position request.
+            Qt.callLater(root.reflowFloatingWindows);
+            floatingReflowTimer.restart();
         }
         canvas.setSelection([]);
     }
 
-    function closeFloatingCards(ids) {
-        if (ids.length === 0) return;
-        var nextIds = [];
-        var nextEntries = [];
-        for (var i = 0; i < root.floatingIds.length; i++) {
-            var id = root.floatingIds[i];
-            if (ids.indexOf(id) >= 0) continue;
-            var entry = root.floatingEntry(id);
-            if (!entry) continue;
-            nextIds.push(id);
-            nextEntries.push(entry);
-        }
-        root.floatingIds = nextIds;
-        root.floatingEntries = nextEntries;
-        if (!root.floatingWindow) return;
-        if (nextIds.length === 0) {
-            var win = root.floatingWindow;
-            root.floatingWindow = null;
-            win.entries = [];
-            win.close();
-        } else {
-            root.floatingWindow.entries = nextEntries;
-        }
-    }
-
-    function clearFloatingCards() {
-        root.floatingIds = [];
-        root.floatingEntries = [];
-        root.floatingWindow = null;
+    function openFloatingCard(id) {
+        root.openFloatingCards([id]);
     }
 
     function syncFloatingCards() {
         if (root.floatingIds.length === 0) return;
         var live = {};
-        for (var i = 0; i < root.allCards.length; i++)
-            live[root.allCards[i].id] = root.allCards[i];
-
-        var nextIds = [];
-        var nextEntries = [];
-        var changed = false;
-        for (var j = 0; j < root.floatingEntries.length; j++) {
-            var entry = root.floatingEntries[j];
-            var card = live[entry.id];
+        for (var i = 0; i < root.allCards.length; i++) live[root.allCards[i].id] = root.allCards[i];
+        for (var id in floatingCards) {
+            var win = floatingCards[id];
+            if (!win) continue;
+            var card = live[id];
             if (!card) {
-                // Deleted elsewhere: let it disappear from the container too.
-                changed = true;
+                // Deleted elsewhere: close the detached copy as well. The
+                // window's onClosing handler removes it from the map.
+                win.close();
                 continue;
             }
-            nextIds.push(entry.id);
-            if (entry.card !== card) {
-                nextEntries.push(root.makeFloatingEntry(entry.id, card));
-                changed = true;
-            } else {
-                nextEntries.push(entry);
-            }
-        }
-        if (!changed) return;
-
-        root.floatingIds = nextIds;
-        root.floatingEntries = nextEntries;
-        if (!root.floatingWindow) return;
-        if (nextIds.length === 0) {
-            var win = root.floatingWindow;
-            root.floatingWindow = null;
-            win.entries = [];
-            win.close();
-        } else {
-            root.floatingWindow.entries = nextEntries;
+            win.cardData = card;
         }
     }
 
     onAllCardsChanged: syncFloatingCards()
+
+    // Reflow again after the windows have been mapped.
+    Timer {
+        id: floatingReflowTimer
+        interval: 80
+        repeat: false
+        onTriggered: root.reflowFloatingWindows()
+    }
 
     function openSettings(tab) {
         settingsTab = tab || "general";
@@ -453,7 +440,7 @@ ApplicationWindow {
                 root.openFloatingCards(ids);
                 canvas.setSelection([]);
             } else if (arg === "unpip") {
-                root.closeFloatingCards(ids);
+                for (var unpip = 0; unpip < ids.length; unpip++) root.closeFloatingCard(ids[unpip]);
             } else if (arg === "color") {
                 var colors = ["#d98e5c", "#c9a86a", "#7aa2f7", "#86b78a", "#5aa8a0", "#d97a72", "#8d8d97"];
                 for (var c = 0; c < selectedCards.length; c++) {
@@ -739,7 +726,7 @@ ApplicationWindow {
                     dateLinkDialog.openFor(cardId, itemId, linkId, date);
                 }
                 onCalendarManagerRequested: calendarManager.open()
-                onReturnCardRequested: function (id) { root.closeFloatingCards([id]) }
+                onReturnCardRequested: function (id) { root.closeFloatingCard(id) }
                 onBackgroundMenuRequested: function (gx, gy, wx, wy) { root.openCreateMenu(gx, gy, wx, wy) }
                 onCreateRequested: function (wx, wy) { app.createCard("note", wx, wy) }
             }
