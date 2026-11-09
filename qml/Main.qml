@@ -167,6 +167,9 @@ ApplicationWindow {
 
         root.floatingTokenSeed += 1;
         var token = String(root.floatingTokenSeed);
+        // Website cards hand their loaded page to the window instead of
+        // loading the site a second time.
+        var webView = card.type === "website" ? canvas.releaseCardWebView(id) : null;
         var win = component.createObject(null, {
             "app": app,
             "th": root.th,
@@ -175,6 +178,7 @@ ApplicationWindow {
             "bodySource": canvas.bodyFor(card.type),
             "gridId": app.activeGridId,
             "webProfile": canvas.webProfile,
+            "externalWebView": webView,
             "floatingToken": token,
             "initialWidth": Math.max(320, card.width),
             "initialHeight": Math.max(260, card.height) + 38,
@@ -182,6 +186,8 @@ ApplicationWindow {
             "y": root.y + 96
         });
         if (!win) {
+            // Put the page back so the canvas copy keeps working.
+            if (webView) canvas.acceptCardWebView(id, webView);
             toastHost.show("error", "Could not open picture-in-picture window");
             return null;
         }
@@ -189,6 +195,11 @@ ApplicationWindow {
         win.th = Qt.binding(function () { return root.th; });
         win.webProfile = Qt.binding(function () { return canvas.webProfile; });
         win.cardReturned.connect(function () { root.forgetFloatingCard(id); });
+        win.webViewReturned.connect(function (view) {
+            // The window is closing: give the page back to the canvas copy,
+            // or drop it when that copy no longer exists.
+            if (!canvas.acceptCardWebView(id, view)) view.destroy();
+        });
         win.dateLinkRequested.connect(function (sourceCardId, sourceItemId, linkId, defaultDate) {
             dateLinkDialog.openFor(sourceCardId, sourceItemId, linkId, defaultDate);
         });

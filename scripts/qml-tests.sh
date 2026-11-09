@@ -23,6 +23,10 @@ fi
 if [ -z "${XDG_RUNTIME_DIR:-}" ]; then
     XDG_RUNTIME_DIR=$(mktemp -d)
 fi
-export QT_QPA_PLATFORM XDG_RUNTIME_DIR
+# Website card tests load a real page: run Chromium without its sandbox so
+# that works in a plain (often containerized) test environment.
+: "${QTWEBENGINE_DISABLE_SANDBOX:=1}"
+: "${QTWEBENGINE_CHROMIUM_FLAGS:=--no-sandbox --disable-gpu}"
+export QT_QPA_PLATFORM XDG_RUNTIME_DIR QTWEBENGINE_DISABLE_SANDBOX QTWEBENGINE_CHROMIUM_FLAGS
 
 exec "$runner" -input "$root/tests/qml" "$@"

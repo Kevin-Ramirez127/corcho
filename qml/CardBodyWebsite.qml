@@ -15,7 +15,16 @@ CardFrame {
     property var webProfile: null
 
     readonly property bool sharedProfile: !root.settings || root.settings.web_shared_profile !== false
-    readonly property var view: webLoader.item
+    // The live page. Website cards hand this view to the picture-in-picture
+    // copy of the card and take it back again instead of recreating it, so
+    // the site is never reloaded just because the card moved.
+    property WebEngineView hostedView: null
+    // Set once the page lives somewhere else: this body must never spawn a
+    // second copy of the site of its own.
+    property bool viewReleased: false
+    readonly property WebEngineView view: hostedView
+    readonly property bool tooltipsEnabled:
+        !root.settings || root.settings.show_card_tooltips !== false
     readonly property bool canGoBack: view ? view.canGoBack : false
     readonly property bool canGoForward: view ? view.canGoForward : false
     readonly property int sleepMinutes: {
@@ -23,15 +32,50 @@ CardFrame {
         return isNaN(value) ? 10 : Math.max(0, Math.round(value));
     }
 
+    // QUrl rewrites a URL when it round-trips through the engine: a data:
+    // URL gets its "<" and ">" percent-encoded, for example. Two strings that
+    // denote the same page must never be pushed into the view again, because
+    // assigning them reloads the site and throws away its state.
+    function sameUrl(a, b) {
+        if (a === b) return true;
+        if (!a || !b) return false;
+        function decoded(value) {
+            try { return decodeURIComponent(value); } catch (e) { return value; }
+        }
+        return decoded(a) === decoded(b);
+    }
+
     onUrlChanged: {
-        if (root.url !== "") root.asleep = false;
-        if (root.url !== "" && view && view.url.toString() !== root.url)
-            view.url = root.url;
+        if (root.url === "") {
+            root.destroyView();
+            return;
+        }
+        root.asleep = false;
+        if (root.view && !root.sameUrl(root.view.url.toString(), root.url))
+            root.view.url = root.url;
+        root.ensureView();
     }
     onCardChanged: {
         root.noSleep = card ? !!card.noSleep : false;
         var next = card && card.url !== undefined ? (card.url || "") : "";
-        if (next !== root.url) root.url = next;
+        if (!root.sameUrl(next, root.url)) root.url = next;
+        else root.ensureView();
+    }
+    onSharedProfileChanged: {
+        root.syncViewProfile();
+        root.ensureView();
+    }
+    onWebProfileChanged: {
+        root.syncViewProfile();
+        root.ensureView();
+    }
+    onAsleepChanged: {
+        if (root.asleep) root.destroyView();
+        else root.ensureView();
+    }
+    onWebZoomChanged: {
+        if (root.view && root.view.zoomFactor !== root.webZoom)
+            root.view.zoomFactor = root.webZoom;
     }
 
     Timer {
@@ -57,6 +101,77 @@ CardFrame {
         root.commit({ url: value });
     }
 
+    // --- live page handoff ---------------------------------------------
+    // Loading a site is expensive and loses all of its state, so the view is
+    // created once and then moved between the canvas copy of the card and its
+    // picture-in-picture copy.
+
+    function ensureView() {
+        if (root.hostedView || root.viewReleased || root.asleep || root.url === "")
+            return null;
+        // In shared mode wait for the profile host, exactly like the old
+        // loader condition did.
+        if (root.sharedProfile && root.webProfile === null)
+            return null;
+        var page = webComponent.createObject(webHost);
+        if (!page) return null;
+        root.hostedView = page;
+        root.hostedView.parent = webHost;
+        root.hostedView.anchors.fill = webHost;
+        root.hostedView.profile = root.sharedProfile && root.webProfile
+            ? root.webProfile : root.isolatedProfile;
+        root.hostedView.zoomFactor = root.webZoom;
+        root.hostedView.url = root.url;
+        return root.hostedView;
+    }
+
+    function destroyView() {
+        var page = root.hostedView;
+        if (!page) return;
+        root.hostedView = null;
+        page.destroy();
+    }
+
+    // The shared profile lives in its host and disappears with it, so the
+    // page always follows whichever profile this body would open with.
+    function syncViewProfile() {
+        if (!root.hostedView) return;
+        var next = root.sharedProfile && root.webProfile
+            ? root.webProfile : root.isolatedProfile;
+        if (root.hostedView.profile !== next) root.hostedView.profile = next;
+    }
+
+    // Hand the page over to the picture-in-picture copy. The flag stays set
+    // afterwards, so this body cannot start a second copy of the site while
+    // the window still owns the page.
+    function releaseWebView() {
+        var page = root.hostedView;
+        root.hostedView = null;
+        root.viewReleased = true;
+        return page;
+    }
+
+    function adoptWebView(v, released) {
+        if (!v) return;
+        root.hostedView = v;
+        root.viewReleased = released;
+        root.hostedView.parent = webHost;
+        root.hostedView.anchors.fill = webHost;
+        root.asleep = false;
+        var u = root.hostedView.url ? root.hostedView.url.toString() : "";
+        if (u && u !== "about:blank" && u !== root.url) root.url = u;
+        if (root.hostedView.zoomFactor !== root.webZoom)
+            root.webZoom = root.hostedView.zoomFactor;
+        if (root.url !== ""
+                && !root.sameUrl(root.hostedView.url.toString(), root.url))
+            root.hostedView.url = root.url;
+    }
+
+    // Called by the picture-in-picture copy when it receives the page.
+    function hostWebView(v) { root.adoptWebView(v, true); }
+    // Called when the page comes back to the canvas copy.
+    function acceptWebView(v) { root.adoptWebView(v, false); }
+
     function openUrl() {
         var target = normalize(urlField.text);
         if (target === "") return;
@@ -66,7 +181,11 @@ CardFrame {
         }
         root.url = target;
         root.asleep = false;
-        if (view) view.url = target;
+        // onUrlChanged above already moved the page when needed; only push
+        // again when it is not showing this URL (e.g. the ad-blocker's
+        // about:blank), so retyping the current address never reloads it.
+        if (root.view && !root.sameUrl(root.view.url.toString(), target))
+            root.view.url = target;
         root.persistUrl(target);
         sleepTimer.restart();
     }
@@ -103,25 +222,40 @@ CardFrame {
             height: 30
             spacing: root.th.space1
             Icon {
+                objectName: "webBack"
                 Layout.alignment: Qt.AlignVCenter
                 name: "chevron-left"
                 size: root.th.iconBody
                 color: root.canGoBack ? root.th.text2 : root.th.muted
+                HoverHandler { id: backHover }
                 TapHandler { onTapped: if (root.canGoBack) root.view.goBack() }
+                ToolTip.visible: backHover.hovered && root.tooltipsEnabled
+                ToolTip.delay: 400
+                ToolTip.text: "Back"
             }
             Icon {
+                objectName: "webForward"
                 Layout.alignment: Qt.AlignVCenter
                 name: "chevron-right"
                 size: root.th.iconBody
                 color: root.canGoForward ? root.th.text2 : root.th.muted
+                HoverHandler { id: forwardHover }
                 TapHandler { onTapped: if (root.canGoForward) root.view.goForward() }
+                ToolTip.visible: forwardHover.hovered && root.tooltipsEnabled
+                ToolTip.delay: 400
+                ToolTip.text: "Forward"
             }
             Icon {
+                objectName: "webReload"
                 Layout.alignment: Qt.AlignVCenter
                 name: "refresh-cw"
                 size: root.th.iconBody
                 color: root.th.text2
+                HoverHandler { id: reloadHover }
                 TapHandler { onTapped: if (root.view) root.view.reload() }
+                ToolTip.visible: reloadHover.hovered && root.tooltipsEnabled
+                ToolTip.delay: 400
+                ToolTip.text: "Reload"
             }
 
             AppTextField {
@@ -137,12 +271,17 @@ CardFrame {
             }
 
             Icon {
+                objectName: "webZoomOut"
                 Layout.alignment: Qt.AlignVCenter
                 visible: root.width > 500
                 name: "zoom-out"
                 size: root.th.iconBody
                 color: root.th.text2
+                HoverHandler { id: zoomOutHover }
                 TapHandler { onTapped: root.webZoom = Math.max(0.4, root.webZoom - 0.1) }
+                ToolTip.visible: zoomOutHover.hovered && root.tooltipsEnabled
+                ToolTip.delay: 400
+                ToolTip.text: "Zoom out"
             }
             Text {
                 Layout.alignment: Qt.AlignVCenter
@@ -153,38 +292,60 @@ CardFrame {
                 font.pixelSize: root.th.fontSizeSmall
             }
             Icon {
+                objectName: "webZoomIn"
                 Layout.alignment: Qt.AlignVCenter
                 visible: root.width > 500
                 name: "zoom-in"
                 size: root.th.iconBody
                 color: root.th.text2
+                HoverHandler { id: zoomInHover }
                 TapHandler { onTapped: root.webZoom = Math.min(2.5, root.webZoom + 0.1) }
+                ToolTip.visible: zoomInHover.hovered && root.tooltipsEnabled
+                ToolTip.delay: 400
+                ToolTip.text: "Zoom in"
             }
             Icon {
+                objectName: "webOpenExternal"
                 Layout.alignment: Qt.AlignVCenter
                 name: "external-link"
                 size: root.th.iconBody
                 color: root.th.text2
+                HoverHandler { id: externalHover }
                 TapHandler { onTapped: root.app.openExternal(root.url) }
+                ToolTip.visible: externalHover.hovered && root.tooltipsEnabled
+                ToolTip.delay: 400
+                ToolTip.text: "Open in browser"
             }
             Icon {
+                objectName: "webKeepAwake"
                 Layout.alignment: Qt.AlignVCenter
                 visible: root.width > 400
                 name: "coffee"
                 size: root.th.iconBody
                 color: root.noSleep ? root.th.accent : root.th.muted
+                HoverHandler { id: sleepHover }
                 TapHandler { onTapped: root.toggleSleep() }
+                ToolTip.visible: sleepHover.hovered && root.tooltipsEnabled
+                ToolTip.delay: 400
+                ToolTip.text: root.noSleep ? "Allow sleeping to save memory"
+                                           : "Keep this card awake"
             }
             Icon {
+                objectName: "webSession"
                 Layout.alignment: Qt.AlignVCenter
                 name: "shield"
                 size: root.th.iconBody
                 color: root.app.adblockCheck(root.url) ? root.th.accent : root.th.muted
+                HoverHandler { id: sessionHover }
                 TapHandler { onTapped: debugPopup.open() }
+                ToolTip.visible: sessionHover.hovered && root.tooltipsEnabled
+                ToolTip.delay: 400
+                ToolTip.text: "Website session"
             }
         }
 
         Item {
+            id: webHost
             width: parent.width
             height: parent.height - 36
 
@@ -220,55 +381,55 @@ CardFrame {
                 }
             }
 
-            Loader {
-                id: webLoader
-                anchors.fill: parent
-                active: root.url !== "" && !root.asleep && (!root.sharedProfile || root.webProfile !== null)
-                sourceComponent: webComponent
-            }
-
+            // The page itself is created by ensureView() and then lives in
+            // this item until the card hands it to its picture-in-picture
+            // copy, so no state of the site is thrown away on the way.
             Component {
                 id: webComponent
 
                 WebEngineView {
-                    anchors.fill: parent
-                    profile: root.sharedProfile && root.webProfile ? root.webProfile : root.isolatedProfile
-                    zoomFactor: root.webZoom
-
-                    Component.onCompleted: if (root.url !== "") url = root.url
-
-                    onUrlChanged: {
-                        if (!root.app || root.blocking) return;
-                        var nextUrl = url.toString();
-                        if (nextUrl === "" || nextUrl === "about:blank") return;
-                        if (root.app.adblockCheck(nextUrl)) {
-                            root.blocking = true;
-                            root.app.toast("Blocked " + nextUrl);
-                            url = "about:blank";
-                            root.blocking = false;
-                            return;
-                        }
-                        urlField.text = nextUrl;
-                        if (root.url !== nextUrl) root.url = nextUrl;
-                        root.persistUrl(nextUrl);
-                    }
-
-                    onLoadingChanged: function (loadRequest) {
-                        if (!root.app) return;
-                        if (loadRequest.status === WebEngineView.LoadSucceededStatus) {
-                            var hosts = root.app.adblockHosts();
-                            runJavaScript(
-                                "(function(){var blocked=" + hosts + ";" +
-                                "function hit(u){try{var h=new URL(u,location.href).hostname;return blocked.some(function(b){return h===b||h.endsWith('.'+b);});}catch(e){return false;}}" +
-                                "var f=window.fetch;window.fetch=function(u,o){var url=(typeof u==='string')?u:(u&&u.url)||'';if(hit(url))return Promise.reject(new Error('blocked by Corcho'));return f.apply(this,arguments);};" +
-                                "var xo=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,u){this.__blocked=hit(u);return xo.apply(this,arguments);};" +
-                                "var xs=XMLHttpRequest.prototype.send;XMLHttpRequest.prototype.send=function(){if(this.__blocked){this.abort();return;}return xs.apply(this,arguments);};" +
-                                "var sels=['[id^=google_ads]','[id^=div-gpt-ad]','[class*=sponsored]','iframe[src*=doubleclick]','iframe[src*=googlesyndication]'];" +
-                                "sels.forEach(function(s){document.querySelectorAll(s).forEach(function(n){n.remove();});});})()"
-                            );
-                        }
-                    }
                 }
+            }
+        }
+    }
+
+    // Whoever is hosting the page reacts to its navigation: the canvas copy
+    // and the picture-in-picture copy both keep their address bar and their
+    // persisted URL up to date, and both run the ad-blocker hooks.
+    Connections {
+        target: root.view
+
+        function onUrlChanged() {
+            var page = root.view;
+            if (!page || !root.app || root.blocking) return;
+            var nextUrl = page.url.toString();
+            if (nextUrl === "" || nextUrl === "about:blank") return;
+            if (root.app.adblockCheck(nextUrl)) {
+                root.blocking = true;
+                root.app.toast("Blocked " + nextUrl);
+                page.url = "about:blank";
+                root.blocking = false;
+                return;
+            }
+            urlField.text = nextUrl;
+            if (root.url !== nextUrl) root.url = nextUrl;
+            root.persistUrl(nextUrl);
+        }
+
+        function onLoadingChanged(loadRequest) {
+            var page = root.view;
+            if (!page || !root.app) return;
+            if (loadRequest.status === WebEngineView.LoadSucceededStatus) {
+                var hosts = root.app.adblockHosts();
+                page.runJavaScript(
+                    "(function(){var blocked=" + hosts + ";" +
+                    "function hit(u){try{var h=new URL(u,location.href).hostname;return blocked.some(function(b){return h===b||h.endsWith('.'+b);});}catch(e){return false;}}" +
+                    "var f=window.fetch;window.fetch=function(u,o){var url=(typeof u==='string')?u:(u&&u.url)||'';if(hit(url))return Promise.reject(new Error('blocked by Corcho'));return f.apply(this,arguments);};" +
+                    "var xo=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,u){this.__blocked=hit(u);return xo.apply(this,arguments);};" +
+                    "var xs=XMLHttpRequest.prototype.send;XMLHttpRequest.prototype.send=function(){if(this.__blocked){this.abort();return;}return xs.apply(this,arguments);};" +
+                    "var sels=['[id^=google_ads]','[id^=div-gpt-ad]','[class*=sponsored]','iframe[src*=doubleclick]','iframe[src*=googlesyndication]'];" +
+                    "sels.forEach(function(s){document.querySelectorAll(s).forEach(function(n){n.remove();});});})()"
+                );
             }
         }
     }

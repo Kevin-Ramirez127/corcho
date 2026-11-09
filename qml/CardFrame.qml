@@ -70,6 +70,17 @@ FocusScope {
         if (t === "ai") return 300;
         return 180;
     }
+    // Corner radius of the card surface, shared by the surface, the
+    // picture-in-picture placeholder and the resize grip.
+    readonly property real cardRadius: Math.max(0, Math.min(28,
+        root.settings && root.settings.card_radius !== undefined
+            ? root.settings.card_radius
+            : (root.th ? root.th.radiusCard : 8)))
+    // The grip icon has to stay inside the rounded corner (the card must
+    // always cover it) while leaving the outer 16px of the card free, where
+    // the content scrollbars and their arrow buttons live.
+    readonly property real gripInset: Math.ceil(root.cardRadius * 0.3)
+    readonly property real gripSize: Math.max(6, 16 - root.gripInset)
 
     function enter() {
         if (entered) return;
@@ -182,7 +193,7 @@ FocusScope {
         id: surface
         anchors.fill: parent
         visible: !root.surfaceless
-        radius: Math.max(0, Math.min(28, root.settings && root.settings.card_radius !== undefined ? root.settings.card_radius : root.th.radiusCard))
+        radius: root.cardRadius
         transform: Translate { x: root.parallaxX; y: root.parallaxY }
         color: root.th.card
         border.width: root.selected ? root.th.borderWidthStrong : root.th.borderWidth
@@ -442,8 +453,9 @@ FocusScope {
     Item {
         id: resizeHandle
         visible: root.resizable && !root.card.locked && !root.floating && !root.detached
-        // Keep the handle in the very corner so it does not cover content
-        // scrollbars (the website card's down arrow sits just inside it).
+        // The hit area covers the whole corner, but stops where the content
+        // scrollbars begin (16px in from the card edge), so their down arrow
+        // stays clickable.
         width: 16
         height: 16
         z: 10
@@ -453,10 +465,17 @@ FocusScope {
         anchors.bottomMargin: 0
         opacity: root.resizeHovered || root.selected ? 1 : 0
 
+        // Pulled in from the corner far enough that the rounded card surface
+        // always covers it: at radius r the corner is cut back by r * (1 -
+        // 1/sqrt(2)) ~= 0.29 * r.
         Icon {
-            anchors.centerIn: parent
+            objectName: "resizeGrip"
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            anchors.rightMargin: root.gripInset
+            anchors.bottomMargin: root.gripInset
             name: "maximize-2"
-            size: root.th.iconSmall - 2
+            size: root.gripSize
             color: root.th.muted
             rotation: 90
         }
@@ -615,7 +634,7 @@ FocusScope {
         anchors.fill: parent
         visible: root.floating
         z: 40
-        radius: Math.max(0, Math.min(28, root.settings && root.settings.card_radius !== undefined ? root.settings.card_radius : root.th.radiusCard))
+        radius: root.cardRadius
         color: Qt.rgba(root.th.bg.r, root.th.bg.g, root.th.bg.b, 0.58)
         border.width: root.th.borderWidth
         border.color: root.th.border

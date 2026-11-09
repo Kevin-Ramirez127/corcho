@@ -328,6 +328,39 @@ Item {
         return card.x + card.width > left - m && card.x < right + m && card.y + card.height > top - m && card.y < bottom + m;
     }
 
+    // Cards whose body holds live state must survive scrolling: a website
+    // body owns the loaded page, and a floating card has to be able to hand
+    // that page back when its picture-in-picture window closes.
+    function keepAlive(card) {
+        return card.type === "website"
+            || root.floatingIds.indexOf(card.id) >= 0;
+    }
+
+    // The body of a card that is currently loaded, or null.
+    function bodyItem(id) {
+        for (var i = 0; i < cardRepeater.count; i++) {
+            var loader = cardRepeater.itemAt(i);
+            if (loader && loader.card && loader.card.id === id)
+                return loader.item;
+        }
+        return null;
+    }
+
+    // Move the live page of a website card into its picture-in-picture copy.
+    function releaseCardWebView(id) {
+        var body = root.bodyItem(id);
+        if (!body || typeof body.releaseWebView !== "function") return null;
+        return body.releaseWebView();
+    }
+
+    // Take the page back when the picture-in-picture window closes.
+    function acceptCardWebView(id, view) {
+        var body = root.bodyItem(id);
+        if (!view || !body || typeof body.acceptWebView !== "function") return false;
+        body.acceptWebView(view);
+        return true;
+    }
+
     function zoomAt(factor, sx, sy) {
         var oldZoom = Math.max(0.2, app.zoom);
         var next = Math.min(3.0, Math.max(0.2, oldZoom * factor));
@@ -656,6 +689,7 @@ Item {
         }
 
         Repeater {
+            id: cardRepeater
             model: cardModel
 
             delegate: Loader {
@@ -668,7 +702,7 @@ Item {
                 // drop; offset their delegates so they follow the pointer.
                 x: root.dragPreviewX(card.id)
                 y: root.dragPreviewY(card.id)
-                active: root.inView(card)
+                active: root.inView(card) || root.keepAlive(card)
                 source: root.bodyFor(card.type)
                 asynchronous: false
 
