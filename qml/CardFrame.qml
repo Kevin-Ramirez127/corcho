@@ -442,13 +442,15 @@ FocusScope {
     Item {
         id: resizeHandle
         visible: root.resizable && !root.card.locked && !root.floating && !root.detached
-        width: 18
-        height: 18
+        // Keep the handle in the very corner so it does not cover content
+        // scrollbars (the website card's down arrow sits just inside it).
+        width: 16
+        height: 16
         z: 10
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        anchors.rightMargin: 8
-        anchors.bottomMargin: 8
+        anchors.rightMargin: 0
+        anchors.bottomMargin: 0
         opacity: root.resizeHovered || root.selected ? 1 : 0
 
         Icon {

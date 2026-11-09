@@ -629,17 +629,6 @@ Item {
             }
             root.createRequested(wx, wy);
         }
-        onWheel: function (wheel) {
-            if (root.modalOpen) {
-                wheel.accepted = true;
-                return;
-            }
-            if (active) return;
-            var wantPan = !(wheel.modifiers & Qt.ControlModifier)
-                && (!root.settings || root.settings.trackpad_pan !== false);
-            if (!wantPan) root.zoomAt(wheel.angleDelta.y > 0 ? 1.12 : 0.89, wheel.x, wheel.y);
-            else root.app.setView(root.app.panX - wheel.angleDelta.x * 0.7, root.app.panY - wheel.angleDelta.y * 0.7, root.app.zoom);
-        }
     }
 
     Item {
@@ -820,16 +809,26 @@ Item {
             root.panning = false;
             root.app.saveNow();
         }
-        onWheel: function (wheel) {
-            if (root.modalOpen) {
-                wheel.accepted = true;
+    }
+
+    // Wheel events reach this handler only when the item under the pointer
+    // does not consume them. That lets webviews scroll natively while the
+    // canvas still pans and zooms everywhere else.
+    WheelHandler {
+        id: canvasWheel
+        onWheel: function (event) {
+            if (root.modalOpen || root.panning) {
+                event.accepted = true;
                 return;
             }
-            if (active) return;
-            var wantPan = !(wheel.modifiers & Qt.ControlModifier)
+            var wantPan = !(event.modifiers & Qt.ControlModifier)
                 && (!root.settings || root.settings.trackpad_pan !== false);
-            if (!wantPan) root.zoomAt(wheel.angleDelta.y > 0 ? 1.12 : 0.89, wheel.x, wheel.y);
-            else root.app.setView(root.app.panX - wheel.angleDelta.x * 0.7, root.app.panY - wheel.angleDelta.y * 0.7, root.app.zoom);
+            if (!wantPan)
+                root.zoomAt(event.angleDelta.y > 0 ? 1.12 : 0.89, point.position.x, point.position.y);
+            else
+                root.app.setView(root.app.panX - event.angleDelta.x * 0.7,
+                                 root.app.panY - event.angleDelta.y * 0.7, root.app.zoom);
+            event.accepted = true;
         }
     }
 

@@ -28,7 +28,11 @@ CardFrame {
         if (root.url !== "" && view && view.url.toString() !== root.url)
             view.url = root.url;
     }
-    onCardChanged: root.noSleep = card ? !!card.noSleep : false
+    onCardChanged: {
+        root.noSleep = card ? !!card.noSleep : false;
+        var next = card && card.url !== undefined ? (card.url || "") : "";
+        if (next !== root.url) root.url = next;
+    }
 
     Timer {
         id: sleepTimer
@@ -44,6 +48,15 @@ CardFrame {
         return value;
     }
 
+    // The card body is destroyed while it is off screen and recreated in a
+    // picture-in-picture window. Persist the current URL so those copies load
+    // the same site instead of falling back to the empty start state.
+    function persistUrl(value) {
+        if (!root.card || value === "" || value === "about:blank") return;
+        if ((root.card.url || "") === value) return;
+        root.commit({ url: value });
+    }
+
     function openUrl() {
         var target = normalize(urlField.text);
         if (target === "") return;
@@ -54,6 +67,7 @@ CardFrame {
         root.url = target;
         root.asleep = false;
         if (view) view.url = target;
+        root.persistUrl(target);
         sleepTimer.restart();
     }
 
@@ -225,14 +239,18 @@ CardFrame {
 
                     onUrlChanged: {
                         if (!root.app || root.blocking) return;
-                        if (root.app.adblockCheck(url)) {
+                        var nextUrl = url.toString();
+                        if (nextUrl === "" || nextUrl === "about:blank") return;
+                        if (root.app.adblockCheck(nextUrl)) {
                             root.blocking = true;
-                            root.app.toast("Blocked " + url);
+                            root.app.toast("Blocked " + nextUrl);
                             url = "about:blank";
                             root.blocking = false;
                             return;
                         }
-                        urlField.text = url;
+                        urlField.text = nextUrl;
+                        if (root.url !== nextUrl) root.url = nextUrl;
+                        root.persistUrl(nextUrl);
                     }
 
                     onLoadingChanged: function (loadRequest) {
