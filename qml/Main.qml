@@ -91,6 +91,10 @@ ApplicationWindow {
     property var floatingCards: ({})
     // Creation order, used to lay the detached windows out left to right.
     property var floatingOrder: []
+    // Stable token used in each detached window's title so compositor IPC can
+    // find the right toplevel.
+    property int floatingTokenSeed: 0
+    property int floatingReflowPasses: 0
     readonly property var floatingIds: Object.keys(floatingCards)
 
     // Keep the detached windows in one row with a constant gap. This runs
@@ -107,10 +111,11 @@ ApplicationWindow {
         var x = baseX;
         var y = baseY;
         var rowHeight = 0;
+        var placements = [];
 
         for (var i = 0; i < root.floatingOrder.length; i++) {
             var win = root.floatingCards[root.floatingOrder[i]];
-            if (!win || !win.visible) continue;
+            if (!win) continue;
             var w = win.width > 0 ? win.width : 360;
             var h = win.height > 0 ? win.height : 260;
             if (x > baseX && x + w > screenW - margin) {
@@ -120,9 +125,16 @@ ApplicationWindow {
             }
             win.x = x;
             win.y = y;
+            if (win.floatingToken)
+                placements.push({ token: win.floatingToken, x: x, y: y });
             x += w + root.floatingGap;
             rowHeight = Math.max(rowHeight, h);
         }
+
+        // On sway the compositor owns toplevel positions, so ask it to move
+        // the floating PiP windows to the layout computed above.
+        if (placements.length > 0 && app)
+            app.placeFloatingWindows(JSON.stringify(placements));
     }
 
     function forgetFloatingCard(id) {
@@ -135,6 +147,7 @@ ApplicationWindow {
         if (order.length !== floatingOrder.length)
             floatingOrder = order;
         Qt.callLater(root.reflowFloatingWindows);
+        root.floatingReflowPasses = 3;
         floatingReflowTimer.restart();
     }
 
@@ -151,6 +164,8 @@ ApplicationWindow {
             return null;
         }
 
+        root.floatingTokenSeed += 1;
+        var token = String(root.floatingTokenSeed);
         var win = component.createObject(null, {
             "app": app,
             "th": root.th,
@@ -159,6 +174,7 @@ ApplicationWindow {
             "bodySource": canvas.bodyFor(card.type),
             "gridId": app.activeGridId,
             "webProfile": canvas.webProfile,
+            "floatingToken": token,
             "initialWidth": Math.max(320, card.width),
             "initialHeight": Math.max(260, card.height) + 38,
             "x": root.x + 48,
@@ -207,6 +223,7 @@ ApplicationWindow {
             // Reapply once the windows are mapped: some window managers move
             // a fresh floating window after the initial position request.
             Qt.callLater(root.reflowFloatingWindows);
+            root.floatingReflowPasses = 3;
             floatingReflowTimer.restart();
         }
         canvas.setSelection([]);
@@ -239,9 +256,14 @@ ApplicationWindow {
     // Reflow again after the windows have been mapped.
     Timer {
         id: floatingReflowTimer
-        interval: 80
-        repeat: false
-        onTriggered: root.reflowFloatingWindows()
+        interval: 90
+        repeat: true
+        running: false
+        onTriggered: {
+            root.reflowFloatingWindows();
+            root.floatingReflowPasses -= 1;
+            if (root.floatingReflowPasses <= 0) stop();
+        }
     }
 
     function openSettings(tab) {

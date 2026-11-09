@@ -18,6 +18,7 @@ Window {
     property string gridId: ""
     property var webProfile: null
     property bool pinned: true
+    property string floatingToken: ""
 
     property real initialWidth: 360
     property real initialHeight: 420
@@ -33,9 +34,13 @@ Window {
     flags: Qt.Window | Qt.FramelessWindowHint
            | (win.pinned ? Qt.WindowStaysOnTopHint : 0)
     // Leave the picture-in-picture marker in the title so window rules can
-    // match it (the Wayland app_id is shared by the whole process).
-    title: "Picture-in-Picture — " + (win.cardData
-        ? (win.cardData.title || win.cardData.type || "Card") : "Card")
+    // match it (the Wayland app_id is shared by the whole process). The token
+    // also lets sway identify each detached window when placing them.
+    title: {
+        var marker = win.floatingToken ? (" #" + win.floatingToken) : "";
+        return "Picture-in-Picture" + marker + " — " + (win.cardData
+            ? (win.cardData.title || win.cardData.type || "Card") : "Card");
+    }
 
     width: win.initialWidth
     height: win.initialHeight

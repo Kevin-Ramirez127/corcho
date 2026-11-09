@@ -117,8 +117,11 @@ The process advertises a stable Wayland `app_id` / X11 `WM_CLASS`:
 - native and distribution packages: `corcho`
 - Flatpak: `io.corcho.Corcho`
 
-Picture-in-picture windows keep `Picture-in-Picture` in their title. This lets
-compositors float or pin them, for example:
+Picture-in-picture windows keep `Picture-in-Picture` in their title. On sway,
+Corcho asks the compositor to float and move each detached window so the
+constant-gap row is preserved. On other compositors that expose window
+placement, the same client-side layout is used. Compositor rules can still
+float or pin them, for example:
 
 ```ini
 # Sway / i3
