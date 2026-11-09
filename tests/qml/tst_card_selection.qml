@@ -172,6 +172,16 @@ Item {
             return null;
         }
 
+        function collectCardFrames(node, out) {
+            if (node && node.card !== undefined && node.detached !== undefined) {
+                out.push(node);
+                return;
+            }
+            var children = node ? node.children : [];
+            for (var i = 0; i < children.length; i++)
+                collectCardFrames(children[i], out);
+        }
+
         function test_click_does_not_move_other_cards() {
             setCards([
                 { id: "img", type: "file", x: 100, y: 100, width: 280, height: 240,
@@ -273,16 +283,53 @@ Item {
             compare(returned, "a");
         }
 
-        // The detached copy fills its window, and editing it must not rewrite
+        // Multiple detached cards share one window and sit next to each other
+        // instead of stacking as separate toplevels.
+        function test_floating_window_lays_cards_side_by_side() {
+            var component = Qt.createComponent("../../qml/FloatingCardWindow.qml");
+            compare(component.status, Component.Ready);
+            var bodySource = Qt.resolvedUrl("../../qml/CardBodyNote.qml");
+            var win = component.createObject(null, {
+                "app": fakeApp, "th": theme, "gridId": "g1",
+                "entries": [
+                    { id: "a", card: noteCard("a", 100, 100), bodySource: bodySource,
+                      width: 220, height: 220 },
+                    { id: "b", card: noteCard("b", 400, 100), bodySource: bodySource,
+                      width: 220, height: 220 }
+                ]
+            });
+            verify(win !== null);
+            wait(120);
+
+            var frames = [];
+            collectCardFrames(win.contentItem, frames);
+            compare(frames.length, 2);
+            var ax = frames[0].mapToItem(win.contentItem, 0, 0).x;
+            var bx = frames[1].mapToItem(win.contentItem, 0, 0).x;
+            verify(bx >= ax + frames[0].width);
+            var expected = Math.min(Math.max(280, 280 * 2 + win.paneSpacing + win.padding * 2),
+                                    win.screenW * 0.92);
+            compare(win.width, expected);
+            var returned = "";
+            win.cardReturned.connect(function (id) { returned = id; });
+            win.returnToCanvas("a");
+            compare(returned, "a");
+
+            win.close();
+            wait(30);
+        }
+
+        // The detached copy fills its pane, and editing it must not rewrite
         // the canvas card's geometry.
         function test_floating_window_keeps_canvas_geometry() {
             var component = Qt.createComponent("../../qml/FloatingCardWindow.qml");
             compare(component.status, Component.Ready);
             var card = noteCard("float", 100, 100);
+            var bodySource = Qt.resolvedUrl("../../qml/CardBodyNote.qml");
             var win = component.createObject(null, {
-                "app": fakeApp, "th": theme, "cardId": "float", "cardData": card,
-                "bodySource": Qt.resolvedUrl("../../qml/CardBodyNote.qml"),
-                "gridId": "g1", "initialWidth": 340, "initialHeight": 320
+                "app": fakeApp, "th": theme, "gridId": "g1",
+                "entries": [{ id: "float", card: card, bodySource: bodySource,
+                              width: 220, height: 220 }]
             });
             verify(win !== null);
             wait(120);
@@ -291,8 +338,17 @@ Item {
             compare(frame.detached, true);
             compare(frame.showChrome, false);
             compare(frame.surfaceless, true);
-            compare(frame.width, win.width);
-            compare(frame.height, win.height - win.titleBarHeight);
+            compare(frame.width, 280);
+            compare(frame.height, 220);
+
+            // Updating card data must refresh the delegate, not recreate it.
+            var updated = noteCard("float", 100, 100);
+            updated.text = "updated";
+            win.entries = [{ id: "float", card: updated, bodySource: bodySource,
+                             width: 220, height: 220 }];
+            wait(60);
+            compare(findCardFrame(win.contentItem), frame);
+            compare(frame.card.text, "updated");
 
             frame.commit({}, "changed");
             var saved = JSON.parse(fakeApp.lastUpdate);
@@ -306,7 +362,8 @@ Item {
             wait(30);
         }
 
-        function test_whiteboard_canvas_click_selects_card() {            setCards([{ id: "w", type: "whiteboard", x: 100, y: 100, width: 320, height: 260,
+        function test_whiteboard_canvas_click_selects_card() {
+            setCards([{ id: "w", type: "whiteboard", x: 100, y: 100, width: 320, height: 260,
                         title: "board", text: "", strokes: [], penWidth: 3, locked: false }]);
             mouseClick(loader.item, 250, 240);
             wait(60);
