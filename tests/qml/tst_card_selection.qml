@@ -334,6 +334,37 @@ Item {
             compare(loader.item.selectedIds.length, 2);
         }
 
+        // Dragging one card of a multi-selection must move the rest of the
+        // selection live, not only once the pointer is released.
+        function test_drag_moves_selection_live() {
+            setCards([noteCard("a", 100, 100), noteCard("b", 400, 100)]);
+            mouseClick(loader.item, 150, 110);
+            mouseClick(loader.item, 450, 110, Qt.LeftButton, Qt.ControlModifier);
+            wait(60);
+            compare(loader.item.selectedIds.length, 2);
+
+            var bLoader = findChild(loader.item, "cardLoader_b");
+            verify(bLoader !== null);
+            compare(bLoader.x, 0);
+            compare(bLoader.y, 0);
+
+            mousePress(loader.item, 150, 110);
+            mouseMove(loader.item, 210, 170);
+            mouseMove(loader.item, 230, 190);
+            wait(30);
+
+            // The other selected card follows before the drop.
+            verify(bLoader.x > 10);
+            verify(bLoader.y > 10);
+
+            mouseRelease(loader.item, 230, 190);
+            wait(80);
+
+            // Its model position is updated on drop, so the preview resets.
+            compare(bLoader.x, 0);
+            compare(bLoader.y, 0);
+        }
+
         // Dragging the top card by a spot where the covered card's header
         // lies must only move the top card.
         function test_drag_top_card_does_not_move_covered_card() {

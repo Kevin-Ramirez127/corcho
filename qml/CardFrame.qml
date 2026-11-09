@@ -373,6 +373,8 @@ FocusScope {
                     lastY = 0;
                     totalX = 0;
                     totalY = 0;
+                    if (dragAllowed && root.canvasView)
+                        root.canvasView.beginCardDrag(root.card.id);
                     if (!root.selected && dragAllowed)
                         root.selectRequested(false, centroid.scenePosition.x, centroid.scenePosition.y);
                 } else {
@@ -380,6 +382,8 @@ FocusScope {
                         root.commitGeometry();
                         if (Math.abs(totalX) > 0.5 || Math.abs(totalY) > 0.5)
                             root.movedBy(totalX, totalY);
+                        if (root.canvasView)
+                            root.canvasView.endCardDrag();
                     }
                     dragAllowed = true;
                 }
@@ -393,6 +397,8 @@ FocusScope {
                 root.y += dy;
                 totalX += dx;
                 totalY += dy;
+                if (root.canvasView)
+                    root.canvasView.updateCardDrag(totalX, totalY);
                 lastX = translation.x;
                 lastY = translation.y;
             }
