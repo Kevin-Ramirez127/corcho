@@ -9,6 +9,9 @@ Item {
     property var cards: []
     property string selectedId: ""
     property var selectedIds: []
+    // Cards currently shown in picture-in-picture windows. Their canvas
+    // delegates stay in place as greyed-out placeholders.
+    property var floatingIds: []
     // Card ids in stacking order, last one on top. Kept in QML so clicking a
     // card never reshuffles the card model (which used to make other cards
     // jump while their delegates were reassigned).
@@ -131,6 +134,7 @@ Item {
         var ids = [];
         for (var i = 0; i < cards.length; i++) {
             var c = cards[i];
+            if (root.floatingIds.indexOf(c.id) >= 0) continue;
             if (c.x < wx + ww && c.x + c.width > wx && c.y < wy + wh && c.y + c.height > wy)
                 ids.push(c.id);
         }
@@ -219,6 +223,7 @@ Item {
     signal menuRequested(var card, real globalX, real globalY)
     signal dateLinkRequested(string sourceCardId, string sourceItemId, string linkId, string defaultDate)
     signal calendarManagerRequested()
+    signal returnCardRequested(string id)
     signal backgroundMenuRequested(real globalX, real globalY, real worldX, real worldY)
     signal createRequested(real worldX, real worldY)
 
@@ -691,12 +696,18 @@ Item {
                     if (cardLoader.card.type === "ai")
                         item.activated.connect(function () { root.activateAi(cardLoader.card.id); });
                     item.selected = Qt.binding(function () { return root.selectedIds.indexOf(cardLoader.card.id) >= 0; });
+                    item.floating = Qt.binding(function () { return root.floatingIds.indexOf(cardLoader.card.id) >= 0; });
                     item.selectRequested.connect(function (additive, sceneX, sceneY) {
                         root.selectCard(cardLoader.card.id, !!additive, sceneX, sceneY);
                     });
+                    item.returnRequested.connect(function () {
+                        root.returnCardRequested(cardLoader.card.id);
+                    });
                     item.movedBy.connect(function (dx, dy) { root.handleMoved(cardLoader.card.id, dx, dy); });
                     item.menuRequested.connect(function (cardData, gx, gy) {
-                        if (root.selectedIds.indexOf(cardData.id) < 0) root.setSelection([cardData.id]);
+                        if (root.selectedIds.indexOf(cardData.id) < 0
+                                && root.floatingIds.indexOf(cardData.id) < 0)
+                            root.setSelection([cardData.id]);
                         root.menuRequested(cardData, gx, gy);
                     });
                     item.dateLinkRequested.connect(function (cardId, itemId, linkId, defaultDate) {

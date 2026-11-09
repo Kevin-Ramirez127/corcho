@@ -22,6 +22,7 @@ fn main() {
         .qrc("resources.qrc")
         .cpp_file("cpp/qt_logging.cpp")
         .cpp_file("cpp/clipboard.cpp")
+        .cpp_file("cpp/app_identity.cpp")
         .files(["src/bridge.rs"])
         .build();
 }

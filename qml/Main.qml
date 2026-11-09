@@ -86,6 +86,94 @@ ApplicationWindow {
     property var menuFolder: null
     property var menuWorld: ({ x: 0, y: 0 })
     property var renameTarget: ({ kind: "", id: "" })
+    // Card id -> FloatingCardWindow. Reassigned whenever it changes so QML
+    // bindings that depend on the id list are notified.
+    property var floatingCards: ({})
+    readonly property var floatingIds: Object.keys(floatingCards)
+
+    function forgetFloatingCard(id) {
+        if (!floatingCards[id]) return;
+        var next = Object.assign({}, floatingCards);
+        delete next[id];
+        floatingCards = next;
+    }
+
+    function closeFloatingCard(id) {
+        var win = floatingCards[id];
+        if (win) win.close();
+        else forgetFloatingCard(id);
+    }
+
+    function openFloatingCard(id) {
+        if (floatingCards[id]) {
+            floatingCards[id].raise();
+            floatingCards[id].requestActivate();
+            return;
+        }
+        var card = canvas.cardById(id);
+        if (!card) return;
+
+        var component = Qt.createComponent("FloatingCardWindow.qml");
+        if (component.status !== Component.Ready) {
+            toastHost.show("error", "Could not open picture-in-picture window");
+            return;
+        }
+
+        var index = Object.keys(floatingCards).length;
+        var width = Math.max(320, card.width);
+        var height = Math.max(260, card.height) + 38;
+        var offset = (index % 6) * 26;
+        var win = component.createObject(null, {
+            "app": app,
+            "th": root.th,
+            "cardId": id,
+            "cardData": card,
+            "bodySource": canvas.bodyFor(card.type),
+            "gridId": app.activeGridId,
+            "webProfile": canvas.webProfile,
+            "initialWidth": width,
+            "initialHeight": height,
+            "x": root.x + Math.max(40, root.width - width - 72) + offset,
+            "y": root.y + 96 + offset
+        });
+        if (!win) {
+            toastHost.show("error", "Could not open picture-in-picture window");
+            return;
+        }
+
+        win.th = Qt.binding(function () { return root.th; });
+        win.webProfile = Qt.binding(function () { return canvas.webProfile; });
+        win.cardReturned.connect(function () { root.forgetFloatingCard(id); });
+        win.dateLinkRequested.connect(function (sourceCardId, sourceItemId, linkId, defaultDate) {
+            dateLinkDialog.openFor(sourceCardId, sourceItemId, linkId, defaultDate);
+        });
+        win.calendarManagerRequested.connect(function () { calendarManager.open(); });
+
+        var next = Object.assign({}, floatingCards);
+        next[id] = win;
+        floatingCards = next;
+        canvas.setSelection([]);
+    }
+
+    function syncFloatingCards() {
+        if (root.floatingIds.length === 0) return;
+        var live = {};
+        for (var i = 0; i < root.allCards.length; i++) live[root.allCards[i].id] = root.allCards[i];
+        for (var id in floatingCards) {
+            var win = floatingCards[id];
+            if (!win) continue;
+            var card = live[id];
+            if (!card) {
+                // Deleted elsewhere: close the detached copy as well. The
+                // window's onClosing handler removes it from the map.
+                win.close();
+                continue;
+            }
+            win.cardData = card;
+        }
+    }
+
+    onAllCardsChanged: syncFloatingCards()
 
     function openSettings(tab) {
         settingsTab = tab || "general";
@@ -136,7 +224,8 @@ ApplicationWindow {
 
     function openCardMenu(card, px, py) {
         menuCard = card;
-        var multi = canvas.selectedIds.length > 1;
+        var isFloating = root.floatingIds.indexOf(card.id) >= 0;
+        var multi = canvas.selectedIds.length > 1 && !isFloating;
         var ids = multi ? canvas.selectedIds.slice() : [card.id];
         if (ids.indexOf(card.id) < 0) ids.push(card.id);
         menuCardIds = ids;
@@ -149,17 +238,32 @@ ApplicationWindow {
         var allLocked = selectedCards.length > 0;
         var allGrouped = selectedCards.length > 0;
         var allSynced = selectedCards.length > 0;
+        var allFloating = selectedCards.length > 0;
         for (var s = 0; s < selectedCards.length; s++) {
             if (!selectedCards[s].locked) allLocked = false;
             if (!selectedCards[s].group) allGrouped = false;
             if (!selectedCards[s].syncId) allSynced = false;
+            if (root.floatingIds.indexOf(selectedCards[s].id) < 0) allFloating = false;
         }
         menuLockTarget = !allLocked;
 
-        var actions = [
-            { label: multi ? "Duplicate cards" : "Duplicate card", icon: "copy", action: "card:duplicate" },
-            { label: multi ? "Pin colours" : "Pin colour", icon: "palette", action: "card:color" }
-        ];
+        var actions = [];
+        if (allFloating) {
+            actions.push({
+                label: multi ? "Return cards to canvas" : "Return card to canvas",
+                icon: "undo-2",
+                action: "card:unpip"
+            });
+        } else {
+            actions.push({
+                label: multi ? "Open cards in picture-in-picture" : "Open in picture-in-picture",
+                icon: "app-window",
+                action: "card:pip"
+            });
+            actions.push({ separator: true, label: "" });
+        }
+        actions.push({ label: multi ? "Duplicate cards" : "Duplicate card", icon: "copy", action: "card:duplicate" });
+        actions.push({ label: multi ? "Pin colours" : "Pin colour", icon: "palette", action: "card:color" });
         if (!multi)
             actions.push({ label: "Link date", icon: "calendar", action: "card:link-date" });
         actions.push({
@@ -263,6 +367,11 @@ ApplicationWindow {
             }
             if (arg === "duplicate") {
                 for (var d = 0; d < ids.length; d++) app.duplicateCard(ids[d]);
+            } else if (arg === "pip") {
+                for (var pip = 0; pip < ids.length; pip++) root.openFloatingCard(ids[pip]);
+                canvas.setSelection([]);
+            } else if (arg === "unpip") {
+                for (var unpip = 0; unpip < ids.length; unpip++) root.closeFloatingCard(ids[unpip]);
             } else if (arg === "color") {
                 var colors = ["#d98e5c", "#c9a86a", "#7aa2f7", "#86b78a", "#5aa8a0", "#d97a72", "#8d8d97"];
                 for (var c = 0; c < selectedCards.length; c++) {
@@ -541,12 +650,14 @@ ApplicationWindow {
                 th: root.th
                 settings: root.settings
                 cards: root.cards
+                floatingIds: root.floatingIds
                 modalOpen: root.modalOpen
                 onMenuRequested: function (card, x, y) { root.openCardMenu(card, x, y) }
                 onDateLinkRequested: function (cardId, itemId, linkId, date) {
                     dateLinkDialog.openFor(cardId, itemId, linkId, date);
                 }
                 onCalendarManagerRequested: calendarManager.open()
+                onReturnCardRequested: function (id) { root.closeFloatingCard(id) }
                 onBackgroundMenuRequested: function (gx, gy, wx, wy) { root.openCreateMenu(gx, gy, wx, wy) }
                 onCreateRequested: function (wx, wy) { app.createCard("note", wx, wy) }
             }

@@ -15,6 +15,14 @@ FocusScope {
     property bool selected: false
     property bool resizable: true
     property bool showChrome: true
+    // True when the card is rendered inside a picture-in-picture window. It
+    // fills its parent instead of following the model geometry, and the
+    // canvas-only drag, resize and selection gestures are disabled.
+    property bool detached: false
+    // True for a card that is shown in a picture-in-picture window while this
+    // canvas delegate stays behind as a greyed-out placeholder.
+    property bool floating: false
+    signal returnRequested()
     default property alias bodyData: body.data
 
     signal selectRequested(bool additive, real sceneX, real sceneY)
@@ -36,10 +44,10 @@ FocusScope {
     property bool dragAllowed: true
     property bool resizeAllowed: true
 
-    x: card ? card.x : 0
-    y: card ? card.y : 0
-    width: card ? card.width : 320
-    height: card ? card.height : 240
+    x: detached ? 0 : (card ? card.x : 0)
+    y: detached ? 0 : (card ? card.y : 0)
+    width: detached ? (parent ? parent.width : 320) : (card ? card.width : 320)
+    height: detached ? (parent ? parent.height : 240) : (card ? card.height : 240)
     z: selected ? 20 : (root.cardHovered ? 10 : 1)
     property bool entered: false
     property bool editingTitle: false
@@ -72,7 +80,7 @@ FocusScope {
     onSettingsChanged: enter()
 
     function updateParallax(px, py) {
-        if (!root.settings || !root.settings.card_parallax || root.settings.reduced_motion) {
+        if (root.detached || !root.settings || !root.settings.card_parallax || root.settings.reduced_motion) {
             parallaxX = 0;
             parallaxY = 0;
             return;
@@ -83,7 +91,7 @@ FocusScope {
 
     onCardChanged: {
         root.editingTitle = false;
-        if (!mover.active && !resizer.active) {
+        if (!root.detached && !mover.active && !resizer.active) {
             x = card.x;
             y = card.y;
             width = card.width;
@@ -107,12 +115,16 @@ FocusScope {
         if (payloadPatch) {
             for (var k in payloadPatch) payload[k] = payloadPatch[k];
         }
+        // A detached card fills its window, not its canvas slot. Keep the
+        // canvas geometry so editing the floating copy never teleports or
+        // resizes the card that stays behind.
+        var keepGeometry = root.detached && root.card;
         app.updateCard(JSON.stringify({
             id: card.id,
-            x: root.x,
-            y: root.y,
-            width: root.width,
-            height: root.height,
+            x: keepGeometry ? root.card.x : root.x,
+            y: keepGeometry ? root.card.y : root.y,
+            width: keepGeometry ? root.card.width : root.width,
+            height: keepGeometry ? root.card.height : root.height,
             title: titleInput.text,
             text: textValue !== undefined && textValue !== null ? textValue : root.card.text,
             payload: payload
@@ -147,6 +159,7 @@ FocusScope {
     }
 
     function commitGeometry() {
+        if (root.detached) return;
         if (root.settings && root.settings.grid_magnetic) {
             root.x = snapValue(root.x);
             root.y = snapValue(root.y);
@@ -181,6 +194,7 @@ FocusScope {
         anchors.fill: parent
         acceptedButtons: Qt.LeftButton
         preventStealing: false
+        enabled: !root.floating
         onClicked: function (mouse) {
             mouse.accepted = true;
             var scene = mapToItem(null, mouse.x, mouse.y);
@@ -220,6 +234,7 @@ FocusScope {
     Item {
         id: header
         visible: root.showChrome
+        enabled: !root.floating
         transform: Translate { x: root.parallaxX; y: root.parallaxY }
         anchors.left: parent.left
         anchors.right: parent.right
@@ -357,7 +372,7 @@ FocusScope {
         DragHandler {
             id: mover
             target: null
-            enabled: !root.card.locked && !root.editingTitle
+            enabled: !root.card.locked && !root.editingTitle && !root.floating && !root.detached
             grabPermissions: PointerHandler.CanTakeOverFromAnything
             cursorShape: root.dragCursorShape
             property real lastX: 0
@@ -410,6 +425,7 @@ FocusScope {
     Item {
         id: body
         transform: Translate { x: root.parallaxX; y: root.parallaxY }
+        enabled: !root.floating
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: root.showChrome ? header.bottom : parent.top
@@ -421,7 +437,7 @@ FocusScope {
 
     Item {
         id: resizeHandle
-        visible: root.resizable && !root.card.locked
+        visible: root.resizable && !root.card.locked && !root.floating && !root.detached
         width: 18
         height: 18
         z: 10
@@ -517,6 +533,7 @@ FocusScope {
 
     TapHandler {
         acceptedButtons: Qt.LeftButton
+        enabled: !root.floating && !root.detached
         onTapped: root.applyTapSelection(
             point.modifiers, point.scenePosition.x, point.scenePosition.y)
     }
@@ -526,6 +543,7 @@ FocusScope {
         anchors.fill: parent
         z: 9
         acceptedButtons: Qt.RightButton
+        enabled: !root.detached
         property bool resizing: false
         property bool menuPending: false
         property real startW: 0
@@ -580,6 +598,38 @@ FocusScope {
         onCanceled: {
             resizing = false;
             menuPending = false;
+        }
+    }
+
+    // Placeholder shown on the canvas while the card lives in its own
+    // picture-in-picture window. The return action appears on hover only.
+    Rectangle {
+        id: floatingShade
+        objectName: "floatingShade"
+        anchors.fill: parent
+        visible: root.floating
+        z: 40
+        radius: Math.max(0, Math.min(28, root.settings && root.settings.card_radius !== undefined ? root.settings.card_radius : root.th.radiusCard))
+        color: Qt.rgba(root.th.bg.r, root.th.bg.g, root.th.bg.b, 0.58)
+        border.width: root.th.borderWidth
+        border.color: root.th.border
+
+        MouseArea {
+            anchors.fill: parent
+            acceptedButtons: Qt.LeftButton
+            onClicked: function (mouse) { mouse.accepted = true; }
+        }
+
+        HoverHandler { id: shadeHover }
+
+        AppButton {
+            anchors.centerIn: parent
+            visible: root.cardHovered || shadeHover.hovered
+            th: root.th
+            icon: "undo-2"
+            text: "Back card to canvas"
+            variant: "solid"
+            onClicked: root.returnRequested()
         }
     }
 }

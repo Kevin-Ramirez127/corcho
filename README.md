@@ -30,6 +30,9 @@ for Linux. No Electron shell, no telemetry, no analytics.
   GitLab or self-hosted). Sync pulls at start, pushes after a short debounce
   and union-merges so a grid or card is never dropped. Conflict copies stay
   in `backups/`.
+- Picture-in-picture cards: pop out one or more selected cards in their own
+  always-on-top windows, keep working on them, and return them to the canvas
+  from the greyed-out placeholder left behind.
 - Stable, beta and experimental update channels, MPRIS, scripts, launch at
   startup and a `corcho://` protocol handler. Every feature is free.
 - A complete **MCP server** over stdio or local HTTP: workspace, grids,
@@ -99,6 +102,33 @@ xdg-mime default corcho.desktop x-scheme-handler/corcho
 
 Packaging scripts for Debian, AppImage and Flatpak live in
 [`packaging/`](packaging/).
+
+## Picture-in-picture and compositor rules
+
+Right-click a card (or a multi-selection) and choose **Open in
+picture-in-picture**. The card opens in a frameless window that can be moved by
+its title bar; use the pin button to keep it on top. The original card stays on
+the canvas as a grey placeholder. Hover it and press **Back card to canvas** to
+close the detached window.
+
+The process advertises a stable Wayland `app_id` / X11 `WM_CLASS`:
+
+- native and distribution packages: `corcho`
+- Flatpak: `io.corcho.Corcho`
+
+Picture-in-picture windows keep `Picture-in-Picture` in their title. This lets
+compositors float or pin them, for example:
+
+```ini
+# Sway / i3
+for_window [app_id="corcho" title="^Picture-in-Picture"] floating enable, sticky enable
+```
+
+```ini
+# Hyprland
+windowrulev2 = float, class:^(corcho)$, title:^(Picture-in-Picture)
+windowrulev2 = pin, class:^(corcho)$, title:^(Picture-in-Picture)
+```
 
 ## MCP
 
