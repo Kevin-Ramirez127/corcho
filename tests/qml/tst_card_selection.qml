@@ -36,7 +36,8 @@ Item {
         function adblockCheck(url) { return false; }
         function adblockHosts() { return "[]"; }
         function toast(message) {}
-        function openExternal(url) {}
+        property int externalCalls: 0
+        function openExternal(url) { externalCalls += 1; }
         function search(query) { return "[]"; }
         function switchGrid(id) {}
         function command(id) { return "null"; }
@@ -71,6 +72,7 @@ Item {
         property string fontMono: "monospace"
         property real fontSizeBody: 14
         property real fontSizeLarge: 20
+        property real fontSizeHuge: 36
         property real fontSizeSmall: 12
         property real lineHeightNormal: 1.2
         property int fontWeightMedium: 500
@@ -182,6 +184,7 @@ Item {
             testRoot.menuCount = 0;
             testRoot.pageProbe = "";
             fakeApp.settingsJson = "";
+            fakeApp.externalCalls = 0;
             if (launcherLoader.item) {
                 launcherLoader.item.close();
                 launcherLoader.item.opened = false;
@@ -278,6 +281,49 @@ Item {
             compare(loader.item.selectedIds[0], "note");
             compare(loader.item.raiseOrder.length, 1);
             compare(loader.item.raiseOrder[0], "note");
+        }
+
+        // Stacked cards receive the same pointer event. A button on the top
+        // card must not also press the matching button underneath.
+        function test_overlapping_pomodoro_only_top_button_fires() {
+            setCards([
+                { id: "pomoBottom", type: "pomodoro", x: 100, y: 100, width: 320, height: 260,
+                  title: "bottom", text: "", locked: false, workMinutes: 25,
+                  breakMinutes: 5, phase: "work", remaining: 1500, sessions: 0 },
+                { id: "pomoTop", type: "pomodoro", x: 100, y: 100, width: 320, height: 260,
+                  title: "top", text: "", locked: false, workMinutes: 25,
+                  breakMinutes: 5, phase: "work", remaining: 1500, sessions: 0 }
+            ]);
+            var top = cardItem("pomoTop");
+            var bottom = cardItem("pomoBottom");
+            verify(top !== null);
+            verify(bottom !== null);
+            var start = findChild(top, "pomodoroStart");
+            verify(start !== null);
+            var at = start.mapToItem(loader.item, start.width / 2, start.height / 2);
+            mouseClick(loader.item, at.x, at.y);
+            wait(80);
+            compare(top.running, true);
+            compare(bottom.running, false);
+        }
+
+        // Same rule for plain tap actions inside card bodies.
+        function test_overlapping_bookmark_only_top_action_fires() {
+            setCards([
+                { id: "bmBottom", type: "bookmark", x: 100, y: 100, width: 320, height: 200,
+                  title: "bottom", text: "", url: "https://bottom.example", locked: false },
+                { id: "bmTop", type: "bookmark", x: 100, y: 100, width: 320, height: 200,
+                  title: "top", text: "", url: "https://top.example", locked: false }
+            ]);
+            var top = cardItem("bmTop");
+            verify(top !== null);
+            var tile = findChild(top, "bookmarkOpenTile");
+            verify(tile !== null);
+            fakeApp.externalCalls = 0;
+            var at = tile.mapToItem(loader.item, tile.width / 2, tile.height / 2);
+            mouseClick(loader.item, at.x, at.y);
+            wait(80);
+            compare(fakeApp.externalCalls, 1);
         }
 
         function test_click_raises_single_card() {

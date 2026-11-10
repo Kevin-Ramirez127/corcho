@@ -125,9 +125,9 @@ CardFrame {
             clip: true
             onActiveFocusChanged: if (!activeFocus) root.commit({ prompt: text, context: root.context })
 
-            TapHandler {
+            CardTapHandler {
                 acceptedButtons: Qt.LeftButton
-                onTapped: root.requestBodySelect(point.modifiers, point.scenePosition.x, point.scenePosition.y)
+                onAction: root.requestBodySelect(point.modifiers, point.scenePosition.x, point.scenePosition.y)
             }
 
             Text {
@@ -188,9 +188,9 @@ CardFrame {
             wrapMode: TextEdit.Wrap
             clip: true
 
-            TapHandler {
+            CardTapHandler {
                 acceptedButtons: Qt.LeftButton
-                onTapped: root.requestBodySelect(point.modifiers, point.scenePosition.x, point.scenePosition.y)
+                onAction: root.requestBodySelect(point.modifiers, point.scenePosition.x, point.scenePosition.y)
             }
 
             Text {
@@ -271,8 +271,8 @@ CardFrame {
                         }
                     }
                     HoverHandler { id: rowHover }
-                    TapHandler {
-                        onTapped: root.app.toggleAiLink(root.card.id, modelData.id)
+                    CardTapHandler {
+                        onAction: root.app.toggleAiLink(root.card.id, modelData.id)
                     }
                 }
             }

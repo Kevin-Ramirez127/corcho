@@ -149,8 +149,8 @@ CardFrame {
                         size: root.th.iconSmall
                         color: checkItem.link !== null ? root.th.accent : root.th.muted
                         opacity: (checkItem.link !== null || checkItem.hoveredNow) ? 1 : 0
-                        TapHandler {
-                            onTapped: {
+                        CardTapHandler {
+                            onAction: {
                                 if (!root.canInteractAt(point.scenePosition.x, point.scenePosition.y))
                                     return;
                                 root.dateLinkRequested(
@@ -168,9 +168,9 @@ CardFrame {
                         size: root.th.iconSmall
                         color: root.th.muted
                         opacity: checkItem.hoveredNow ? 1 : 0
-                        TapHandler {
+                        CardTapHandler {
                             acceptedButtons: Qt.LeftButton
-                            onTapped: {
+                            onAction: {
                                 if (root.canInteractAt(point.scenePosition.x, point.scenePosition.y))
                                     root.remove(index);
                             }
@@ -201,9 +201,9 @@ CardFrame {
                     anchors.right: rightRow.left
                     anchors.top: parent.top
                     anchors.bottom: parent.bottom
-                    TapHandler {
+                    CardTapHandler {
                         acceptedButtons: Qt.LeftButton
-                        onTapped: {
+                        onAction: {
                             if (!root.canInteractAt(point.scenePosition.x, point.scenePosition.y))
                                 return;
                             root.requestBodySelect(point.modifiers, point.scenePosition.x, point.scenePosition.y);
@@ -215,9 +215,9 @@ CardFrame {
                 HoverHandler { id: rowHover
                     onHoveredChanged: checkItem.hoveredNow = hovered
                 }
-                TapHandler {
+                CardTapHandler {
                     acceptedButtons: Qt.RightButton
-                    onTapped: {
+                    onAction: {
                         if (root.canInteractAt(point.scenePosition.x, point.scenePosition.y))
                             root.remove(index);
                     }
@@ -238,9 +238,9 @@ CardFrame {
             border.color: addField.activeFocus ? root.th.accent : root.th.border
             Behavior on border.color { ColorAnimation { duration: 110 } }
 
-            TapHandler {
+            CardTapHandler {
                 acceptedButtons: Qt.LeftButton
-                onTapped: addField.forceActiveFocus()
+                onAction: addField.forceActiveFocus()
             }
 
             TextInput {
@@ -264,9 +264,9 @@ CardFrame {
                     text = "";
                 }
 
-                TapHandler {
+                CardTapHandler {
                     acceptedButtons: Qt.LeftButton
-                    onTapped: root.requestBodySelect(point.modifiers, point.scenePosition.x, point.scenePosition.y)
+                    onAction: root.requestBodySelect(point.modifiers, point.scenePosition.x, point.scenePosition.y)
                 }
 
                 Text {

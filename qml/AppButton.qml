@@ -1,4 +1,5 @@
 import QtQuick
+import "OverlayState.js" as OverlayState
 
 Item {
     id: root
@@ -16,9 +17,21 @@ Item {
     Accessible.role: Accessible.Button
     Accessible.name: root.text !== "" ? root.text : root.icon
     Accessible.description: root.variant === "solid" ? "Primary action" : ""
-    Accessible.onPressAction: root.clicked()
-    Keys.onSpacePressed: root.clicked()
-    Keys.onReturnPressed: root.clicked()
+    function activateAt(sceneX, sceneY, modifiers) {
+        if (!OverlayState.allowsCardAction(root, sceneX, sceneY)) return;
+        var card = OverlayState.owningCard(root);
+        if (card) card.requestBodySelect(modifiers || 0, sceneX, sceneY);
+        root.clicked();
+    }
+
+    function activate() {
+        var scene = root.mapToItem(null, root.width / 2, root.height / 2);
+        root.activateAt(scene.x, scene.y, 0);
+    }
+
+    Accessible.onPressAction: root.activate()
+    Keys.onSpacePressed: root.activate()
+    Keys.onReturnPressed: root.activate()
 
     implicitHeight: root.th.controlHeight
     implicitWidth: Math.max(root.th.controlHeight, row.implicitWidth + root.th.space6)
@@ -65,8 +78,15 @@ Item {
         onHoveredChanged: root.isHovered = hovered
     }
 
-    TapHandler {
+    // A MouseArea grabs the press exclusively. TapHandlers on overlapping
+    // cards could all receive the same tap, so pressing a button on the top
+    // card also triggered the button on the card underneath.
+    MouseArea {
+        anchors.fill: parent
         enabled: root.enabledButton
-        onTapped: root.clicked()
+        onClicked: function (mouse) {
+            var scene = root.mapToItem(null, mouse.x, mouse.y);
+            root.activateAt(scene.x, scene.y, mouse.modifiers);
+        }
     }
 }

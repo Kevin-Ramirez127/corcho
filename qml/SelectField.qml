@@ -71,8 +71,8 @@ Item {
         onHoveredChanged: root.fieldHovered = hovered
     }
 
-    TapHandler {
-        onTapped: root.openMenu()
+    CardTapHandler {
+        onAction: root.openMenu()
     }
 
     ContextMenu {

@@ -64,7 +64,7 @@ CardFrame {
                     HoverHandler { id: h
                         onHoveredChanged: toolItem.hoveredNow = hovered
                     }
-                    TapHandler { onTapped: modelData.run() }
+                    CardTapHandler { onAction: modelData.run() }
                 }
             }
         }
@@ -96,9 +96,9 @@ CardFrame {
             // card's own TapHandler never sees clicks in the text area. Select
             // the card from here as well, otherwise clicking a note's body
             // leaves the previously selected card selected.
-            TapHandler {
+            CardTapHandler {
                 acceptedButtons: Qt.LeftButton
-                onTapped: root.requestBodySelect(point.modifiers, point.scenePosition.x, point.scenePosition.y)
+                onAction: root.requestBodySelect(point.modifiers, point.scenePosition.x, point.scenePosition.y)
             }
 
             Text {

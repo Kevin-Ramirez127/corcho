@@ -39,6 +39,11 @@ FocusScope {
     property bool cardHovered: false
     property bool menuHovered: false
     property bool resizeHovered: false
+    // False while the pointer is over a card that is stacked above this one.
+    // Interactive children are disabled in that state so a tap cannot also
+    // trigger controls on the card underneath (pointer handlers can be
+    // delivered to overlapping cards at the same time).
+    property bool pointerOnTop: true
     // Bodies can override the cursor shown while the card is draggable.
     property int dragCursorShape: Qt.SizeAllCursor
     property real parallaxX: 0
@@ -210,7 +215,7 @@ FocusScope {
         anchors.fill: parent
         acceptedButtons: Qt.LeftButton
         preventStealing: false
-        enabled: !root.floating
+        enabled: !root.floating && root.pointerOnTop
         onClicked: function (mouse) {
             mouse.accepted = true;
             var scene = mapToItem(null, mouse.x, mouse.y);
@@ -250,7 +255,7 @@ FocusScope {
     Item {
         id: header
         visible: root.showChrome
-        enabled: !root.floating
+        enabled: !root.floating && root.pointerOnTop
         transform: Translate { x: root.parallaxX; y: root.parallaxY }
         anchors.left: parent.left
         anchors.right: parent.right
@@ -377,8 +382,8 @@ FocusScope {
             HoverHandler { id: menuHover
                 onHoveredChanged: root.menuHovered = hovered
             }
-            TapHandler {
-                onTapped: {
+            CardTapHandler {
+                onAction: {
                     var p = root.mapToItem(null, root.width - 20, 28);
                     root.menuRequested(root.card, p.x, p.y);
                 }
@@ -388,7 +393,8 @@ FocusScope {
         DragHandler {
             id: mover
             target: null
-            enabled: !root.card.locked && !root.editingTitle && !root.floating && !root.detached
+            enabled: !root.card.locked && !root.editingTitle && !root.floating
+                     && !root.detached && root.pointerOnTop
             grabPermissions: PointerHandler.CanTakeOverFromAnything
             cursorShape: root.dragCursorShape
             property real lastX: 0
@@ -441,7 +447,7 @@ FocusScope {
     Item {
         id: body
         transform: Translate { x: root.parallaxX; y: root.parallaxY }
-        enabled: !root.floating
+        enabled: !root.floating && root.pointerOnTop
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: root.showChrome ? header.bottom : parent.top
@@ -454,6 +460,7 @@ FocusScope {
     Item {
         id: resizeHandle
         visible: root.resizable && !root.card.locked && !root.floating && !root.detached
+        enabled: root.pointerOnTop
         // The hit area covers the whole corner, but stops where the content
         // scrollbars begin (16px in from the card edge), so their down arrow
         // stays clickable.
@@ -546,20 +553,35 @@ FocusScope {
             }
         }
         onPointChanged: {
-            if (root.canvasView && root.card
-                    && !root.canvasView.isTopCardAtScene(
-                        root.card.id, point.scenePosition.x, point.scenePosition.y)) {
-                root.parallaxX = 0;
-                root.parallaxY = 0;
-                return;
+            if (root.canvasView && root.card) {
+                root.pointerOnTop = root.canvasView.isTopCardAtScene(
+                    root.card.id, point.scenePosition.x, point.scenePosition.y);
+                if (!root.pointerOnTop) {
+                    root.parallaxX = 0;
+                    root.parallaxY = 0;
+                    return;
+                }
             }
             root.updateParallax(point.position.x, point.position.y);
         }
     }
 
+    // Pointer handlers are delivered to overlapping cards, but HoverHandler
+    // only reports the top card. Update topness on press as well so controls
+    // on a covered card are disabled before their release fires.
+    TapHandler {
+        id: pointerGate
+        acceptedButtons: Qt.LeftButton
+        onPressedChanged: {
+            if (!pressed || !root.canvasView || !root.card) return;
+            root.pointerOnTop = root.canvasView.isTopCardAtScene(
+                root.card.id, point.scenePosition.x, point.scenePosition.y);
+        }
+    }
+
     TapHandler {
         acceptedButtons: Qt.LeftButton
-        enabled: !root.floating && !root.detached
+        enabled: !root.floating && !root.detached && root.pointerOnTop
         onTapped: root.applyTapSelection(
             point.modifiers, point.scenePosition.x, point.scenePosition.y)
     }
@@ -569,7 +591,7 @@ FocusScope {
         anchors.fill: parent
         z: 9
         acceptedButtons: Qt.RightButton
-        enabled: !root.detached
+        enabled: !root.detached && root.pointerOnTop
         property bool resizing: false
         property bool menuPending: false
         property real startW: 0

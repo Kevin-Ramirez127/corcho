@@ -100,6 +100,7 @@ CardFrame {
             anchors.horizontalCenter: parent.horizontalCenter
             spacing: root.th.space2
             AppButton {
+                objectName: "pomodoroStart"
                 th: root.th
                 icon: root.running ? "pause" : "play"
                 text: root.running ? "Pause" : "Start"
@@ -107,6 +108,7 @@ CardFrame {
                 onClicked: root.toggle()
             }
             AppButton {
+                objectName: "pomodoroReset"
                 th: root.th
                 icon: "rotate-ccw"
                 text: "Reset"

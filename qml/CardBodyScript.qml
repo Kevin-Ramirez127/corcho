@@ -35,9 +35,9 @@ CardFrame {
             clip: true
             onActiveFocusChanged: if (!activeFocus) root.commit({ script: text, lastOutput: root.output })
 
-            TapHandler {
+            CardTapHandler {
                 acceptedButtons: Qt.LeftButton
-                onTapped: root.requestBodySelect(point.modifiers, point.scenePosition.x, point.scenePosition.y)
+                onAction: root.requestBodySelect(point.modifiers, point.scenePosition.x, point.scenePosition.y)
             }
 
             Text {
@@ -71,9 +71,9 @@ CardFrame {
             wrapMode: TextEdit.WrapAnywhere
             clip: true
 
-            TapHandler {
+            CardTapHandler {
                 acceptedButtons: Qt.LeftButton
-                onTapped: root.requestBodySelect(point.modifiers, point.scenePosition.x, point.scenePosition.y)
+                onAction: root.requestBodySelect(point.modifiers, point.scenePosition.x, point.scenePosition.y)
             }
 
             Text {

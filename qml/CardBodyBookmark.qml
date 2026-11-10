@@ -20,11 +20,12 @@ CardFrame {
             width: parent.width
             spacing: root.th.spaceSnug
             Rectangle {
+                objectName: "bookmarkOpenTile"
                 width: 40
                 height: 40
                 radius: root.th.radiusMenu
                 color: root.th.surfaceStrong
-                TapHandler { onTapped: root.open() }
+                CardTapHandler { onAction: root.open() }
 
                 Text {
                     anchors.centerIn: parent
@@ -41,7 +42,7 @@ CardFrame {
                 name: "external-link"
                 size: root.th.iconBody
                 color: root.th.muted
-                TapHandler { onTapped: root.open() }
+                CardTapHandler { onAction: root.open() }
             }
 
             Column {
