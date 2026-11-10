@@ -22,11 +22,24 @@ Window {
     property var externalWebView: null
     property bool pinned: true
     property string floatingToken: ""
+    // Live, non-persisted state handed over from the canvas copy (for
+    // example a running Pomodoro timer) and returned when the window closes.
+    property var runtimeState: null
+    // Opacity of the card content, in percent. The title bar stays fully
+    // visible so the transparency control can always be reached again.
+    property int cardOpacity: 100
+    property bool opacityBarVisible: false
+
+    readonly property real cardOpacityRatio:
+        Math.max(0.03, Math.min(1.0, win.cardOpacity / 100))
 
     property real initialWidth: 360
     property real initialHeight: 420
 
     signal cardReturned()
+    // Emitted with transient body state while the window closes so the
+    // canvas copy can continue exactly where the PiP window left off.
+    signal runtimeReturned(var state)
     // Emitted with the page while the window closes, so the canvas copy can
     // take it back without ever reloading the site.
     signal webViewReturned(var view)
@@ -63,6 +76,15 @@ Window {
         return win.th ? win.th.radiusCard : 8;
     }
 
+    property bool runtimeHandedBack: false
+
+    function applyRuntime(state) {
+        win.runtimeState = state;
+        var item = bodyLoader.item;
+        if (item && typeof item.importRuntime === "function")
+            item.importRuntime(state);
+    }
+
     // Give the page back to the canvas copy before this window goes away.
     // The second call from onClosing is a no-op: the body has already
     // released the view.
@@ -73,14 +95,30 @@ Window {
         if (view) win.webViewReturned(view);
     }
 
+    function handRuntimeBack() {
+        if (win.runtimeHandedBack) return;
+        win.runtimeHandedBack = true;
+        var item = bodyLoader.item;
+        if (!item || typeof item.exportRuntime !== "function") return;
+        var state = item.exportRuntime();
+        if (state) win.runtimeReturned(state);
+    }
+
+    function setCardOpacity(value) {
+        var percent = Math.round(value);
+        win.cardOpacity = Math.max(3, Math.min(100, percent));
+    }
+
     function returnToCanvas() {
         win.handPageBack();
+        win.handRuntimeBack();
         win.cardReturned();
         win.close();
     }
 
     onClosing: {
         win.handPageBack();
+        win.handRuntimeBack();
         win.cardReturned();
     }
     onPinnedChanged: {
@@ -94,6 +132,7 @@ Window {
         color: win.th ? win.th.card : "#222222"
         border.width: win.th ? win.th.borderWidth : 1
         border.color: win.th ? win.th.borderStrong : "#444444"
+        opacity: win.cardOpacityRatio
     }
 
     Rectangle {
@@ -145,6 +184,37 @@ Window {
             anchors.rightMargin: win.th ? win.th.space2 : 8
             anchors.verticalCenter: parent.verticalCenter
             spacing: 2
+
+            Item {
+                id: opacityButton
+                objectName: "pipOpacityButton"
+                width: 26
+                height: 26
+                Accessible.role: Accessible.Button
+                Accessible.name: "Adjust card transparency"
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: win.th ? win.th.radiusControl : 4
+                    color: opacityHover.hovered || win.opacityBarVisible
+                        ? (win.th ? win.th.hover : "#333333") : "transparent"
+                }
+                Icon {
+                    anchors.centerIn: parent
+                    name: "blend"
+                    size: win.th ? win.th.iconBody : 16
+                    color: win.opacityBarVisible
+                        ? (win.th ? win.th.accent : "#d98e5c")
+                        : (win.th ? win.th.text2 : "#bbbbbb")
+                }
+                HoverHandler { id: opacityHover }
+                TapHandler {
+                    onTapped: win.opacityBarVisible = !win.opacityBarVisible
+                }
+                ToolTip.visible: opacityHover.hovered
+                ToolTip.delay: 500
+                ToolTip.text: "Card transparency"
+            }
 
             Item {
                 id: pinButton
@@ -226,12 +296,65 @@ Window {
         }
     }
 
+    // Compact slider strip shown from the transparency button. It floats
+    // over the top of the card and stays fully opaque, even at 3%.
+    Rectangle {
+        id: opacityBar
+        objectName: "pipOpacityBar"
+        visible: win.opacityBarVisible
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: titleBar.bottom
+        height: 42
+        z: 50
+        color: win.th ? win.th.menu : "#1c1c1c"
+        border.width: win.th ? win.th.borderWidth : 1
+        border.color: win.th ? win.th.border : "#333333"
+
+        Row {
+            anchors.fill: parent
+            anchors.leftMargin: 12
+            anchors.rightMargin: 12
+            spacing: win.th ? win.th.space3 : 12
+
+            Icon {
+                anchors.verticalCenter: parent.verticalCenter
+                name: "blend"
+                size: win.th ? win.th.iconSmall : 14
+                color: win.th ? win.th.text2 : "#bbbbbb"
+            }
+            SliderField {
+                objectName: "pipOpacitySlider"
+                anchors.verticalCenter: parent.verticalCenter
+                width: Math.max(80, parent.width - 108)
+                th: win.th
+                from: 3
+                to: 100
+                value: win.cardOpacity
+                onMoved: win.setCardOpacity(value)
+            }
+            Text {
+                objectName: "pipOpacityValue"
+                anchors.verticalCenter: parent.verticalCenter
+                width: 40
+                horizontalAlignment: Text.AlignRight
+                text: win.cardOpacity + "%"
+                color: win.th ? win.th.text : "#eeeeee"
+                font.family: win.th ? win.th.fontMono : "monospace"
+                font.pixelSize: win.th ? win.th.fontSizeSmall : 12
+            }
+        }
+    }
+
     Item {
+        id: bodyContainer
+        objectName: "pipBodyContainer"
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: titleBar.bottom
         anchors.bottom: parent.bottom
         clip: true
+        opacity: win.cardOpacityRatio
 
         Loader {
             id: bodyLoader
@@ -266,6 +389,12 @@ Window {
                 item.calendarManagerRequested.connect(function () {
                     win.calendarManagerRequested();
                 });
+
+                // applyRuntime() may have run before the body finished
+                // loading; in that case the state is waiting here.
+                if (win.runtimeState !== null
+                        && typeof item.importRuntime === "function")
+                    item.importRuntime(win.runtimeState);
             }
         }
     }

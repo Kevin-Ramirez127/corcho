@@ -37,7 +37,9 @@ Item {
         function adblockHosts() { return "[]"; }
         function toast(message) {}
         property int externalCalls: 0
+        property int pomodoroChimes: 0
         function openExternal(url) { externalCalls += 1; }
+        function pomodoroChime() { pomodoroChimes += 1; }
         function search(query) { return "[]"; }
         function switchGrid(id) {}
         function command(id) { return "null"; }
@@ -185,6 +187,7 @@ Item {
             testRoot.pageProbe = "";
             fakeApp.settingsJson = "";
             fakeApp.externalCalls = 0;
+            fakeApp.pomodoroChimes = 0;
             if (launcherLoader.item) {
                 launcherLoader.item.close();
                 launcherLoader.item.opened = false;
@@ -673,6 +676,227 @@ Item {
             body.toggle(8);
             wait(120);
             compare(list.contentY, before);
+        }
+
+        // Tasks can be reordered inside their own group, but a task cannot be
+        // dragged into the other done/undone group.
+        function test_checklist_reorders_only_inside_group() {
+            setCards([{ id: "check", type: "checklist", x: 100, y: 100, width: 300, height: 300,
+                        title: "tasks", text: "", locked: false, items: [
+                            { id: "u1", text: "undone one", done: false },
+                            { id: "u2", text: "undone two", done: false },
+                            { id: "u3", text: "undone three", done: false },
+                            { id: "d1", text: "done one", done: true },
+                            { id: "d2", text: "done two", done: true }
+                        ] }]);
+            var body = checklistBody();
+            verify(findChild(body, "checklistDrag_0") !== null);
+
+            // Move the last undone task to the top of the undone group.
+            compare(body.moveTask(2, "u1", false), true);
+            wait(60);
+            compare(body.items[0].id, "u3");
+            compare(body.items[1].id, "u1");
+            compare(body.items[2].id, "u2");
+            compare(body.items[3].id, "d1");
+
+            // Done tasks stay in their own group.
+            compare(body.moveTask(0, "d2", true), false);
+            compare(body.items[0].id, "u3");
+            compare(body.items[3].id, "d1");
+        }
+
+        // Dragging the grip on a row moves that task to the dropped slot.
+        function test_checklist_drag_handle_reorders() {
+            setCards([{ id: "check", type: "checklist", x: 100, y: 100, width: 300, height: 300,
+                        title: "tasks", text: "", locked: false, items: [
+                            { id: "u1", text: "undone one", done: false },
+                            { id: "u2", text: "undone two", done: false },
+                            { id: "u3", text: "undone three", done: false }
+                        ] }]);
+            var body = checklistBody();
+            var grip = findChild(body, "checklistDrag_0");
+            var target = findChild(body, "checklistTaskText_2");
+            verify(grip !== null);
+            verify(target !== null);
+
+            var start = grip.mapToItem(loader.item, grip.width / 2, grip.height / 2);
+            var end = target.mapToItem(loader.item, target.width / 2, target.height - 2);
+            mousePress(loader.item, start.x, start.y);
+            mouseMove(loader.item, start.x, start.y + 8);
+            mouseMove(loader.item, end.x, end.y);
+            mouseRelease(loader.item, end.x, end.y);
+            wait(100);
+
+            compare(body.items[0].id, "u2");
+            compare(body.items[1].id, "u3");
+            compare(body.items[2].id, "u1");
+        }
+
+        // The pencil button opens an inline editor that saves the new text.
+        function test_checklist_edit_task_inline() {
+            setCards([{ id: "check", type: "checklist", x: 100, y: 100, width: 300, height: 260,
+                        title: "tasks", text: "", locked: false,
+                        items: [{ id: "i1", text: "old text", done: false }] }]);
+            var body = checklistBody();
+            var edit = findChild(body, "checklistEdit_0");
+            verify(edit !== null);
+            mouseClick(edit, edit.width / 2, edit.height / 2);
+            wait(60);
+
+            var field = findChild(body, "checklistTaskEdit_0");
+            verify(field !== null);
+            verify(field.visible);
+            verify(field.activeFocus);
+            field.text = "new text";
+            field.forceActiveFocus();
+            wait(30);
+            keyClick(Qt.Key_Return);
+            wait(80);
+
+            compare(body.items[0].text, "new text");
+            compare(body.editingId, "");
+        }
+
+        // The Pomodoro pencil opens a small editor for focus and break length.
+        function test_pomodoro_edit_lengths() {
+            setCards([{ id: "pomo", type: "pomodoro", x: 100, y: 100, width: 320, height: 300,
+                        title: "timer", text: "", locked: false, workMinutes: 25,
+                        breakMinutes: 5, phase: "work", remaining: 1500, sessions: 0 }]);
+            var body = loader.item.bodyItem("pomo");
+            verify(body !== null);
+            var edit = findChild(body, "pomodoroEdit");
+            verify(edit !== null);
+            mouseClick(edit, edit.width / 2, edit.height / 2);
+            wait(60);
+
+            var panel = findChild(body, "pomodoroEditPanel");
+            verify(panel !== null);
+            verify(panel.visible);
+            body.editWork = 40;
+            body.editBreak = 12;
+            var save = findChild(body, "pomodoroSave");
+            verify(save !== null);
+            mouseClick(save, save.width / 2, save.height / 2);
+            wait(60);
+
+            compare(body.workMinutes, 40);
+            compare(body.breakMinutes, 12);
+            compare(body.remaining, 40 * 60);
+            verify(!panel.visible);
+        }
+
+        // Finishing a Pomodoro phase plays the notification chime.
+        function test_pomodoro_chime_when_phase_ends() {
+            setCards([{ id: "pomo", type: "pomodoro", x: 100, y: 100, width: 320, height: 300,
+                        title: "timer", text: "", locked: false, workMinutes: 25,
+                        breakMinutes: 5, phase: "work", remaining: 0, sessions: 0 }]);
+            var body = loader.item.bodyItem("pomo");
+            verify(body !== null);
+            body.running = true;
+            wait(1300);
+
+            compare(fakeApp.pomodoroChimes, 1);
+            compare(body.phase, "break");
+            compare(body.running, false);
+        }
+
+        // PiP windows get an opacity button and a slider from 3% to 100%.
+        function test_floating_window_opacity_control() {
+            var component = Qt.createComponent("../../qml/FloatingCardWindow.qml");
+            compare(component.status, Component.Ready);
+            var win = component.createObject(null, {
+                "app": fakeApp, "th": theme, "cardId": "float", "cardData": noteCard("float", 100, 100),
+                "bodySource": Qt.resolvedUrl("../../qml/CardBodyNote.qml"),
+                "gridId": "g1", "initialWidth": 340, "initialHeight": 320
+            });
+            verify(win !== null);
+            wait(120);
+
+            var button = findChild(win.contentItem, "pipOpacityButton");
+            verify(button !== null);
+            mouseClick(button, button.width / 2, button.height / 2);
+            wait(60);
+            verify(win.opacityBarVisible);
+            var bar = findChild(win.contentItem, "pipOpacityBar");
+            verify(bar !== null);
+            verify(bar.visible);
+            var slider = findChild(bar, "pipOpacitySlider");
+            verify(slider !== null);
+            compare(slider.from, 3);
+            compare(slider.to, 100);
+
+            win.setCardOpacity(3);
+            compare(win.cardOpacity, 3);
+            verify(Math.abs(win.cardOpacityRatio - 0.03) < 0.001);
+            win.setCardOpacity(0);
+            compare(win.cardOpacity, 3);
+            win.setCardOpacity(100);
+            compare(win.cardOpacity, 100);
+
+            win.close();
+            wait(30);
+        }
+
+        // A running Pomodoro hands its live runtime to the PiP copy instead of
+        // showing a fresh idle timer, and hands it back on close.
+        function test_pomodoro_runtime_moves_to_pip() {
+            setCards([{ id: "pomo", type: "pomodoro", x: 100, y: 100, width: 320, height: 300,
+                        title: "timer", text: "", locked: false, workMinutes: 25,
+                        breakMinutes: 5, phase: "work", remaining: 1500, sessions: 0 }]);
+            var canvasBody = loader.item.bodyItem("pomo");
+            verify(canvasBody !== null);
+            canvasBody.phase = "break";
+            canvasBody.remaining = 74;
+            canvasBody.sessions = 3;
+            canvasBody.running = true;
+            var runtime = canvasBody.exportRuntime();
+            compare(runtime.running, true);
+
+            // The canvas copy pauses while the card is detached.
+            loader.item.floatingIds = ["pomo"];
+            wait(60);
+            var canvasTimer = findChild(canvasBody, "pomodoroTimer");
+            verify(canvasTimer !== null);
+            compare(canvasTimer.running, false);
+
+            var component = Qt.createComponent("../../qml/FloatingCardWindow.qml");
+            compare(component.status, Component.Ready);
+            var win = component.createObject(null, {
+                "app": fakeApp, "th": theme, "cardId": "pomo",
+                "cardData": loader.item.cardById("pomo"),
+                "bodySource": Qt.resolvedUrl("../../qml/CardBodyPomodoro.qml"),
+                "gridId": "g1", "initialWidth": 320, "initialHeight": 300
+            });
+            verify(win !== null);
+            wait(120);
+            win.applyRuntime(runtime);
+            wait(60);
+
+            var pipBody = findCardFrame(win.contentItem);
+            verify(pipBody !== null);
+            compare(pipBody.phase, "break");
+            compare(pipBody.remaining, 74);
+            compare(pipBody.sessions, 3);
+            compare(pipBody.running, true);
+            var pipTimer = findChild(pipBody, "pomodoroTimer");
+            verify(pipTimer !== null);
+            compare(pipTimer.running, true);
+
+            // Closing the PiP window returns the current runtime to the
+            // canvas copy, which resumes its timer.
+            win.runtimeReturned.connect(function (state) {
+                canvasBody.importRuntime(state);
+            });
+            pipBody.remaining = 50;
+            win.close();
+            wait(60);
+            compare(canvasBody.remaining, 50);
+            compare(canvasBody.running, true);
+            loader.item.floatingIds = [];
+            wait(30);
+            compare(canvasTimer.running, true);
+            canvasBody.running = false;
         }
 
         // Ctrl+Left/Right at the start/end of a field must not fall through to

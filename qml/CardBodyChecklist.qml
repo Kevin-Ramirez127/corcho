@@ -6,6 +6,13 @@ CardFrame {
 
     property var items: (root.card && root.card.items) ? root.card.items : []
     property bool changed: false
+    // Task text being edited inline, and the task currently being dragged to
+    // another position inside its own done/undone group.
+    property string editingId: ""
+    property string dragItemId: ""
+    property real dragOffset: 0
+    property int dragRow: -1
+    property bool dragAfter: false
 
     readonly property var links: {
         try { return (JSON.parse(root.app.calendarJson).dateLinks || []); }
@@ -75,6 +82,120 @@ CardFrame {
         persist();
     }
 
+    // Replace the list while keeping the scroll offset. Reordering and
+    // editing rebuild the grouped row model just like toggling does.
+    function replaceItems(next) {
+        var keepY = list.contentY;
+        items = next;
+        persist();
+        Qt.callLater(function () {
+            list.contentY = Math.min(keepY, Math.max(0, list.contentHeight - list.height));
+        });
+    }
+
+    function itemIndex(itemId) {
+        for (var i = 0; i < items.length; i++)
+            if (items[i].id === itemId) return i;
+        return -1;
+    }
+
+    function beginEdit(itemId) {
+        editingId = itemId;
+        Qt.callLater(function () {
+            var row = null;
+            for (var i = 0; i < root.rows.length; i++) {
+                if (root.rows[i].item && root.rows[i].item.id === itemId) {
+                    row = list.itemAtIndex(i);
+                    break;
+                }
+            }
+            if (!row) return;
+            var field = findEditField(row);
+            if (field) {
+                field.forceActiveFocus();
+                field.selectAll();
+            }
+        });
+    }
+
+    // The editor is nested in the row delegate; find it so focus can be
+    // handed over right after it becomes visible.
+    function findEditField(node) {
+        if (!node) return null;
+        if (node.objectName && String(node.objectName).indexOf("checklistTaskEdit_") === 0)
+            return node;
+        var kids = node.children || [];
+        for (var i = 0; i < kids.length; i++) {
+            var found = findEditField(kids[i]);
+            if (found) return found;
+        }
+        return null;
+    }
+
+    function commitEdit(itemId, text) {
+        if (editingId !== itemId) return;
+        editingId = "";
+        var clean = text.trim();
+        if (clean === "") return;
+        var index = itemIndex(itemId);
+        if (index < 0) return;
+        if (items[index].text === clean) return;
+        var next = items.slice();
+        next[index] = { id: next[index].id, text: clean, done: next[index].done };
+        replaceItems(next);
+    }
+
+    function cancelEdit() {
+        editingId = "";
+    }
+
+    // Drop order is limited to the dragged task's group: a done task can only
+    // move among done tasks, an undone task among undone tasks.
+    function scheduleMove(itemIndexValue, targetItemId, after) {
+        Qt.callLater(function () {
+            root.moveTask(itemIndexValue, targetItemId, after);
+        });
+    }
+
+    function moveTask(itemIndexValue, targetItemId, after) {
+        if (itemIndexValue < 0 || itemIndexValue >= items.length) return false;
+        var source = items[itemIndexValue];
+        var targetIndex = itemIndex(targetItemId);
+        if (targetIndex < 0 || targetIndex === itemIndexValue) return false;
+        if (items[targetIndex].done !== source.done) return false;
+
+        var next = items.slice();
+        next.splice(itemIndexValue, 1);
+        var insertAt = -1;
+        for (var i = 0; i < next.length; i++)
+            if (next[i].id === targetItemId) { insertAt = i; break; }
+        if (insertAt < 0) return false;
+        if (after) insertAt += 1;
+        next.splice(insertAt, 0, source);
+        replaceItems(next);
+        return true;
+    }
+
+    function dropTargetAt(contentY) {
+        var sourceIndex = itemIndex(dragItemId);
+        if (sourceIndex < 0) return null;
+        var done = items[sourceIndex].done;
+        var last = -1;
+        for (var i = 0; i < rows.length; i++) {
+            var row = rows[i];
+            if (!row.item || row.item.done !== done) continue;
+            last = i;
+            var delegate = list.itemAtIndex(i);
+            if (!delegate) continue;
+            if (contentY < delegate.y + delegate.height) {
+                return { row: i, after: contentY > delegate.y + delegate.height / 2 };
+            }
+        }
+        // Below the last row of the group: drop after it.
+        if (last >= 0) return { row: last, after: true };
+        return null;
+    }
+
     readonly property int doneCount: {
         var n = 0;
         for (var i = 0; i < items.length; i++) if (items[i].done) n++;
@@ -140,9 +261,18 @@ CardFrame {
                 readonly property var task: checkItem.isHeader ? null : modelData.item
                 readonly property int taskIndex: checkItem.isHeader ? -1 : modelData.index
                 readonly property var link: checkItem.task ? root.linkFor(checkItem.task.id) : null
+                readonly property bool editing: checkItem.task !== null
+                    && root.editingId === checkItem.task.id
+                readonly property bool dragged: checkItem.task !== null
+                    && root.dragItemId === checkItem.task.id
 
                 width: list.width
-                height: checkItem.isHeader ? 22 : Math.max(30, taskText.implicitHeight + 8)
+                height: checkItem.isHeader ? 22 : Math.max(30,
+                    Math.max(taskText.implicitHeight,
+                             checkItem.editing ? editField.contentHeight : 0) + 8)
+                z: checkItem.dragged ? 4 : 0
+                opacity: checkItem.dragged ? 0.92 : 1
+                transform: Translate { y: checkItem.dragged ? root.dragOffset : 0 }
 
                 Text {
                     objectName: "checklistGroupHeader_" + (modelData.label || "")
@@ -182,6 +312,75 @@ CardFrame {
                     anchors.rightMargin: 4
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: root.th.space1
+                    Icon {
+                        objectName: "checklistDrag_" + checkItem.taskIndex
+                        anchors.verticalCenter: parent.verticalCenter
+                        name: "grip-vertical"
+                        size: root.th.iconSmall
+                        color: root.th.muted
+                        opacity: checkItem.dragged || checkItem.hoveredNow ? 1 : 0
+                        CardTapHandler { onAction: {} }
+                        DragHandler {
+                            id: reorderDrag
+                            target: null
+                            xAxis.enabled: false
+                            yAxis.enabled: true
+                            dragThreshold: 2
+                            grabPermissions: PointerHandler.CanTakeOverFromAnything
+                            cursorShape: Qt.SizeVerCursor
+                            onActiveChanged: {
+                                if (active) {
+                                    root.dragItemId = checkItem.task.id;
+                                    root.dragOffset = 0;
+                                    root.dragRow = -1;
+                                    root.dragAfter = false;
+                                    return;
+                                }
+                                // Capture the drop before clearing the drag
+                                // state: reordering rebuilds the list model,
+                                // which destroys this delegate while the
+                                // handler is still running.
+                                var sourceIndex = checkItem.taskIndex;
+                                var targetId = "";
+                                if (root.dragRow >= 0 && root.dragRow < root.rows.length) {
+                                    var targetRow = root.rows[root.dragRow];
+                                    if (targetRow && targetRow.item)
+                                        targetId = targetRow.item.id;
+                                }
+                                var dropAfter = root.dragAfter;
+                                root.dragItemId = "";
+                                root.dragOffset = 0;
+                                root.dragRow = -1;
+                                root.dragAfter = false;
+                                if (targetId !== "")
+                                    root.scheduleMove(sourceIndex, targetId, dropAfter);
+                            }
+                            onTranslationChanged: {
+                                if (!active) return;
+                                root.dragOffset = translation.y;
+                                var point = list.mapFromItem(
+                                    null,
+                                    centroid.scenePosition.x,
+                                    centroid.scenePosition.y);
+                                var target = root.dropTargetAt(point.y + list.contentY);
+                                if (target) {
+                                    root.dragRow = target.row;
+                                    root.dragAfter = target.after;
+                                }
+                            }
+                        }
+                    }
+                    Icon {
+                        objectName: "checklistEdit_" + checkItem.taskIndex
+                        anchors.verticalCenter: parent.verticalCenter
+                        name: "pencil"
+                        size: root.th.iconSmall
+                        color: root.th.muted
+                        opacity: checkItem.editing || checkItem.hoveredNow ? 1 : 0
+                        CardTapHandler {
+                            onAction: root.beginEdit(checkItem.task.id)
+                        }
+                    }
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
                         visible: checkItem.link !== null
@@ -230,6 +429,7 @@ CardFrame {
                     id: taskText
                     objectName: "checklistTaskText_" + checkItem.taskIndex
                     visible: !checkItem.isHeader
+                    opacity: checkItem.editing ? 0 : 1
                     anchors.left: box.right
                     anchors.leftMargin: 9
                     anchors.right: rightRow.left
@@ -243,10 +443,47 @@ CardFrame {
                     font.strikeout: checkItem.task ? checkItem.task.done : false
                 }
 
+                TextInput {
+                    id: editField
+                    objectName: "checklistTaskEdit_" + checkItem.taskIndex
+                    visible: !checkItem.isHeader && checkItem.editing
+                    anchors.left: taskText.left
+                    anchors.right: taskText.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    height: Math.max(20, contentHeight)
+                    text: checkItem.task ? checkItem.task.text : ""
+                    color: root.th.text
+                    font.family: root.th.fontFamily
+                    font.pixelSize: root.th.fontSizeSmall
+                    selectionColor: root.th.accent
+                    selectedTextColor: root.th.accentInk
+                    wrapMode: TextInput.Wrap
+                    selectByMouse: true
+                    clip: true
+                    onAccepted: root.commitEdit(checkItem.task.id, text)
+                    onEditingFinished: root.commitEdit(checkItem.task.id, text)
+                    Keys.onReturnPressed: function (event) {
+                        root.commitEdit(checkItem.task.id, text);
+                        event.accepted = true;
+                    }
+                    Keys.onEnterPressed: function (event) {
+                        root.commitEdit(checkItem.task.id, text);
+                        event.accepted = true;
+                    }
+                    Keys.onEscapePressed: root.cancelEdit()
+
+                    CardTapHandler {
+                        suppressSelection: false
+                        acceptedButtons: Qt.LeftButton
+                        onAction: root.requestBodySelect(point.modifiers, point.scenePosition.x, point.scenePosition.y)
+                    }
+                }
+
                 // The done toggle only covers the row before the date and
                 // remove controls, so those buttons never mark the task done.
                 Item {
                     visible: !checkItem.isHeader
+                    enabled: !checkItem.editing
                     anchors.left: parent.left
                     anchors.right: rightRow.left
                     anchors.top: parent.top
@@ -261,6 +498,19 @@ CardFrame {
                             root.toggle(checkItem.taskIndex);
                         }
                     }
+                }
+
+                // Insertion line shown while a task is dragged to a new slot.
+                Rectangle {
+                    visible: !checkItem.isHeader && root.dragItemId !== ""
+                        && root.dragRow === index
+                    x: 4
+                    width: Math.max(0, list.width - 8)
+                    height: 2
+                    radius: 1
+                    color: root.th.accent
+                    y: root.dragAfter ? parent.height - 1 : -1
+                    z: 5
                 }
 
                 HoverHandler { id: rowHover
