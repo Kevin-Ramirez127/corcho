@@ -103,19 +103,19 @@ CardFrame {
                 name: "skip-back"
                 size: root.th.iconLarge
                 color: root.th.text2
-                TapHandler { onTapped: root.act("previous") }
+                CardTapHandler { onAction: root.act("previous") }
             }
             Icon {
                 name: root.player && root.player.status === "Playing" ? "pause" : "play"
                 size: root.th.iconLarge
                 color: root.th.accent
-                TapHandler { onTapped: root.act("play-pause") }
+                CardTapHandler { onAction: root.act("play-pause") }
             }
             Icon {
                 name: "skip-forward"
                 size: root.th.iconLarge
                 color: root.th.text2
-                TapHandler { onTapped: root.act("next") }
+                CardTapHandler { onAction: root.act("next") }
             }
         }
     }

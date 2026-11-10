@@ -228,7 +228,7 @@ CardFrame {
                 size: root.th.iconBody
                 color: root.canGoBack ? root.th.text2 : root.th.muted
                 HoverHandler { id: backHover }
-                TapHandler { onTapped: if (root.canGoBack) root.view.goBack() }
+                CardTapHandler { onAction: if (root.canGoBack) root.view.goBack() }
                 ToolTip.visible: backHover.hovered && root.tooltipsEnabled
                 ToolTip.delay: 400
                 ToolTip.text: "Back"
@@ -240,7 +240,7 @@ CardFrame {
                 size: root.th.iconBody
                 color: root.canGoForward ? root.th.text2 : root.th.muted
                 HoverHandler { id: forwardHover }
-                TapHandler { onTapped: if (root.canGoForward) root.view.goForward() }
+                CardTapHandler { onAction: if (root.canGoForward) root.view.goForward() }
                 ToolTip.visible: forwardHover.hovered && root.tooltipsEnabled
                 ToolTip.delay: 400
                 ToolTip.text: "Forward"
@@ -252,7 +252,7 @@ CardFrame {
                 size: root.th.iconBody
                 color: root.th.text2
                 HoverHandler { id: reloadHover }
-                TapHandler { onTapped: if (root.view) root.view.reload() }
+                CardTapHandler { onAction: if (root.view) root.view.reload() }
                 ToolTip.visible: reloadHover.hovered && root.tooltipsEnabled
                 ToolTip.delay: 400
                 ToolTip.text: "Reload"
@@ -278,7 +278,7 @@ CardFrame {
                 size: root.th.iconBody
                 color: root.th.text2
                 HoverHandler { id: zoomOutHover }
-                TapHandler { onTapped: root.webZoom = Math.max(0.4, root.webZoom - 0.1) }
+                CardTapHandler { onAction: root.webZoom = Math.max(0.4, root.webZoom - 0.1) }
                 ToolTip.visible: zoomOutHover.hovered && root.tooltipsEnabled
                 ToolTip.delay: 400
                 ToolTip.text: "Zoom out"
@@ -299,7 +299,7 @@ CardFrame {
                 size: root.th.iconBody
                 color: root.th.text2
                 HoverHandler { id: zoomInHover }
-                TapHandler { onTapped: root.webZoom = Math.min(2.5, root.webZoom + 0.1) }
+                CardTapHandler { onAction: root.webZoom = Math.min(2.5, root.webZoom + 0.1) }
                 ToolTip.visible: zoomInHover.hovered && root.tooltipsEnabled
                 ToolTip.delay: 400
                 ToolTip.text: "Zoom in"
@@ -311,7 +311,7 @@ CardFrame {
                 size: root.th.iconBody
                 color: root.th.text2
                 HoverHandler { id: externalHover }
-                TapHandler { onTapped: root.app.openExternal(root.url) }
+                CardTapHandler { onAction: root.app.openExternal(root.url) }
                 ToolTip.visible: externalHover.hovered && root.tooltipsEnabled
                 ToolTip.delay: 400
                 ToolTip.text: "Open in browser"
@@ -324,7 +324,7 @@ CardFrame {
                 size: root.th.iconBody
                 color: root.noSleep ? root.th.accent : root.th.muted
                 HoverHandler { id: sleepHover }
-                TapHandler { onTapped: root.toggleSleep() }
+                CardTapHandler { onAction: root.toggleSleep() }
                 ToolTip.visible: sleepHover.hovered && root.tooltipsEnabled
                 ToolTip.delay: 400
                 ToolTip.text: root.noSleep ? "Allow sleeping to save memory"
@@ -337,7 +337,7 @@ CardFrame {
                 size: root.th.iconBody
                 color: root.app.adblockCheck(root.url) ? root.th.accent : root.th.muted
                 HoverHandler { id: sessionHover }
-                TapHandler { onTapped: debugPopup.open() }
+                CardTapHandler { onAction: debugPopup.open() }
                 ToolTip.visible: sessionHover.hovered && root.tooltipsEnabled
                 ToolTip.delay: 400
                 ToolTip.text: "Website session"

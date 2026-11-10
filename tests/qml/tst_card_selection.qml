@@ -25,6 +25,9 @@ Item {
         property string activeGridId: "g1"
         property int viewCalls: 0
         property string settingsJson: ""
+        property string gridsJson: "[]"
+        property string cardsJson: "[]"
+        property string calendarJson: "{}"
         function setView(px, py, z) { panX = px; panY = py; zoom = z; viewCalls += 1; }
         function setViewport(x, y, w, h) {}
         function moveCards(ids, dx, dy) {}
@@ -33,7 +36,13 @@ Item {
         function adblockCheck(url) { return false; }
         function adblockHosts() { return "[]"; }
         function toast(message) {}
-        function openExternal(url) {}
+        property int externalCalls: 0
+        function openExternal(url) { externalCalls += 1; }
+        function search(query) { return "[]"; }
+        function switchGrid(id) {}
+        function command(id) { return "null"; }
+        function aiContext(ids) { return ""; }
+        function aiSend(provider, model, prompt, context) { return "stream-1"; }
         property string lastUpdate: ""
     }
 
@@ -53,6 +62,7 @@ Item {
         property color surfaceStrong: "#2a2a2a"
         property color text: "#e6e6e6"
         property color text2: "#b0b0b0"
+        property color input: "#1a1a1a"
         property real borderWidth: 1
         property real borderWidthFocus: 2
         property real borderWidthStrong: 2
@@ -62,6 +72,7 @@ Item {
         property string fontMono: "monospace"
         property real fontSizeBody: 14
         property real fontSizeLarge: 20
+        property real fontSizeHuge: 36
         property real fontSizeSmall: 12
         property real lineHeightNormal: 1.2
         property int fontWeightMedium: 500
@@ -86,12 +97,16 @@ Item {
         property real space2: 8
         property real space3: 12
         property real space4: 16
+        property real space5: 20
         property real space6: 24
         property real spaceCompact: 8
         property real spaceHalf: 4
         property real menuItemHeight: 32
         property real spaceSnug: 10
         property color surface: "#1e1e1e"
+        property real launcherMaxWidth: 720
+        property real launcherHeight: 520
+        property real launcherTopMargin: 80
     }
 
     property int menuCount: 0
@@ -121,6 +136,17 @@ Item {
         onLoaded: {
             item.detached = true;
             item.showChrome = false;
+            item.app = fakeApp;
+            item.th = theme;
+        }
+    }
+
+    // The launcher is normally an overlay in Main; load it here so its focus
+    // and search handling can be exercised without a full app instance.
+    Loader {
+        id: launcherLoader
+        source: Qt.resolvedUrl("../../qml/Launcher.qml")
+        onLoaded: {
             item.app = fakeApp;
             item.th = theme;
         }
@@ -158,12 +184,19 @@ Item {
             testRoot.menuCount = 0;
             testRoot.pageProbe = "";
             fakeApp.settingsJson = "";
+            fakeApp.externalCalls = 0;
+            if (launcherLoader.item) {
+                launcherLoader.item.close();
+                launcherLoader.item.opened = false;
+            }
             pipBody.source = "";
             loader.item.raiseOrder = [];
             loader.item.settings = ({});
             loader.item.floatingIds = [];
             loader.item.cards = [];
             loader.item.setSelection([]);
+            loader.item.pendingFocusCardId = "";
+            loader.item.forceActiveFocus();
             wait(60);
         }
 
@@ -248,6 +281,95 @@ Item {
             compare(loader.item.selectedIds[0], "note");
             compare(loader.item.raiseOrder.length, 1);
             compare(loader.item.raiseOrder[0], "note");
+        }
+
+        // Stacked cards receive the same pointer event. A button on the top
+        // card must not also press the matching button underneath.
+        function test_overlapping_pomodoro_only_top_button_fires() {
+            setCards([
+                { id: "pomoBottom", type: "pomodoro", x: 100, y: 100, width: 320, height: 260,
+                  title: "bottom", text: "", locked: false, workMinutes: 25,
+                  breakMinutes: 5, phase: "work", remaining: 1500, sessions: 0 },
+                { id: "pomoTop", type: "pomodoro", x: 100, y: 100, width: 320, height: 260,
+                  title: "top", text: "", locked: false, workMinutes: 25,
+                  breakMinutes: 5, phase: "work", remaining: 1500, sessions: 0 }
+            ]);
+            var top = cardItem("pomoTop");
+            var bottom = cardItem("pomoBottom");
+            verify(top !== null);
+            verify(bottom !== null);
+            var start = findChild(top, "pomodoroStart");
+            verify(start !== null);
+            var at = start.mapToItem(loader.item, start.width / 2, start.height / 2);
+            mouseClick(loader.item, at.x, at.y);
+            wait(80);
+            compare(top.running, true);
+            compare(bottom.running, false);
+        }
+
+        // Pressing an action on a partly covered card must not select or raise
+        // that card. It should only run the action.
+        function test_action_on_partly_covered_card_does_not_raise_it() {
+            setCards([
+                { id: "pomoLow", type: "pomodoro", x: 100, y: 300, width: 320, height: 260,
+                  title: "pomodoro", text: "", locked: false, workMinutes: 25,
+                  breakMinutes: 5, phase: "work", remaining: 1500, sessions: 0 },
+                { id: "checkTop", type: "checklist", x: 100, y: 100, width: 300, height: 300,
+                  title: "tasks", text: "", locked: false,
+                  items: [{ id: "i1", text: "task one", done: false }] }
+            ]);
+            var pomo = cardItem("pomoLow");
+            verify(pomo !== null);
+            var start = findChild(pomo, "pomodoroStart");
+            verify(start !== null);
+            var at = start.mapToItem(loader.item, start.width / 2, start.height / 2);
+
+            mouseClick(loader.item, at.x, at.y);
+            wait(80);
+            compare(pomo.running, true);
+            compare(loader.item.selectedIds.length, 0);
+            compare(loader.item.raiseOrder.length, 0);
+        }
+
+        // Moving a card across another card must not interrupt the drag.
+        function test_drag_continues_when_crossing_another_card() {
+            setCards([noteCard("dragA", 100, 100), noteCard("dragB", 300, 100)]);
+            var a = cardItem("dragA");
+            verify(a !== null);
+            var startX = a.x;
+
+            mousePress(loader.item, 150, 115);
+            mouseMove(loader.item, 220, 115);
+            mouseMove(loader.item, 280, 115);
+            wait(30);
+            var afterFirstMove = a.x;
+            verify(afterFirstMove > startX);
+
+            // The pointer is now over dragB; keep moving to the far right.
+            mouseMove(loader.item, 520, 115);
+            wait(30);
+            verify(a.x > afterFirstMove);
+            mouseRelease(loader.item, 520, 115);
+            wait(60);
+        }
+
+        // Same rule for plain tap actions inside card bodies.
+        function test_overlapping_bookmark_only_top_action_fires() {
+            setCards([
+                { id: "bmBottom", type: "bookmark", x: 100, y: 100, width: 320, height: 200,
+                  title: "bottom", text: "", url: "https://bottom.example", locked: false },
+                { id: "bmTop", type: "bookmark", x: 100, y: 100, width: 320, height: 200,
+                  title: "top", text: "", url: "https://top.example", locked: false }
+            ]);
+            var top = cardItem("bmTop");
+            verify(top !== null);
+            var tile = findChild(top, "bookmarkOpenTile");
+            verify(tile !== null);
+            fakeApp.externalCalls = 0;
+            var at = tile.mapToItem(loader.item, tile.width / 2, tile.height / 2);
+            mouseClick(loader.item, at.x, at.y);
+            wait(80);
+            compare(fakeApp.externalCalls, 1);
         }
 
         function test_click_raises_single_card() {
@@ -394,7 +516,11 @@ Item {
             wait(60);
             compare(loader.item.selectedIds[0], "a");
 
-            mouseClick(loader.item, 550, 163, Qt.LeftButton, Qt.ControlModifier);
+            var checkBody = checklistBody();
+            var label = findChild(checkBody, "checklistTaskText_0");
+            verify(label !== null);
+            var at = label.mapToItem(loader.item, label.width / 2, label.height / 2);
+            mouseClick(loader.item, at.x, at.y, Qt.LeftButton, Qt.ControlModifier);
             wait(60);
             compare(loader.item.selectedIds.length, 2);
             verify(loader.item.selectedIds.indexOf("a") >= 0);
@@ -405,8 +531,10 @@ Item {
             setCards([{ id: "check", type: "checklist", x: 100, y: 100, width: 300, height: 260,
                         title: "tasks", text: "", locked: false,
                         items: [{ id: "i1", text: "task one", done: false }] }]);
-            // The first row sits just below the progress bar in the card body.
-            mouseClick(loader.item, 250, 163);
+            var label = findChild(checklistBody(), "checklistTaskText_0");
+            verify(label !== null);
+            var at = label.mapToItem(loader.item, label.width / 2, label.height / 2);
+            mouseClick(loader.item, at.x, at.y);
             wait(60);
             compare(loader.item.selectedIds.length, 1);
             compare(loader.item.selectedIds[0], "check");
@@ -443,6 +571,233 @@ Item {
             mouseClick(removeButton, removeButton.width / 2, removeButton.height / 2);
             wait(60);
             compare(body.items.length, 0);
+        }
+
+        // A long task grows the input instead of scrolling it sideways, and
+        // the input carries the same border as every other text field.
+        function test_checklist_add_field_wraps_inside_designed_input() {
+            setCards([{ id: "check", type: "checklist", x: 100, y: 100, width: 300, height: 260,
+                        title: "tasks", text: "", locked: false, items: [] }]);
+            var body = checklistBody();
+            var add = findChild(body, "checklistAddField");
+            var box = findChild(body, "checklistAddBox");
+            verify(add !== null);
+            verify(box !== null);
+            compare(add.wrapMode, TextInput.Wrap);
+            verify(box.border.width > 0);
+
+            var initialHeight = box.height;
+            add.forceActiveFocus();
+            wait(30);
+            verify(add.activeFocus);
+            add.text = "A long task description that has to wrap onto another line "
+                + "instead of running off the right side of the card.";
+            wait(80);
+            verify(box.height > initialHeight);
+        }
+
+        // Long checklist items wrap and make their row taller.
+        function test_checklist_item_text_wraps() {
+            setCards([{ id: "check", type: "checklist", x: 100, y: 100, width: 300, height: 260,
+                        title: "tasks", text: "", locked: false,
+                        items: [{ id: "i1", done: false,
+                                  text: "A very long checklist task that cannot fit on a single "
+                                      + "row and therefore needs to wrap onto more lines." }] }]);
+            var label = findChild(checklistBody(), "checklistTaskText_0");
+            verify(label !== null);
+            compare(label.wrapMode, Text.Wrap);
+            verify(label.lineCount > 1);
+        }
+
+        // Undone tasks are listed before completed ones, each in a titled
+        // group.
+        function test_checklist_groups_undone_before_done() {
+            setCards([{ id: "check", type: "checklist", x: 100, y: 100, width: 300, height: 300,
+                        title: "tasks", text: "", locked: false, items: [
+                            { id: "d1", text: "done first", done: true },
+                            { id: "u1", text: "undone one", done: false },
+                            { id: "d2", text: "done second", done: true },
+                            { id: "u2", text: "undone two", done: false }
+                        ] }]);
+            var body = checklistBody();
+            var rows = body.rows;
+            compare(rows.length, 6);
+            compare(rows[0].header, true);
+            compare(rows[0].label, "Undone");
+            compare(rows[1].item.text, "undone one");
+            compare(rows[2].item.text, "undone two");
+            compare(rows[3].header, true);
+            compare(rows[3].label, "Done");
+            compare(rows[4].item.text, "done first");
+            compare(rows[5].item.text, "done second");
+
+            var undoneTitle = findChild(body, "checklistGroupHeader_Undone");
+            var doneTitle = findChild(body, "checklistGroupHeader_Done");
+            verify(undoneTitle !== null && undoneTitle.visible);
+            verify(doneTitle !== null && doneTitle.visible);
+        }
+
+        // A group heading is not rendered when its group has no tasks.
+        function test_checklist_empty_group_title_is_hidden() {
+            setCards([{ id: "check", type: "checklist", x: 100, y: 100, width: 300, height: 260,
+                        title: "tasks", text: "", locked: false,
+                        items: [{ id: "u1", text: "only undone", done: false }] }]);
+            var body = checklistBody();
+            verify(findChild(body, "checklistGroupHeader_Undone") !== null);
+            compare(findChild(body, "checklistGroupHeader_Done"), null);
+
+            setCards([{ id: "check", type: "checklist", x: 100, y: 100, width: 300, height: 260,
+                        title: "tasks", text: "", locked: false,
+                        items: [{ id: "d1", text: "only done", done: true }] }]);
+            body = checklistBody();
+            compare(findChild(body, "checklistGroupHeader_Undone"), null);
+            verify(findChild(body, "checklistGroupHeader_Done") !== null);
+        }
+
+        // Regrouping after a toggle replaces the list model; the checklist
+        // must keep its scroll position instead of jumping back to the top.
+        function test_checklist_keeps_scroll_after_toggle() {
+            var tasks = [];
+            for (var i = 0; i < 20; i++)
+                tasks.push({ id: "i" + i, text: "task " + i, done: false });
+            setCards([{ id: "check", type: "checklist", x: 100, y: 100, width: 300, height: 300,
+                        title: "tasks", text: "", locked: false, items: tasks }]);
+            var body = checklistBody();
+            var list = findChild(body, "checklistList");
+            verify(list !== null);
+            list.contentY = 180;
+            wait(60);
+            var before = list.contentY;
+            verify(before > 0);
+
+            body.toggle(8);
+            wait(120);
+            compare(list.contentY, before);
+        }
+
+        // Ctrl+Left/Right at the start/end of a field must not fall through to
+        // the canvas arrow-key panning.
+        function test_ctrl_arrow_at_text_boundary_does_not_pan_canvas() {
+            setCards([noteCard("a", 100, 100)]);
+            var editor = findChild(loader.item.bodyItem("a"), "noteEditor");
+            verify(editor !== null);
+            editor.forceActiveFocus();
+            wait(30);
+
+            var before = fakeApp.viewCalls;
+            editor.cursorPosition = 0;
+            keyClick(editor, Qt.Key_Left, Qt.ControlModifier);
+            wait(40);
+            compare(fakeApp.viewCalls, before);
+
+            editor.cursorPosition = editor.text.length;
+            keyClick(editor, Qt.Key_Right, Qt.ControlModifier);
+            wait(40);
+            compare(fakeApp.viewCalls, before);
+        }
+
+        // Opening the launcher must put the caret in the search field. It used
+        // to focus the AppTextField wrapper, so typing did nothing.
+        function test_launcher_focuses_search_field() {
+            launcherLoader.item.open();
+            wait(80);
+            var field = findChild(launcherLoader.item, "launcherQuery");
+            verify(field !== null);
+            verify(field.input.activeFocus);
+            launcherLoader.item.close();
+            wait(30);
+            loader.item.forceActiveFocus();
+        }
+
+        // Newly created note and checklist cards expose a focusBody() hook;
+        // the canvas uses it to put the caret in the editor right away.
+        function test_new_note_and_checklist_bodies_take_focus() {
+            setCards([noteCard("new-note", 100, 100)]);
+            loader.item.focusCard("new-note");
+            tryVerify(function () {
+                var editor = findChild(loader.item.bodyItem("new-note"), "noteEditor");
+                return editor !== null && editor.activeFocus;
+            }, 2000);
+
+            setCards([{ id: "new-check", type: "checklist", x: 100, y: 100,
+                        width: 300, height: 260, title: "tasks", text: "",
+                        locked: false, items: [] }]);
+            loader.item.focusCard("new-check");
+            tryVerify(function () {
+                var add = findChild(loader.item.bodyItem("new-check"), "checklistAddField");
+                return add !== null && add.activeFocus;
+            }, 2000);
+        }
+
+        // The AI card preset dropdown opens and a click on an option selects
+        // that preset on the card.
+        function test_ai_preset_dropdown_selects_preset() {
+            fakeApp.settingsJson = JSON.stringify({ aiPresets: [
+                { id: "p1", name: "Fast", provider: "openai", model: "small" },
+                { id: "p2", name: "Deep", provider: "openai", model: "large" }
+            ] });
+            setCards([{ id: "ai", type: "ai", x: 100, y: 100, width: 340, height: 380,
+                        title: "AI", text: "", prompt: "", context: "", lastResult: "",
+                        presetId: "", linkedIds: [], locked: false }]);
+            var body = loader.item.bodyItem("ai");
+            verify(body !== null);
+            var select = findChild(body, "aiPresetSelect");
+            verify(select !== null);
+
+            var at = select.mapToItem(loader.item, select.width / 2, select.height / 2);
+            mouseClick(loader.item, at.x, at.y);
+            wait(80);
+            var menu = findChild(select, "aiPresetSelectMenu");
+            verify(menu !== null);
+            verify(menu.visible);
+
+            // First row is "Settings default"; choose the first real preset.
+            var win = testRoot.Window.window;
+            mouseClick(win.contentItem, menu.x + 30,
+                       menu.y + menu.padding + theme.menuItemHeight + theme.spaceHalf + 16);
+            wait(80);
+            compare(select.value, "p1");
+            compare(body.presetId, "p1");
+            menu.close();
+        }
+
+        // A dropdown floats over the canvas. Clicking it must not also reach
+        // a checklist task at the same screen position underneath.
+        function test_open_dropdown_blocks_clicks_on_covered_checklist() {
+            fakeApp.settingsJson = JSON.stringify({ aiPresets: [
+                { id: "p1", name: "Fast", provider: "openai", model: "small" }
+            ] });
+            setCards([
+                { id: "ai", type: "ai", x: 100, y: 100, width: 340, height: 380,
+                  title: "AI", text: "", prompt: "", context: "", lastResult: "",
+                  presetId: "", linkedIds: [], locked: false },
+                { id: "check", type: "checklist", x: 100, y: 180, width: 300, height: 260,
+                  title: "tasks", text: "", locked: false,
+                  items: [{ id: "i1", text: "task one", done: false }] }
+            ]);
+            var aiBody = loader.item.bodyItem("ai");
+            var checkBody = checklistBody();
+            verify(aiBody !== null);
+            verify(checkBody !== null);
+
+            var select = findChild(aiBody, "aiPresetSelect");
+            verify(select !== null);
+            var at = select.mapToItem(loader.item, select.width / 2, select.height / 2);
+            mouseClick(loader.item, at.x, at.y);
+            wait(80);
+            var menu = findChild(select, "aiPresetSelectMenu");
+            verify(menu !== null);
+            verify(menu.visible);
+
+            var rowScene = loader.item.mapToItem(null, 110, 230);
+            compare(checkBody.canInteractAt(rowScene.x, rowScene.y), false);
+
+            // Click a checklist row outside the menu rectangle while the
+            // dropdown is open; the menu closes and the task stays undone.
+            mouseClick(loader.item, 110, 230);
+            wait(80);
+            compare(checkBody.items[0].done, false);
+            verify(!menu.visible);
         }
 
         function test_click_above_card_does_not_toggle_covered_checklist_task() {

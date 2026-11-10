@@ -261,8 +261,8 @@ CardFrame {
                             border.width: root.penColor === modelData ? 2 : 0
                             border.color: root.th.text
                         }
-                        TapHandler {
-                            onTapped: {
+                        CardTapHandler {
+                            onAction: {
                                 root.penColor = modelData;
                                 root.tool = "draw";
                                 root.persist();
@@ -277,8 +277,8 @@ CardFrame {
                     name: "pencil"
                     size: root.th.iconBody
                     color: root.tool === "draw" ? root.th.accent : root.th.muted
-                    TapHandler {
-                        onTapped: root.tool = "draw"
+                    CardTapHandler {
+                        onAction: root.tool = "draw"
                     }
                 }
 
@@ -286,8 +286,8 @@ CardFrame {
                     name: "eraser"
                     size: root.th.iconBody
                     color: root.tool === "erase" ? root.th.accent : root.th.muted
-                    TapHandler {
-                        onTapped: root.tool = "erase"
+                    CardTapHandler {
+                        onAction: root.tool = "erase"
                     }
                 }
             }
@@ -317,8 +317,8 @@ CardFrame {
                     color: root.th.muted
                 }
                 HoverHandler { id: copyHover }
-                TapHandler {
-                    onTapped: {
+                CardTapHandler {
+                    onAction: {
                         var p = copyButton.mapToItem(null, copyButton.width + 4, copyButton.height + 6);
                         copyMenu.openAt(p.x, p.y);
                     }
@@ -336,8 +336,8 @@ CardFrame {
                 color: root.th.muted
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
-                TapHandler {
-                    onTapped: {
+                CardTapHandler {
+                    onAction: {
                         var p = clearButton.mapToItem(null, clearButton.width + 4, clearButton.height + 6);
                         clearMenu.openAt(p.x, p.y);
                     }

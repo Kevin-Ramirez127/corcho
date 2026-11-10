@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import "OverlayState.js" as OverlayState
 
 Popup {
     id: menu
@@ -79,20 +80,12 @@ Popup {
         currentIndex = firstSelectable();
     }
 
-    Keys.onUpPressed: menu.moveCurrent(-1)
-    Keys.onDownPressed: menu.moveCurrent(1)
-    Keys.onReturnPressed: menu.activate(menu.currentIndex)
-    Keys.onEnterPressed: menu.activate(menu.currentIndex)
-    Keys.onEscapePressed: {
-        if (menu.stack.length > 0) menu.back();
-        else menu.close();
-    }
-
     // Popup.CloseOnPressOutside only tracks mouse and touch, so this
     // full-window catcher closes the menu when a stylus taps outside it.
     // It is created directly in the overlay so that it is not culled by
     // the popup's content positioner while the popup is closed.
     property Item penCatcher: null
+    property bool countedOpen: false
 
     Component {
         id: penCatcherComponent
@@ -102,8 +95,21 @@ Popup {
             anchors.fill: parent
             z: menu.z - 1
 
+            // Mouse and touch clicks outside the menu close it and stop
+            // there. Without this the same click also reached whatever card
+            // sat underneath, so choosing a dropdown option could toggle a
+            // checklist task at the same screen position.
+            MouseArea {
+                anchors.fill: parent
+                acceptedButtons: Qt.AllButtons
+                preventStealing: true
+                onPressed: function (mouse) { mouse.accepted = true; }
+                onClicked: menu.close()
+                onWheel: function (wheel) { wheel.accepted = true; }
+            }
+
             TapHandler {
-                acceptedPointerTypes: PointerDevice.Pen | PointerDevice.Eraser
+                acceptedPointerTypes: PointerDevice.AllDevices
                 // Take the event so it cannot activate the control underneath
                 // and immediately reopen the menu.
                 gesturePolicy: TapHandler.WithinBounds
@@ -113,12 +119,20 @@ Popup {
     }
 
     onOpened: {
+        if (!countedOpen) {
+            OverlayState.menuOpened();
+            countedOpen = true;
+        }
         var overlay = Overlay.overlay;
         if (overlay && !penCatcher)
             penCatcher = penCatcherComponent.createObject(overlay);
     }
 
     onClosed: {
+        if (countedOpen) {
+            OverlayState.menuClosed();
+            countedOpen = false;
+        }
         if (penCatcher) {
             penCatcher.destroy();
             penCatcher = null;
@@ -126,6 +140,8 @@ Popup {
     }
 
     Component.onDestruction: {
+        if (countedOpen)
+            OverlayState.menuClosed();
         if (penCatcher)
             penCatcher.destroy();
     }
@@ -152,85 +168,104 @@ Popup {
         border.color: menu.th.border
     }
 
-    contentItem: Column {
-        spacing: menu.th.spaceHalf
-        Repeater {
-            model: menu.items
+    // Keys attached to a Popup are ignored because Popup is not an Item.
+    // Handle navigation on a focus scope inside the content instead.
+    contentItem: FocusScope {
+        id: menuContent
+        implicitWidth: contentColumn.implicitWidth
+        implicitHeight: contentColumn.implicitHeight
+        focus: true
+        Keys.onUpPressed: menu.moveCurrent(-1)
+        Keys.onDownPressed: menu.moveCurrent(1)
+        Keys.onReturnPressed: menu.activate(menu.currentIndex)
+        Keys.onEnterPressed: menu.activate(menu.currentIndex)
+        Keys.onEscapePressed: {
+            if (menu.stack.length > 0) menu.back();
+            else menu.close();
+        }
 
-            delegate: Item {
-                id: row
-                required property var modelData
-                required property int index
-                property var actionData: modelData || ({})
-                property bool hoveredNow: false
-                property bool hasChildren: actionData.children !== undefined && actionData.children.length > 0
-                readonly property bool dangerFill: actionData.dangerFill === true
-                readonly property bool highlighted: hoveredNow || menu.currentIndex === index
+        Column {
+            id: contentColumn
+            anchors.fill: parent
+            spacing: menu.th.spaceHalf
+            Repeater {
+                model: menu.items
 
-                width: menu.width - menu.padding * 2
-                height: actionData.separator ? menu.th.space2 : menu.th.menuItemHeight
-                Accessible.role: actionData.separator === true ? Accessible.Separator : Accessible.MenuItem
-                Accessible.name: actionData.separator === true ? "" : (actionData.label || "")
-                Accessible.selected: menu.currentIndex === row.index
-                Accessible.onPressAction: if (actionData.separator !== true) menu.activate(row.index)
+                delegate: Item {
+                    id: row
+                    required property var modelData
+                    required property int index
+                    property var actionData: modelData || ({})
+                    property bool hoveredNow: false
+                    property bool hasChildren: actionData.children !== undefined && actionData.children.length > 0
+                    readonly property bool dangerFill: actionData.dangerFill === true
+                    readonly property bool highlighted: hoveredNow || menu.currentIndex === index
 
-                Rectangle {
-                    visible: actionData.separator === true
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: parent.width
-                    height: menu.th.borderWidth
-                    color: menu.th.border
-                }
+                    width: menu.width - menu.padding * 2
+                    height: actionData.separator ? menu.th.space2 : menu.th.menuItemHeight
+                    Accessible.role: actionData.separator === true ? Accessible.Separator : Accessible.MenuItem
+                    Accessible.name: actionData.separator === true ? "" : (actionData.label || "")
+                    Accessible.selected: menu.currentIndex === row.index
+                    Accessible.onPressAction: if (actionData.separator !== true) menu.activate(row.index)
 
-                Rectangle {
-                    visible: actionData.separator !== true
-                    anchors.fill: parent
-                    radius: menu.th.radiusKeycap
-                    color: row.dangerFill
-                        ? (row.highlighted ? Qt.darker(menu.th.danger, 1.15) : menu.th.danger)
-                        : (row.highlighted ? menu.th.hover : "transparent")
-                }
-
-                Row {
-                    visible: actionData.separator !== true
-                    anchors.fill: parent
-                    anchors.leftMargin: menu.th.space3
-                    spacing: menu.th.space2
-                    Icon {
+                    Rectangle {
+                        visible: actionData.separator === true
                         anchors.verticalCenter: parent.verticalCenter
-                        visible: actionData.icon !== undefined && actionData.icon !== ""
-                        name: actionData.icon || "square"
-                        size: menu.th.iconBody
+                        width: parent.width
+                        height: menu.th.borderWidth
+                        color: menu.th.border
+                    }
+
+                    Rectangle {
+                        visible: actionData.separator !== true
+                        anchors.fill: parent
+                        radius: menu.th.radiusKeycap
                         color: row.dangerFill
-                            ? menu.th.bg
-                            : (actionData.danger ? menu.th.danger : menu.th.text2)
+                            ? (row.highlighted ? Qt.darker(menu.th.danger, 1.15) : menu.th.danger)
+                            : (row.highlighted ? menu.th.hover : "transparent")
                     }
-                    Text {
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: parent.width - menu.th.space3 * 2 - menu.th.iconBody - menu.th.space2
-                        text: actionData.label || ""
-                        color: row.dangerFill
-                            ? menu.th.bg
-                            : (actionData.danger ? menu.th.danger : menu.th.text)
-                        font.family: menu.th.fontFamily
-                        font.pixelSize: menu.th.fontSizeBody
-                        elide: Text.ElideRight
-                    }
-                    Icon {
-                        anchors.verticalCenter: parent.verticalCenter
-                        visible: row.hasChildren
-                        name: "chevron-right"
-                        size: 14
-                        color: row.dangerFill ? menu.th.bg : menu.th.text2
-                    }
-                }
 
-                HoverHandler { onHoveredChanged: row.hoveredNow = hovered }
+                    Row {
+                        visible: actionData.separator !== true
+                        anchors.fill: parent
+                        anchors.leftMargin: menu.th.space3
+                        spacing: menu.th.space2
+                        Icon {
+                            anchors.verticalCenter: parent.verticalCenter
+                            visible: actionData.icon !== undefined && actionData.icon !== ""
+                            name: actionData.icon || "square"
+                            size: menu.th.iconBody
+                            color: row.dangerFill
+                                ? menu.th.bg
+                                : (actionData.danger ? menu.th.danger : menu.th.text2)
+                        }
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: parent.width - menu.th.space3 * 2 - menu.th.iconBody - menu.th.space2
+                            text: actionData.label || ""
+                            color: row.dangerFill
+                                ? menu.th.bg
+                                : (actionData.danger ? menu.th.danger : menu.th.text)
+                            font.family: menu.th.fontFamily
+                            font.pixelSize: menu.th.fontSizeBody
+                            elide: Text.ElideRight
+                        }
+                        Icon {
+                            anchors.verticalCenter: parent.verticalCenter
+                            visible: row.hasChildren
+                            name: "chevron-right"
+                            size: 14
+                            color: row.dangerFill ? menu.th.bg : menu.th.text2
+                        }
+                    }
 
-                MouseArea {
-                    anchors.fill: parent
-                    enabled: actionData.separator !== true
-                    onClicked: menu.activate(row.index)
+                    HoverHandler { onHoveredChanged: row.hoveredNow = hovered }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        enabled: actionData.separator !== true
+                        onClicked: menu.activate(row.index)
+                    }
                 }
             }
         }

@@ -127,7 +127,7 @@ CardFrame {
                     color: root.th.text2
                 }
                 HoverHandler { id: openHover }
-                TapHandler { onTapped: root.app.openPath(root.path) }
+                CardTapHandler { onAction: root.app.openPath(root.path) }
             }
 
             Item {
@@ -140,7 +140,7 @@ CardFrame {
                     size: 13
                     color: root.th.text2
                 }
-                TapHandler { onTapped: root.load() }
+                CardTapHandler { onAction: root.load() }
             }
         }
 
@@ -250,8 +250,8 @@ CardFrame {
                     font.pixelSize: root.th.fontSizeSmall
                 }
                 HoverHandler { id: rowHover }
-                TapHandler {
-                    onTapped: root.openEntry({
+                CardTapHandler {
+                    onAction: root.openEntry({
                         path: String(modelData.path),
                         kind: String(modelData.kind),
                         isDir: !!modelData.isDir

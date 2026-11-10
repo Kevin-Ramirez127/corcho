@@ -156,5 +156,6 @@
 </qresource>
 <qresource prefix="/qt/qml/Corcho/qml">
   <file alias="IconData.js">qml/IconData.js</file>
+  <file alias="OverlayState.js">qml/OverlayState.js</file>
 </qresource>
 </RCC>

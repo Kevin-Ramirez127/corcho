@@ -9,6 +9,9 @@ Item {
     property int selectedIndex: 0
 
     signal closed()
+    // Emitted when a command created a note or checklist card so the canvas
+    // can put the caret in its editor.
+    signal cardCreated(string cardId)
     property bool rowHovered: false
 
     anchors.fill: parent
@@ -20,7 +23,14 @@ Item {
         selectedIndex = 0;
         query.text = "";
         rebuild();
-        query.forceActiveFocus();
+        // Focus the inner TextInput, not the AppTextField wrapper. The wrapper
+        // is only an Item, so focusing it leaves the query unable to receive
+        // typing until the user clicks the field.
+        Qt.callLater(function () {
+            if (!root.opened) return;
+            query.input.forceActiveFocus();
+            query.input.selectAll();
+        });
     }
 
     function close() {
@@ -101,7 +111,11 @@ Item {
                 root.settingsRequested();
                 return;
             }
-            app.command(item.id);
+            var created = null;
+            try { created = JSON.parse(String(app.command(item.id))); } catch (e) {}
+            if (created && created.id
+                    && (created.type === "note" || created.type === "checklist"))
+                root.cardCreated(created.id);
         }
         root.close();
     }
@@ -156,6 +170,7 @@ Item {
             spacing: root.th.space3
             AppTextField {
                 id: query
+                objectName: "launcherQuery"
                 width: parent.width
                 inputHeight: 42
                 th: root.th

@@ -140,14 +140,14 @@ CardFrame {
                 name: "chevron-left"
                 size: root.th.iconBody
                 color: root.th.text2
-                TapHandler { onTapped: root.shiftMonth(-1) }
+                CardTapHandler { onAction: root.shiftMonth(-1) }
             }
             Icon {
                 anchors.verticalCenter: parent.verticalCenter
                 name: "chevron-right"
                 size: root.th.iconBody
                 color: root.th.text2
-                TapHandler { onTapped: root.shiftMonth(1) }
+                CardTapHandler { onAction: root.shiftMonth(1) }
             }
 
             Text {
@@ -172,7 +172,7 @@ CardFrame {
                 name: "settings"
                 size: root.th.iconSmall
                 color: root.th.text2
-                TapHandler { onTapped: root.calendarManagerRequested() }
+                CardTapHandler { onAction: root.calendarManagerRequested() }
             }
         }
     }
@@ -201,7 +201,7 @@ CardFrame {
                 font.pixelSize: root.th.fontSizeSmall
                 font.weight: root.th.fontWeightMedium
             }
-            TapHandler { onTapped: root.showAll() }
+            CardTapHandler { onAction: root.showAll() }
         }
 
         Repeater {
@@ -235,7 +235,7 @@ CardFrame {
                     font.family: root.th.fontFamily
                     font.pixelSize: root.th.fontSizeSmall
                 }
-                TapHandler { onTapped: root.toggleCalendar(modelData.id) }
+                CardTapHandler { onAction: root.toggleCalendar(modelData.id) }
             }
         }
     }
@@ -360,8 +360,8 @@ CardFrame {
                     opacity: rowHover.hovered ? 1 : 0
                 }
                 HoverHandler { id: rowHover }
-                TapHandler {
-                    onTapped: root.dateLinkRequested("", "", modelData.id, modelData.date)
+                CardTapHandler {
+                    onAction: root.dateLinkRequested("", "", modelData.id, modelData.date)
                 }
             }
         }

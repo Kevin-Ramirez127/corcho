@@ -3,6 +3,12 @@ import QtQuick
 CardFrame {
     id: root
 
+    // Called by the canvas when this card was just created.
+    function focusBody() {
+        editor.forceActiveFocus();
+        editor.cursorPosition = editor.text.length;
+    }
+
     function wrap(before, after) {
         var start = editor.selectionStart;
         var end = editor.selectionEnd;
@@ -58,13 +64,14 @@ CardFrame {
                     HoverHandler { id: h
                         onHoveredChanged: toolItem.hoveredNow = hovered
                     }
-                    TapHandler { onTapped: modelData.run() }
+                    CardTapHandler { onAction: modelData.run() }
                 }
             }
         }
 
         TextEdit {
             id: editor
+            objectName: "noteEditor"
             width: parent.width
             height: parent.height - 32
             text: root.card.text || ""
@@ -89,9 +96,10 @@ CardFrame {
             // card's own TapHandler never sees clicks in the text area. Select
             // the card from here as well, otherwise clicking a note's body
             // leaves the previously selected card selected.
-            TapHandler {
+            CardTapHandler {
+                suppressSelection: false
                 acceptedButtons: Qt.LeftButton
-                onTapped: root.requestBodySelect(point.modifiers, point.scenePosition.x, point.scenePosition.y)
+                onAction: root.requestBodySelect(point.modifiers, point.scenePosition.x, point.scenePosition.y)
             }
 
             Text {

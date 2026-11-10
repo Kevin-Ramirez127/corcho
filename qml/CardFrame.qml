@@ -1,4 +1,5 @@
 import QtQuick
+import "OverlayState.js" as OverlayState
 
 FocusScope {
     id: root
@@ -38,6 +39,17 @@ FocusScope {
     property bool cardHovered: false
     property bool menuHovered: false
     property bool resizeHovered: false
+    // Set while a control inside the card is pressed. Its tap must run the
+    // action only; it must not also select and raise the card.
+    property bool suppressTapSelection: false
+
+    function beginActionPress() {
+        root.suppressTapSelection = true;
+    }
+
+    function endActionPress() {
+        Qt.callLater(function () { root.suppressTapSelection = false; });
+    }
     // Bodies can override the cursor shown while the card is draggable.
     property int dragCursorShape: Qt.SizeAllCursor
     property real parallaxX: 0
@@ -160,7 +172,8 @@ FocusScope {
     property bool tapSelectHandled: false
 
     function applyTapSelection(modifiers, sceneX, sceneY) {
-        if (tapSelectHandled) return;
+        if (tapSelectHandled || root.suppressTapSelection || OverlayState.openMenus > 0)
+            return;
         tapSelectHandled = true;
         // Clear after the current event loop so the other handler that saw the
         // same tap is ignored, while the next click starts fresh.
@@ -376,8 +389,8 @@ FocusScope {
             HoverHandler { id: menuHover
                 onHoveredChanged: root.menuHovered = hovered
             }
-            TapHandler {
-                onTapped: {
+            CardTapHandler {
+                onAction: {
                     var p = root.mapToItem(null, root.width - 20, 28);
                     root.menuRequested(root.card, p.x, p.y);
                 }

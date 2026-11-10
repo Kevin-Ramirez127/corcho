@@ -169,8 +169,8 @@ CardFrame {
                                     size: root.th.iconSmall
                                     color: kanbanItem.link !== null ? root.th.accent : root.th.muted
                                     opacity: (kanbanItem.link !== null || kanbanItem.hoveredNow) ? 1 : 0
-                                    TapHandler {
-                                        onTapped: root.dateLinkRequested(
+                                    CardTapHandler {
+                                        onAction: root.dateLinkRequested(
                                             root.card.id,
                                             modelData.id,
                                             kanbanItem.link ? kanbanItem.link.id : "",
@@ -183,7 +183,7 @@ CardFrame {
                                     size: root.th.iconSmall
                                     color: root.th.muted
                                     opacity: kanbanItem.hoveredNow ? 1 : 0
-                                    TapHandler { onTapped: root.move(column.index, index, -1) }
+                                    CardTapHandler { onAction: root.move(column.index, index, -1) }
                                 }
                                 Icon {
                                     anchors.verticalCenter: parent.verticalCenter
@@ -191,7 +191,7 @@ CardFrame {
                                     size: root.th.iconSmall
                                     color: root.th.muted
                                     opacity: kanbanItem.hoveredNow ? 1 : 0
-                                    TapHandler { onTapped: root.move(column.index, index, 1) }
+                                    CardTapHandler { onAction: root.move(column.index, index, 1) }
                                 }
                                 Icon {
                                     anchors.verticalCenter: parent.verticalCenter
@@ -199,16 +199,17 @@ CardFrame {
                                     size: root.th.iconSmall
                                     color: root.th.muted
                                     opacity: kanbanItem.hoveredNow ? 1 : 0
-                                    TapHandler { onTapped: root.remove(column.index, index) }
+                                    CardTapHandler { onAction: root.remove(column.index, index) }
                                 }
                             }
 
                             HoverHandler { id: itemHover
                                 onHoveredChanged: kanbanItem.hoveredNow = hovered
                             }
-                            TapHandler {
+                            CardTapHandler {
+                                suppressSelection: false
                                 acceptedButtons: Qt.LeftButton
-                                onTapped: root.requestBodySelect(point.modifiers, point.scenePosition.x, point.scenePosition.y)
+                                onAction: root.requestBodySelect(point.modifiers, point.scenePosition.x, point.scenePosition.y)
                             }
                         }
                     }
@@ -225,9 +226,10 @@ CardFrame {
                             root.addItem(column.index, text);
                             text = "";
                         }
-                        TapHandler {
+                        CardTapHandler {
+                            suppressSelection: false
                             acceptedButtons: Qt.LeftButton
-                            onTapped: root.requestBodySelect(point.modifiers, point.scenePosition.x, point.scenePosition.y)
+                            onAction: root.requestBodySelect(point.modifiers, point.scenePosition.x, point.scenePosition.y)
                         }
                         Text {
                             anchors.fill: parent

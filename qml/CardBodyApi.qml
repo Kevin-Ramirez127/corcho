@@ -116,9 +116,10 @@ CardFrame {
             wrapMode: TextEdit.WrapAnywhere
             clip: true
 
-            TapHandler {
+            CardTapHandler {
+                suppressSelection: false
                 acceptedButtons: Qt.LeftButton
-                onTapped: root.requestBodySelect(point.modifiers, point.scenePosition.x, point.scenePosition.y)
+                onAction: root.requestBodySelect(point.modifiers, point.scenePosition.x, point.scenePosition.y)
             }
 
             Text {

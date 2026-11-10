@@ -18,6 +18,10 @@ Item {
     Accessible.role: Accessible.EditableText
     Accessible.name: root.placeholder
 
+    // The wrapper can receive focus through Tab or forceActiveFocus(). Hand
+    // it to the actual text input so typing works without a second click.
+    onActiveFocusChanged: if (activeFocus && !input.activeFocus) input.forceActiveFocus()
+
     implicitHeight: root.inputHeight
     implicitWidth: 240
 

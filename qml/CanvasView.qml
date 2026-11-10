@@ -29,6 +29,10 @@ Item {
     property string dragPreviewId: ""
     property real dragPreviewDx: 0
     property real dragPreviewDy: 0
+    // Card that should receive focus as soon as its body has loaded. Used
+    // after creating a note or checklist so the user can type immediately.
+    property string pendingFocusCardId: ""
+    property int pendingFocusAttempts: 0
 
     function activateAi(id) {
         root.activeAiId = id;
@@ -346,6 +350,39 @@ Item {
         return null;
     }
 
+    // Ask a freshly created card to focus its editor. A new card reaches the
+    // canvas through the model, so its delegate may not exist yet; poll for a
+    // moment instead of relying on a single event-loop turn.
+    function focusCard(id) {
+        if (!id) return;
+        pendingFocusCardId = id;
+        pendingFocusAttempts = 0;
+        pendingFocusTimer.restart();
+    }
+
+    function applyPendingFocus() {
+        if (!pendingFocusCardId) return;
+        var body = root.bodyItem(pendingFocusCardId);
+        if (body && typeof body.focusBody === "function") {
+            body.focusBody();
+            pendingFocusCardId = "";
+            pendingFocusTimer.stop();
+            return;
+        }
+        pendingFocusAttempts += 1;
+        if (pendingFocusAttempts >= 20) {
+            pendingFocusCardId = "";
+            pendingFocusTimer.stop();
+        }
+    }
+
+    Timer {
+        id: pendingFocusTimer
+        interval: 25
+        repeat: true
+        onTriggered: root.applyPendingFocus()
+    }
+
     // Move the live page of a website card into its picture-in-picture copy.
     function releaseCardWebView(id) {
         var body = root.bodyItem(id);
@@ -456,6 +493,12 @@ Item {
             if (root.pasteClipboard()) event.accepted = true;
             return;
         }
+        // Ctrl/Alt/Meta + arrow are text navigation gestures. A TextInput or
+        // TextEdit only accepts them while it can still move the cursor, so
+        // an unhandled Ctrl+Left at the start of a field used to fall through
+        // here and pan the canvas. Never treat those as canvas navigation.
+        if (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))
+            return;
         var step = (event.modifiers & Qt.ShiftModifier) ? 220 : 70;
         if (event.key === Qt.Key_Left) root.app.setView(root.app.panX + step, root.app.panY, root.app.zoom);
         else if (event.key === Qt.Key_Right) root.app.setView(root.app.panX - step, root.app.panY, root.app.zoom);
