@@ -893,18 +893,29 @@ Item {
     // canvas still pans and zooms everywhere else.
     WheelHandler {
         id: canvasWheel
+        // Touchpads report high-resolution pixelDelta and often leave
+        // angleDelta at zero, while a mouse wheel only sets angleDelta.
+        function wheelStep(event) {
+            if (event.pixelDelta.x !== 0 || event.pixelDelta.y !== 0)
+                return Qt.point(event.pixelDelta.x, event.pixelDelta.y);
+            return Qt.point(event.angleDelta.x / 120 * 84,
+                            event.angleDelta.y / 120 * 84);
+        }
         onWheel: function (event) {
             if (root.modalOpen || root.panning) {
                 event.accepted = true;
                 return;
             }
+            var step = wheelStep(event);
             var wantPan = !(event.modifiers & Qt.ControlModifier)
                 && (!root.settings || root.settings.trackpad_pan !== false);
-            if (!wantPan)
-                root.zoomAt(event.angleDelta.y > 0 ? 1.12 : 0.89, point.position.x, point.position.y);
-            else
-                root.app.setView(root.app.panX - event.angleDelta.x * 0.7,
-                                 root.app.panY - event.angleDelta.y * 0.7, root.app.zoom);
+            if (!wantPan) {
+                var dir = event.angleDelta.y !== 0 ? event.angleDelta.y : event.pixelDelta.y;
+                root.zoomAt(dir > 0 ? 1.12 : 0.89, point.position.x, point.position.y);
+            } else {
+                root.app.setView(root.app.panX - step.x,
+                                 root.app.panY - step.y, root.app.zoom);
+            }
             event.accepted = true;
         }
     }
