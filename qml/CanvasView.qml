@@ -328,6 +328,39 @@ Item {
         return card.x + card.width > left - m && card.x < right + m && card.y + card.height > top - m && card.y < bottom + m;
     }
 
+    // Cards whose body holds live state must survive scrolling: a website
+    // body owns the loaded page, and a floating card has to be able to hand
+    // that page back when its picture-in-picture window closes.
+    function keepAlive(card) {
+        return card.type === "website"
+            || root.floatingIds.indexOf(card.id) >= 0;
+    }
+
+    // The body of a card that is currently loaded, or null.
+    function bodyItem(id) {
+        for (var i = 0; i < cardRepeater.count; i++) {
+            var loader = cardRepeater.itemAt(i);
+            if (loader && loader.card && loader.card.id === id)
+                return loader.item;
+        }
+        return null;
+    }
+
+    // Move the live page of a website card into its picture-in-picture copy.
+    function releaseCardWebView(id) {
+        var body = root.bodyItem(id);
+        if (!body || typeof body.releaseWebView !== "function") return null;
+        return body.releaseWebView();
+    }
+
+    // Take the page back when the picture-in-picture window closes.
+    function acceptCardWebView(id, view) {
+        var body = root.bodyItem(id);
+        if (!view || !body || typeof body.acceptWebView !== "function") return false;
+        body.acceptWebView(view);
+        return true;
+    }
+
     function zoomAt(factor, sx, sy) {
         var oldZoom = Math.max(0.2, app.zoom);
         var next = Math.min(3.0, Math.max(0.2, oldZoom * factor));
@@ -629,17 +662,6 @@ Item {
             }
             root.createRequested(wx, wy);
         }
-        onWheel: function (wheel) {
-            if (root.modalOpen) {
-                wheel.accepted = true;
-                return;
-            }
-            if (active) return;
-            var wantPan = !(wheel.modifiers & Qt.ControlModifier)
-                && (!root.settings || root.settings.trackpad_pan !== false);
-            if (!wantPan) root.zoomAt(wheel.angleDelta.y > 0 ? 1.12 : 0.89, wheel.x, wheel.y);
-            else root.app.setView(root.app.panX - wheel.angleDelta.x * 0.7, root.app.panY - wheel.angleDelta.y * 0.7, root.app.zoom);
-        }
     }
 
     Item {
@@ -667,6 +689,7 @@ Item {
         }
 
         Repeater {
+            id: cardRepeater
             model: cardModel
 
             delegate: Loader {
@@ -679,7 +702,7 @@ Item {
                 // drop; offset their delegates so they follow the pointer.
                 x: root.dragPreviewX(card.id)
                 y: root.dragPreviewY(card.id)
-                active: root.inView(card)
+                active: root.inView(card) || root.keepAlive(card)
                 source: root.bodyFor(card.type)
                 asynchronous: false
 
@@ -820,16 +843,26 @@ Item {
             root.panning = false;
             root.app.saveNow();
         }
-        onWheel: function (wheel) {
-            if (root.modalOpen) {
-                wheel.accepted = true;
+    }
+
+    // Wheel events reach this handler only when the item under the pointer
+    // does not consume them. That lets webviews scroll natively while the
+    // canvas still pans and zooms everywhere else.
+    WheelHandler {
+        id: canvasWheel
+        onWheel: function (event) {
+            if (root.modalOpen || root.panning) {
+                event.accepted = true;
                 return;
             }
-            if (active) return;
-            var wantPan = !(wheel.modifiers & Qt.ControlModifier)
+            var wantPan = !(event.modifiers & Qt.ControlModifier)
                 && (!root.settings || root.settings.trackpad_pan !== false);
-            if (!wantPan) root.zoomAt(wheel.angleDelta.y > 0 ? 1.12 : 0.89, wheel.x, wheel.y);
-            else root.app.setView(root.app.panX - wheel.angleDelta.x * 0.7, root.app.panY - wheel.angleDelta.y * 0.7, root.app.zoom);
+            if (!wantPan)
+                root.zoomAt(event.angleDelta.y > 0 ? 1.12 : 0.89, point.position.x, point.position.y);
+            else
+                root.app.setView(root.app.panX - event.angleDelta.x * 0.7,
+                                 root.app.panY - event.angleDelta.y * 0.7, root.app.zoom);
+            event.accepted = true;
         }
     }
 

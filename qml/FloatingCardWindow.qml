@@ -17,6 +17,9 @@ Window {
     property string bodySource: ""
     property string gridId: ""
     property var webProfile: null
+    // The live page handed over by the canvas copy of a website card. It is
+    // moved into this window instead of being loaded a second time.
+    property var externalWebView: null
     property bool pinned: true
     property string floatingToken: ""
 
@@ -24,6 +27,9 @@ Window {
     property real initialHeight: 420
 
     signal cardReturned()
+    // Emitted with the page while the window closes, so the canvas copy can
+    // take it back without ever reloading the site.
+    signal webViewReturned(var view)
     signal dateLinkRequested(string sourceCardId, string sourceItemId, string linkId, string defaultDate)
     signal calendarManagerRequested()
 
@@ -57,12 +63,26 @@ Window {
         return win.th ? win.th.radiusCard : 8;
     }
 
+    // Give the page back to the canvas copy before this window goes away.
+    // The second call from onClosing is a no-op: the body has already
+    // released the view.
+    function handPageBack() {
+        var item = bodyLoader.item;
+        if (!item || typeof item.releaseWebView !== "function") return;
+        var view = item.releaseWebView();
+        if (view) win.webViewReturned(view);
+    }
+
     function returnToCanvas() {
+        win.handPageBack();
         win.cardReturned();
         win.close();
     }
 
-    onClosing: win.cardReturned()
+    onClosing: {
+        win.handPageBack();
+        win.cardReturned();
+    }
     onPinnedChanged: {
         // Some platforms recreate the native window when the flags change.
         if (!win.visible) win.visible = true;
@@ -231,6 +251,12 @@ Window {
                 item.gridId = Qt.binding(function () { return win.gridId; });
                 if (win.cardData && win.cardData.type === "website")
                     item.webProfile = Qt.binding(function () { return win.webProfile; });
+
+                // Take the live page over before the body learns its card:
+                // with a URL it would otherwise open a second copy of the
+                // site next to the one that was handed over.
+                if (win.externalWebView && typeof item.hostWebView === "function")
+                    item.hostWebView(win.externalWebView);
 
                 item.card = Qt.binding(function () { return win.cardData; });
 

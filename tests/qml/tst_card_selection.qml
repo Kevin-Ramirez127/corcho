@@ -11,6 +11,12 @@ Item {
     width: 900
     height: 700
 
+    // A tall page so scrolling through it can be observed.
+    readonly property string tallPage:
+        "data:text/html,<html><body style='height:5000px'>page</body></html>"
+    // Last value reported by the page probe; a reload would reset it.
+    property string pageProbe: ""
+
     QtObject {
         id: fakeApp
         property real panX: 0
@@ -18,11 +24,16 @@ Item {
         property real zoom: 1
         property string activeGridId: "g1"
         property int viewCalls: 0
+        property string settingsJson: ""
         function setView(px, py, z) { panX = px; panY = py; zoom = z; viewCalls += 1; }
         function setViewport(x, y, w, h) {}
         function moveCards(ids, dx, dy) {}
         function saveNow() {}
         function updateCard(json) { lastUpdate = json; return true; }
+        function adblockCheck(url) { return false; }
+        function adblockHosts() { return "[]"; }
+        function toast(message) {}
+        function openExternal(url) {}
         property string lastUpdate: ""
     }
 
@@ -48,6 +59,7 @@ Item {
         property real cardHeaderHeight: 36
         property real controlHeight: 32
         property string fontFamily: "sans"
+        property string fontMono: "monospace"
         property real fontSizeBody: 14
         property real fontSizeLarge: 20
         property real fontSizeSmall: 12
@@ -96,6 +108,24 @@ Item {
         }
     }
 
+    // Second copy of a website body, standing in for the picture-in-picture
+    // window: it is where the canvas copy hands its live page over. It sits
+    // outside the test window so it never covers the canvas.
+    Loader {
+        id: pipBody
+        x: 1200
+        y: 0
+        width: 420
+        height: 320
+        source: ""
+        onLoaded: {
+            item.detached = true;
+            item.showChrome = false;
+            item.app = fakeApp;
+            item.th = theme;
+        }
+    }
+
     Connections {
         target: loader.item
         ignoreUnknownSignals: true
@@ -126,6 +156,9 @@ Item {
 
         function init() {
             testRoot.menuCount = 0;
+            testRoot.pageProbe = "";
+            fakeApp.settingsJson = "";
+            pipBody.source = "";
             loader.item.raiseOrder = [];
             loader.item.settings = ({});
             loader.item.floatingIds = [];
@@ -379,6 +412,56 @@ Item {
             compare(loader.item.selectedIds[0], "check");
         }
 
+        function checklistBody() {
+            var cardLoader = findChild(loader.item, "cardLoader_check");
+            verify(cardLoader !== null);
+            return cardLoader.item;
+        }
+
+        function test_checklist_date_button_does_not_complete_task() {
+            setCards([{ id: "check", type: "checklist", x: 100, y: 100, width: 300, height: 260,
+                        title: "tasks", text: "", locked: false,
+                        items: [{ id: "i1", text: "task one", done: false }] }]);
+            var body = checklistBody();
+            var dateButton = findChild(body, "checklistDate_0");
+            verify(dateButton !== null);
+
+            mouseClick(dateButton, dateButton.width / 2, dateButton.height / 2);
+            wait(60);
+            compare(body.items.length, 1);
+            compare(body.items[0].done, false);
+        }
+
+        function test_checklist_remove_button_removes_task() {
+            setCards([{ id: "check", type: "checklist", x: 100, y: 100, width: 300, height: 260,
+                        title: "tasks", text: "", locked: false,
+                        items: [{ id: "i1", text: "task one", done: false }] }]);
+            var body = checklistBody();
+            var removeButton = findChild(body, "checklistRemove_0");
+            verify(removeButton !== null);
+
+            mouseClick(removeButton, removeButton.width / 2, removeButton.height / 2);
+            wait(60);
+            compare(body.items.length, 0);
+        }
+
+        function test_click_above_card_does_not_toggle_covered_checklist_task() {
+            setCards([{ id: "check", type: "checklist", x: 100, y: 100, width: 300, height: 260,
+                        title: "tasks", text: "", locked: false,
+                        items: [{ id: "i1", text: "task one", done: false }] },
+                       noteCard("top", 100, 100)]);
+            var body = checklistBody();
+            compare(body.items[0].done, false);
+
+            // This point is over a checklist task row, but the note card is on
+            // top of it and must receive the click on its own.
+            mouseClick(loader.item, 200, 163);
+            wait(60);
+            compare(loader.item.selectedIds[0], "top");
+            compare(body.items.length, 1);
+            compare(body.items[0].done, false);
+        }
+
         function test_kanban_item_click_selects_card() {
             setCards([{ id: "board", type: "kanban", x: 100, y: 100, width: 380, height: 300,
                         title: "board", text: "", locked: false,
@@ -459,6 +542,177 @@ Item {
             compare(testRoot.menuCount, 1);
             mouseRelease(loader.item, 300, 300);
             wait(60);
+        }
+
+        function websiteCard(id, x, y, url, w, h) {
+            return { id: id, type: "website", x: x, y: y,
+                     width: w || 420, height: h || 320,
+                     title: id, text: "", url: url || "", locked: false };
+        }
+
+        // The visible tooltip of the window, or null. QtTest's findChild only
+        // walks the item tree, and a closed ToolTip is not in it at all.
+        function findToolTip() {
+            var win = testRoot.Window.window;
+            if (!win) return null;
+            var tip = findChild(win.contentItem, "ToolTip");
+            return tip && tip.visible ? tip : null;
+        }
+
+        // The popup item carries no text property of its own; the label is a
+        // child of it.
+        function toolTipText(node) {
+            if (!node) return "";
+            if (typeof node.text === "string" && node.text.length > 0)
+                return node.text;
+            var kids = node.children || [];
+            for (var i = 0; i < kids.length; i++) {
+                var found = toolTipText(kids[i]);
+                if (found) return found;
+            }
+            return "";
+        }
+
+        function probePage(view, script) {
+            testRoot.pageProbe = "";
+            view.runJavaScript(script, function (value) {
+                testRoot.pageProbe = String(value === undefined || value === null
+                    ? "" : value);
+            });
+        }
+
+        // A website body owns the loaded page, so it has to survive scrolling
+        // away; plain cards are still dropped while they are off screen.
+        function test_website_body_stays_alive_off_screen() {
+            setCards([websiteCard("web", 6000, 6000, "")]);
+            verify(loader.item.bodyItem("web") !== null);
+
+            setCards([noteCard("far", 6000, 6000)]);
+            verify(loader.item.bodyItem("far") === null);
+        }
+
+        // Opening a website card in a picture-in-picture window must move the
+        // live page instead of loading the site a second time, and the page
+        // has to come back to the canvas untouched.
+        function test_website_page_survives_picture_in_picture_handoff() {
+            setCards([websiteCard("web", 100, 100, testRoot.tallPage)]);
+            var body = loader.item.bodyItem("web");
+            verify(body !== null);
+            tryVerify(function () { return body.view !== null; }, 8000);
+            // loadProgress is a percentage, 0..100.
+            tryVerify(function () {
+                return body.view && body.view.loadProgress === 100;
+            }, 8000);
+
+            var page = body.view;
+            probePage(page, "window.__mark = 'alive'; window.scrollTo(0, 600); " +
+                            "window.__mark + '|' + window.pageYOffset;");
+            tryCompare(testRoot, "pageProbe", "alive|600", 8000);
+
+            // Hand it over exactly like the picture-in-picture window does.
+            var handed = loader.item.releaseCardWebView("web");
+            verify(handed === page);
+            verify(body.view === null);
+            // The canvas copy must not open a second copy of the site.
+            verify(body.ensureView() === null);
+            verify(body.view === null);
+
+            pipBody.source = Qt.resolvedUrl("../../qml/CardBodyWebsite.qml");
+            verify(pipBody.item !== null);
+            pipBody.item.hostWebView(page);
+            pipBody.item.card = websiteCard("web", 100, 100, testRoot.tallPage);
+
+            var host = page.parent, moved = false;
+            while (host) {
+                if (host === pipBody.item) { moved = true; break; }
+                host = host.parent;
+            }
+            verify(moved, "the page did not move into the second body");
+            verify(pipBody.item.view === page);
+
+            wait(300);
+            probePage(page, "window.__mark + '|' + window.pageYOffset;");
+            tryCompare(testRoot, "pageProbe", "alive|600", 8000);
+
+            // And back to the canvas copy when the window closes.
+            var back = pipBody.item.releaseWebView();
+            verify(back === page);
+            verify(loader.item.acceptCardWebView("web", back));
+            var canvasBody = loader.item.bodyItem("web");
+            verify(canvasBody.view === page);
+            wait(300);
+            probePage(page, "window.__mark + '|' + window.pageYOffset;");
+            tryCompare(testRoot, "pageProbe", "alive|600", 8000);
+
+            pipBody.source = "";
+        }
+
+        // The resize grip must always be covered by the rounded card surface,
+        // while staying out of the 16px strip that holds the scrollbars.
+        function test_resize_grip_stays_inside_rounded_card() {
+            var radii = [0, 14, 20, 28];
+            for (var i = 0; i < radii.length; i++) {
+                var radius = radii[i];
+                fakeApp.settingsJson = JSON.stringify({ card_radius: radius });
+                setCards([noteCard("grip", 100, 100)]);
+                var card = loader.item.bodyItem("grip");
+                verify(card !== null);
+                var grip = findChild(card, "resizeGrip");
+                verify(grip !== null, "no grip at radius " + radius);
+
+                // The grip icon is rotated by 90 degrees, so map all four
+                // corners and work with the axis-aligned bounding box.
+                var corners = [[0, 0], [grip.width, 0],
+                               [0, grip.height], [grip.width, grip.height]];
+                var minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9;
+                for (var c = 0; c < corners.length; c++) {
+                    var p = grip.mapToItem(card, corners[c][0], corners[c][1]);
+                    minX = Math.min(minX, p.x);
+                    maxX = Math.max(maxX, p.x);
+                    minY = Math.min(minY, p.y);
+                    maxY = Math.max(maxY, p.y);
+                }
+                var w = card.width, h = card.height;
+                verify(maxX <= w && maxY <= h, "grip outside the card");
+                // Clear of the scrollbar strip, which starts 16px in.
+                verify(w - minX <= 16,
+                       "grip reaches into the scrollbar strip at radius " + radius);
+                // Inside the rounded corner: the point sits on the arc that
+                // cuts the corner back by the radius.
+                if (radius > 0 && maxX > w - radius && maxY > h - radius) {
+                    var dx = maxX - (w - radius);
+                    var dy = maxY - (h - radius);
+                    verify(dx * dx + dy * dy <= radius * radius,
+                           "grip sticks out of the rounded corner at radius " + radius);
+                }
+            }
+            fakeApp.settingsJson = "";
+        }
+
+        // Every toolbar button of a website card explains itself on hover.
+        function test_website_buttons_show_tooltips() {
+            // Wide enough that the zoom buttons (hidden below 500px) exist too.
+            setCards([websiteCard("web", 100, 100, "", 640, 320)]);
+            var body = loader.item.bodyItem("web");
+            verify(body !== null);
+
+            var buttons = ["webBack", "webForward", "webReload", "webZoomOut",
+                           "webZoomIn", "webOpenExternal", "webKeepAwake",
+                           "webSession"];
+            for (var i = 0; i < buttons.length; i++) {
+                var button = findChild(body, buttons[i]);
+                verify(button !== null, "missing button " + buttons[i]);
+                var at = button.mapToItem(loader.item, button.width / 2,
+                                          button.height / 2);
+                mouseMove(loader.item, at.x, at.y);
+                tryVerify(function () { return findToolTip() !== null; }, 3000,
+                          "no tooltip for " + buttons[i]);
+                verify(toolTipText(findToolTip()).length > 0,
+                       "tooltip of " + buttons[i] + " has no text");
+                mouseMove(loader.item, 5, 5);
+                tryVerify(function () { return findToolTip() === null; }, 3000,
+                          "tooltip of " + buttons[i] + " stays after hover");
+            }
         }
     }
 }
