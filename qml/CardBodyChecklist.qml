@@ -75,6 +75,28 @@ CardFrame {
         return n;
     }
 
+    // Undone tasks come first, followed by completed ones. Group headings are
+    // only emitted for non-empty groups.
+    readonly property var rows: {
+        var pending = [];
+        var completed = [];
+        for (var i = 0; i < items.length; i++) {
+            var row = { header: false, item: items[i], index: i };
+            if (items[i].done) completed.push(row);
+            else pending.push(row);
+        }
+        var out = [];
+        if (pending.length > 0) {
+            out.push({ header: true, label: "Undone" });
+            out = out.concat(pending);
+        }
+        if (completed.length > 0) {
+            out.push({ header: true, label: "Done" });
+            out = out.concat(completed);
+        }
+        return out;
+    }
+
     Column {
         anchors.fill: parent
         spacing: root.th.space2
@@ -100,19 +122,36 @@ CardFrame {
                                 - (root.th ? root.th.space2 : 8) * 2)
             clip: true
             spacing: root.th.spaceHalf
-            model: root.items
+            model: root.rows
 
             delegate: Item {
                 id: checkItem
                 required property var modelData
                 required property int index
                 property bool hoveredNow: false
-                readonly property var link: root.linkFor(modelData.id)
+                readonly property bool isHeader: modelData && modelData.header === true
+                readonly property var task: checkItem.isHeader ? null : modelData.item
+                readonly property int taskIndex: checkItem.isHeader ? -1 : modelData.index
+                readonly property var link: checkItem.task ? root.linkFor(checkItem.task.id) : null
 
                 width: list.width
-                height: Math.max(30, taskText.implicitHeight + 8)
+                height: checkItem.isHeader ? 22 : Math.max(30, taskText.implicitHeight + 8)
+
+                Text {
+                    objectName: "checklistGroupHeader_" + (modelData.label || "")
+                    visible: checkItem.isHeader
+                    anchors.left: parent.left
+                    anchors.leftMargin: 4
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: modelData.label || ""
+                    color: root.th.text2
+                    font.family: root.th.fontFamily
+                    font.pixelSize: root.th.fontSizeMicro
+                    font.weight: root.th.fontWeightMedium
+                }
 
                 Rectangle {
+                    visible: !checkItem.isHeader
                     anchors.fill: parent
                     radius: root.th.radiusKeycap
                     color: checkItem.hoveredNow ? root.th.hover : "transparent"
@@ -120,16 +159,18 @@ CardFrame {
 
                 Icon {
                     id: box
+                    visible: !checkItem.isHeader
                     anchors.left: parent.left
                     anchors.leftMargin: 4
                     anchors.verticalCenter: parent.verticalCenter
-                    name: modelData.done ? "circle-check" : "circle"
+                    name: checkItem.task && checkItem.task.done ? "circle-check" : "circle"
                     size: root.th.iconBody
-                    color: modelData.done ? root.th.accent : root.th.muted
+                    color: checkItem.task && checkItem.task.done ? root.th.accent : root.th.muted
                 }
 
                 Row {
                     id: rightRow
+                    visible: !checkItem.isHeader
                     anchors.right: parent.right
                     anchors.rightMargin: 4
                     anchors.verticalCenter: parent.verticalCenter
@@ -143,7 +184,7 @@ CardFrame {
                         font.pixelSize: root.th.fontSizeMicro
                     }
                     Icon {
-                        objectName: "checklistDate_" + index
+                        objectName: "checklistDate_" + checkItem.taskIndex
                         anchors.verticalCenter: parent.verticalCenter
                         name: "calendar"
                         size: root.th.iconSmall
@@ -155,14 +196,14 @@ CardFrame {
                                     return;
                                 root.dateLinkRequested(
                                     root.card.id,
-                                    modelData.id,
+                                    checkItem.task.id,
                                     checkItem.link ? checkItem.link.id : "",
                                     checkItem.link ? checkItem.link.date : "");
                             }
                         }
                     }
                     Icon {
-                        objectName: "checklistRemove_" + index
+                        objectName: "checklistRemove_" + checkItem.taskIndex
                         anchors.verticalCenter: parent.verticalCenter
                         name: "x"
                         size: root.th.iconSmall
@@ -172,7 +213,7 @@ CardFrame {
                             acceptedButtons: Qt.LeftButton
                             onAction: {
                                 if (root.canInteractAt(point.scenePosition.x, point.scenePosition.y))
-                                    root.remove(index);
+                                    root.remove(checkItem.taskIndex);
                             }
                         }
                     }
@@ -180,23 +221,25 @@ CardFrame {
 
                 Text {
                     id: taskText
-                    objectName: "checklistTaskText_" + index
+                    objectName: "checklistTaskText_" + checkItem.taskIndex
+                    visible: !checkItem.isHeader
                     anchors.left: box.right
                     anchors.leftMargin: 9
                     anchors.right: rightRow.left
                     anchors.rightMargin: 6
                     anchors.verticalCenter: parent.verticalCenter
-                    text: modelData.text
+                    text: checkItem.task ? checkItem.task.text : ""
                     wrapMode: Text.Wrap
-                    color: modelData.done ? root.th.muted : root.th.text
+                    color: checkItem.task && checkItem.task.done ? root.th.muted : root.th.text
                     font.family: root.th.fontFamily
                     font.pixelSize: root.th.fontSizeSmall
-                    font.strikeout: modelData.done
+                    font.strikeout: checkItem.task ? checkItem.task.done : false
                 }
 
                 // The done toggle only covers the row before the date and
                 // remove controls, so those buttons never mark the task done.
                 Item {
+                    visible: !checkItem.isHeader
                     anchors.left: parent.left
                     anchors.right: rightRow.left
                     anchors.top: parent.top
@@ -208,19 +251,21 @@ CardFrame {
                             if (!root.canInteractAt(point.scenePosition.x, point.scenePosition.y))
                                 return;
                             root.requestBodySelect(point.modifiers, point.scenePosition.x, point.scenePosition.y);
-                            root.toggle(index);
+                            root.toggle(checkItem.taskIndex);
                         }
                     }
                 }
 
                 HoverHandler { id: rowHover
+                    enabled: !checkItem.isHeader
                     onHoveredChanged: checkItem.hoveredNow = hovered
                 }
                 CardTapHandler {
+                    enabled: !checkItem.isHeader
                     acceptedButtons: Qt.RightButton
                     onAction: {
                         if (root.canInteractAt(point.scenePosition.x, point.scenePosition.y))
-                            root.remove(index);
+                            root.remove(checkItem.taskIndex);
                     }
                 }
             }

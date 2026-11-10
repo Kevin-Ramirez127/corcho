@@ -516,7 +516,11 @@ Item {
             wait(60);
             compare(loader.item.selectedIds[0], "a");
 
-            mouseClick(loader.item, 550, 163, Qt.LeftButton, Qt.ControlModifier);
+            var checkBody = checklistBody();
+            var label = findChild(checkBody, "checklistTaskText_0");
+            verify(label !== null);
+            var at = label.mapToItem(loader.item, label.width / 2, label.height / 2);
+            mouseClick(loader.item, at.x, at.y, Qt.LeftButton, Qt.ControlModifier);
             wait(60);
             compare(loader.item.selectedIds.length, 2);
             verify(loader.item.selectedIds.indexOf("a") >= 0);
@@ -527,8 +531,10 @@ Item {
             setCards([{ id: "check", type: "checklist", x: 100, y: 100, width: 300, height: 260,
                         title: "tasks", text: "", locked: false,
                         items: [{ id: "i1", text: "task one", done: false }] }]);
-            // The first row sits just below the progress bar in the card body.
-            mouseClick(loader.item, 250, 163);
+            var label = findChild(checklistBody(), "checklistTaskText_0");
+            verify(label !== null);
+            var at = label.mapToItem(loader.item, label.width / 2, label.height / 2);
+            mouseClick(loader.item, at.x, at.y);
             wait(60);
             compare(loader.item.selectedIds.length, 1);
             compare(loader.item.selectedIds[0], "check");
@@ -601,6 +607,51 @@ Item {
             verify(label !== null);
             compare(label.wrapMode, Text.Wrap);
             verify(label.lineCount > 1);
+        }
+
+        // Undone tasks are listed before completed ones, each in a titled
+        // group.
+        function test_checklist_groups_undone_before_done() {
+            setCards([{ id: "check", type: "checklist", x: 100, y: 100, width: 300, height: 300,
+                        title: "tasks", text: "", locked: false, items: [
+                            { id: "d1", text: "done first", done: true },
+                            { id: "u1", text: "undone one", done: false },
+                            { id: "d2", text: "done second", done: true },
+                            { id: "u2", text: "undone two", done: false }
+                        ] }]);
+            var body = checklistBody();
+            var rows = body.rows;
+            compare(rows.length, 6);
+            compare(rows[0].header, true);
+            compare(rows[0].label, "Undone");
+            compare(rows[1].item.text, "undone one");
+            compare(rows[2].item.text, "undone two");
+            compare(rows[3].header, true);
+            compare(rows[3].label, "Done");
+            compare(rows[4].item.text, "done first");
+            compare(rows[5].item.text, "done second");
+
+            var undoneTitle = findChild(body, "checklistGroupHeader_Undone");
+            var doneTitle = findChild(body, "checklistGroupHeader_Done");
+            verify(undoneTitle !== null && undoneTitle.visible);
+            verify(doneTitle !== null && doneTitle.visible);
+        }
+
+        // A group heading is not rendered when its group has no tasks.
+        function test_checklist_empty_group_title_is_hidden() {
+            setCards([{ id: "check", type: "checklist", x: 100, y: 100, width: 300, height: 260,
+                        title: "tasks", text: "", locked: false,
+                        items: [{ id: "u1", text: "only undone", done: false }] }]);
+            var body = checklistBody();
+            verify(findChild(body, "checklistGroupHeader_Undone") !== null);
+            compare(findChild(body, "checklistGroupHeader_Done"), null);
+
+            setCards([{ id: "check", type: "checklist", x: 100, y: 100, width: 300, height: 260,
+                        title: "tasks", text: "", locked: false,
+                        items: [{ id: "d1", text: "only done", done: true }] }]);
+            body = checklistBody();
+            compare(findChild(body, "checklistGroupHeader_Undone"), null);
+            verify(findChild(body, "checklistGroupHeader_Done") !== null);
         }
 
         // Ctrl+Left/Right at the start/end of a field must not fall through to
