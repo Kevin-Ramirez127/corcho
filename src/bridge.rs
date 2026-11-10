@@ -37,6 +37,50 @@ fn p(v: &QString) -> String {
     v.to_string()
 }
 
+#[derive(serde::Deserialize)]
+struct FloatingWindowPlacement {
+    token: String,
+    x: f64,
+    y: f64,
+}
+
+/// Wayland compositors decide where toplevel windows go. Sway exposes its IPC
+/// through swaymsg and can move floating windows, so use it to keep the
+/// detached cards in the requested row. Other sessions simply keep the
+/// client-side positions.
+fn place_sway_floating_windows(json: &str) {
+    if std::env::var_os("SWAYSOCK").is_none() {
+        return;
+    }
+    let Ok(requests) = serde_json::from_str::<Vec<FloatingWindowPlacement>>(json) else {
+        return;
+    };
+    let mut commands = Vec::new();
+    for request in requests {
+        let token = request.token.trim();
+        if token.is_empty()
+            || !token
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
+            continue;
+        }
+        commands.push(format!(
+            "[title=\"^Picture-in-Picture #{token} \"] floating enable, move absolute position {} {}",
+            request.x.round() as i64,
+            request.y.round() as i64
+        ));
+    }
+    if commands.is_empty() {
+        return;
+    }
+    let _ = std::process::Command::new("swaymsg")
+        .arg(commands.join("; "))
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+}
+
 #[cxx_qt::bridge]
 pub mod qobject {
     unsafe extern "C++" {
@@ -204,6 +248,10 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "moveCards"]
         fn move_cards(self: Pin<&mut Self>, ids_json: &QString, dx: f64, dy: f64) -> bool;
+
+        #[qinvokable]
+        #[cxx_name = "placeFloatingWindows"]
+        fn place_floating_windows(self: Pin<&mut Self>, json: &QString);
 
         #[qinvokable]
         #[cxx_name = "setCardGroup"]
@@ -1131,6 +1179,10 @@ impl qobject::AppController {
         };
         self.as_mut().refresh_cards();
         ok
+    }
+
+    pub fn place_floating_windows(self: Pin<&mut Self>, json: &QString) {
+        place_sway_floating_windows(&p(json));
     }
 
     pub fn set_card_group(mut self: Pin<&mut Self>, ids_json: &QString, group: &QString) -> bool {

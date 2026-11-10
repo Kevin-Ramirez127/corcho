@@ -22,7 +22,8 @@ Item {
         function setViewport(x, y, w, h) {}
         function moveCards(ids, dx, dy) {}
         function saveNow() {}
-        function updateCard(json) { return true; }
+        function updateCard(json) { lastUpdate = json; return true; }
+        property string lastUpdate: ""
     }
 
     QtObject {
@@ -107,6 +108,7 @@ Item {
 
         function setCards(cards) {
             loader.item.setSelection([]);
+            loader.item.floatingIds = [];
             loader.item.cards = cards;
             wait(120);
         }
@@ -126,6 +128,7 @@ Item {
             testRoot.menuCount = 0;
             loader.item.raiseOrder = [];
             loader.item.settings = ({});
+            loader.item.floatingIds = [];
             loader.item.cards = [];
             loader.item.setSelection([]);
             wait(60);
@@ -156,6 +159,17 @@ Item {
         function cardItem(id) {
             var delegate = findChild(loader.item, "cardLoader_" + id);
             return delegate ? delegate.item : null;
+        }
+
+        function findCardFrame(node) {
+            if (node && node.card !== undefined && node.detached !== undefined)
+                return node;
+            var children = node ? node.children : [];
+            for (var i = 0; i < children.length; i++) {
+                var found = findCardFrame(children[i]);
+                if (found) return found;
+            }
+            return null;
         }
 
         function test_click_does_not_move_other_cards() {
@@ -240,8 +254,59 @@ Item {
             compare(loader.item.selectedIds.length, 0);
         }
 
-        function test_whiteboard_canvas_click_selects_card() {
-            setCards([{ id: "w", type: "whiteboard", x: 100, y: 100, width: 320, height: 260,
+        // A card shown in a picture-in-picture window remains on the canvas as
+        // a greyed placeholder whose return action routes back to Main.
+        function test_floating_card_shows_return_overlay() {
+            setCards([noteCard("a", 100, 100)]);
+            loader.item.floatingIds = ["a"];
+            wait(60);
+            var card = cardItem("a");
+            verify(card !== null);
+            compare(card.floating, true);
+            var shade = findChild(card, "floatingShade");
+            verify(shade !== null);
+            compare(shade.visible, true);
+
+            var returned = "";
+            loader.item.returnCardRequested.connect(function (id) { returned = id; });
+            card.returnRequested();
+            compare(returned, "a");
+        }
+
+        // The detached copy fills its window, and editing it must not rewrite
+        // the canvas card's geometry.
+        function test_floating_window_keeps_canvas_geometry() {
+            var component = Qt.createComponent("../../qml/FloatingCardWindow.qml");
+            compare(component.status, Component.Ready);
+            var card = noteCard("float", 100, 100);
+            var win = component.createObject(null, {
+                "app": fakeApp, "th": theme, "cardId": "float", "cardData": card,
+                "bodySource": Qt.resolvedUrl("../../qml/CardBodyNote.qml"),
+                "gridId": "g1", "initialWidth": 340, "initialHeight": 320
+            });
+            verify(win !== null);
+            wait(120);
+            var frame = findCardFrame(win.contentItem);
+            verify(frame !== null);
+            compare(frame.detached, true);
+            compare(frame.showChrome, false);
+            compare(frame.surfaceless, true);
+            compare(frame.width, win.width);
+            compare(frame.height, win.height - win.titleBarHeight);
+
+            frame.commit({}, "changed");
+            var saved = JSON.parse(fakeApp.lastUpdate);
+            compare(saved.x, 100);
+            compare(saved.y, 100);
+            compare(saved.width, 220);
+            compare(saved.height, 220);
+            compare(saved.text, "changed");
+
+            win.close();
+            wait(30);
+        }
+
+        function test_whiteboard_canvas_click_selects_card() {            setCards([{ id: "w", type: "whiteboard", x: 100, y: 100, width: 320, height: 260,
                         title: "board", text: "", strokes: [], penWidth: 3, locked: false }]);
             mouseClick(loader.item, 250, 240);
             wait(60);
@@ -332,6 +397,37 @@ Item {
             mouseRelease(loader.item, 640, 330);
             wait(80);
             compare(loader.item.selectedIds.length, 2);
+        }
+
+        // Dragging one card of a multi-selection must move the rest of the
+        // selection live, not only once the pointer is released.
+        function test_drag_moves_selection_live() {
+            setCards([noteCard("a", 100, 100), noteCard("b", 400, 100)]);
+            mouseClick(loader.item, 150, 110);
+            mouseClick(loader.item, 450, 110, Qt.LeftButton, Qt.ControlModifier);
+            wait(60);
+            compare(loader.item.selectedIds.length, 2);
+
+            var bLoader = findChild(loader.item, "cardLoader_b");
+            verify(bLoader !== null);
+            compare(bLoader.x, 0);
+            compare(bLoader.y, 0);
+
+            mousePress(loader.item, 150, 110);
+            mouseMove(loader.item, 210, 170);
+            mouseMove(loader.item, 230, 190);
+            wait(30);
+
+            // The other selected card follows before the drop.
+            verify(bLoader.x > 10);
+            verify(bLoader.y > 10);
+
+            mouseRelease(loader.item, 230, 190);
+            wait(80);
+
+            // Its model position is updated on drop, so the preview resets.
+            compare(bLoader.x, 0);
+            compare(bLoader.y, 0);
         }
 
         // Dragging the top card by a spot where the covered card's header

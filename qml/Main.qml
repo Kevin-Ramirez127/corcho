@@ -86,6 +86,186 @@ ApplicationWindow {
     property var menuFolder: null
     property var menuWorld: ({ x: 0, y: 0 })
     property var renameTarget: ({ kind: "", id: "" })
+    // Card id -> FloatingCardWindow. Reassigned whenever it changes so QML
+    // bindings that depend on the id list are notified.
+    property var floatingCards: ({})
+    // Creation order, used to lay the detached windows out left to right.
+    property var floatingOrder: []
+    // Stable token used in each detached window's title so compositor IPC can
+    // find the right toplevel.
+    property int floatingTokenSeed: 0
+    property int floatingReflowPasses: 0
+    readonly property var floatingIds: Object.keys(floatingCards)
+
+    // Keep the detached windows in one row with a constant gap. This runs
+    // after a batch has been created, and once more after the windows are
+    // mapped so a window manager cannot leave a fresh window behind another.
+    readonly property int floatingGap: 14
+
+    function reflowFloatingWindows() {
+        var margin = 24;
+        var screenW = root.screen ? root.screen.width : Screen.width;
+        var screenH = root.screen ? root.screen.height : Screen.height;
+        var baseX = Math.max(margin, Math.min(root.x + 48, screenW - margin - 280));
+        var baseY = Math.max(margin, Math.min(root.y + 96, screenH - margin - 200));
+        var x = baseX;
+        var y = baseY;
+        var rowHeight = 0;
+        var placements = [];
+
+        for (var i = 0; i < root.floatingOrder.length; i++) {
+            var win = root.floatingCards[root.floatingOrder[i]];
+            if (!win) continue;
+            var w = win.width > 0 ? win.width : 360;
+            var h = win.height > 0 ? win.height : 260;
+            if (x > baseX && x + w > screenW - margin) {
+                x = baseX;
+                y += rowHeight + root.floatingGap;
+                rowHeight = 0;
+            }
+            win.x = x;
+            win.y = y;
+            if (win.floatingToken)
+                placements.push({ token: win.floatingToken, x: x, y: y });
+            x += w + root.floatingGap;
+            rowHeight = Math.max(rowHeight, h);
+        }
+
+        // On sway the compositor owns toplevel positions, so ask it to move
+        // the floating PiP windows to the layout computed above.
+        if (placements.length > 0 && app)
+            app.placeFloatingWindows(JSON.stringify(placements));
+    }
+
+    function forgetFloatingCard(id) {
+        if (floatingCards[id]) {
+            var next = Object.assign({}, floatingCards);
+            delete next[id];
+            floatingCards = next;
+        }
+        var order = floatingOrder.filter(function (value) { return value !== id; });
+        if (order.length !== floatingOrder.length)
+            floatingOrder = order;
+        // Do not reflow the remaining windows here: returning one card must
+        // leave the other PiP windows exactly where the user has them.
+        root.floatingReflowPasses = 0;
+        floatingReflowTimer.stop();
+    }
+
+    function closeFloatingCard(id) {
+        var win = floatingCards[id];
+        if (win) win.close();
+        else forgetFloatingCard(id);
+    }
+
+    function createFloatingCardWindow(id, card) {
+        var component = Qt.createComponent("FloatingCardWindow.qml");
+        if (component.status !== Component.Ready) {
+            toastHost.show("error", "Could not open picture-in-picture window");
+            return null;
+        }
+
+        root.floatingTokenSeed += 1;
+        var token = String(root.floatingTokenSeed);
+        var win = component.createObject(null, {
+            "app": app,
+            "th": root.th,
+            "cardId": id,
+            "cardData": card,
+            "bodySource": canvas.bodyFor(card.type),
+            "gridId": app.activeGridId,
+            "webProfile": canvas.webProfile,
+            "floatingToken": token,
+            "initialWidth": Math.max(320, card.width),
+            "initialHeight": Math.max(260, card.height) + 38,
+            "x": root.x + 48,
+            "y": root.y + 96
+        });
+        if (!win) {
+            toastHost.show("error", "Could not open picture-in-picture window");
+            return null;
+        }
+
+        win.th = Qt.binding(function () { return root.th; });
+        win.webProfile = Qt.binding(function () { return canvas.webProfile; });
+        win.cardReturned.connect(function () { root.forgetFloatingCard(id); });
+        win.dateLinkRequested.connect(function (sourceCardId, sourceItemId, linkId, defaultDate) {
+            dateLinkDialog.openFor(sourceCardId, sourceItemId, linkId, defaultDate);
+        });
+        win.calendarManagerRequested.connect(function () { calendarManager.open(); });
+
+        var next = Object.assign({}, floatingCards);
+        next[id] = win;
+        floatingCards = next;
+        var order = floatingOrder.slice();
+        order.push(id);
+        floatingOrder = order;
+        // Position immediately so the new window does not flash at the old
+        // cascade point before the end of the batch.
+        root.reflowFloatingWindows();
+        return win;
+    }
+
+    function openFloatingCards(ids) {
+        var opened = false;
+        for (var i = 0; i < ids.length; i++) {
+            var id = ids[i];
+            if (floatingCards[id]) {
+                floatingCards[id].raise();
+                continue;
+            }
+            var card = canvas.cardById(id);
+            if (!card) continue;
+            if (root.createFloatingCardWindow(id, card)) opened = true;
+        }
+
+        if (opened) {
+            root.reflowFloatingWindows();
+            // Reapply once the windows are mapped: some window managers move
+            // a fresh floating window after the initial position request.
+            Qt.callLater(root.reflowFloatingWindows);
+            root.floatingReflowPasses = 3;
+            floatingReflowTimer.restart();
+        }
+        canvas.setSelection([]);
+    }
+
+    function openFloatingCard(id) {
+        root.openFloatingCards([id]);
+    }
+
+    function syncFloatingCards() {
+        if (root.floatingIds.length === 0) return;
+        var live = {};
+        for (var i = 0; i < root.allCards.length; i++) live[root.allCards[i].id] = root.allCards[i];
+        for (var id in floatingCards) {
+            var win = floatingCards[id];
+            if (!win) continue;
+            var card = live[id];
+            if (!card) {
+                // Deleted elsewhere: close the detached copy as well. The
+                // window's onClosing handler removes it from the map.
+                win.close();
+                continue;
+            }
+            win.cardData = card;
+        }
+    }
+
+    onAllCardsChanged: syncFloatingCards()
+
+    // Reflow again after the windows have been mapped.
+    Timer {
+        id: floatingReflowTimer
+        interval: 90
+        repeat: true
+        running: false
+        onTriggered: {
+            root.reflowFloatingWindows();
+            root.floatingReflowPasses -= 1;
+            if (root.floatingReflowPasses <= 0) stop();
+        }
+    }
 
     function openSettings(tab) {
         settingsTab = tab || "general";
@@ -136,7 +316,8 @@ ApplicationWindow {
 
     function openCardMenu(card, px, py) {
         menuCard = card;
-        var multi = canvas.selectedIds.length > 1;
+        var isFloating = root.floatingIds.indexOf(card.id) >= 0;
+        var multi = canvas.selectedIds.length > 1 && !isFloating;
         var ids = multi ? canvas.selectedIds.slice() : [card.id];
         if (ids.indexOf(card.id) < 0) ids.push(card.id);
         menuCardIds = ids;
@@ -149,17 +330,32 @@ ApplicationWindow {
         var allLocked = selectedCards.length > 0;
         var allGrouped = selectedCards.length > 0;
         var allSynced = selectedCards.length > 0;
+        var allFloating = selectedCards.length > 0;
         for (var s = 0; s < selectedCards.length; s++) {
             if (!selectedCards[s].locked) allLocked = false;
             if (!selectedCards[s].group) allGrouped = false;
             if (!selectedCards[s].syncId) allSynced = false;
+            if (root.floatingIds.indexOf(selectedCards[s].id) < 0) allFloating = false;
         }
         menuLockTarget = !allLocked;
 
-        var actions = [
-            { label: multi ? "Duplicate cards" : "Duplicate card", icon: "copy", action: "card:duplicate" },
-            { label: multi ? "Pin colours" : "Pin colour", icon: "palette", action: "card:color" }
-        ];
+        var actions = [];
+        if (allFloating) {
+            actions.push({
+                label: multi ? "Return cards to canvas" : "Return card to canvas",
+                icon: "undo-2",
+                action: "card:unpip"
+            });
+        } else {
+            actions.push({
+                label: multi ? "Open cards in picture-in-picture" : "Open in picture-in-picture",
+                icon: "app-window",
+                action: "card:pip"
+            });
+            actions.push({ separator: true, label: "" });
+        }
+        actions.push({ label: multi ? "Duplicate cards" : "Duplicate card", icon: "copy", action: "card:duplicate" });
+        actions.push({ label: multi ? "Pin colours" : "Pin colour", icon: "palette", action: "card:color" });
         if (!multi)
             actions.push({ label: "Link date", icon: "calendar", action: "card:link-date" });
         actions.push({
@@ -263,6 +459,11 @@ ApplicationWindow {
             }
             if (arg === "duplicate") {
                 for (var d = 0; d < ids.length; d++) app.duplicateCard(ids[d]);
+            } else if (arg === "pip") {
+                root.openFloatingCards(ids);
+                canvas.setSelection([]);
+            } else if (arg === "unpip") {
+                for (var unpip = 0; unpip < ids.length; unpip++) root.closeFloatingCard(ids[unpip]);
             } else if (arg === "color") {
                 var colors = ["#d98e5c", "#c9a86a", "#7aa2f7", "#86b78a", "#5aa8a0", "#d97a72", "#8d8d97"];
                 for (var c = 0; c < selectedCards.length; c++) {
@@ -541,12 +742,14 @@ ApplicationWindow {
                 th: root.th
                 settings: root.settings
                 cards: root.cards
+                floatingIds: root.floatingIds
                 modalOpen: root.modalOpen
                 onMenuRequested: function (card, x, y) { root.openCardMenu(card, x, y) }
                 onDateLinkRequested: function (cardId, itemId, linkId, date) {
                     dateLinkDialog.openFor(cardId, itemId, linkId, date);
                 }
                 onCalendarManagerRequested: calendarManager.open()
+                onReturnCardRequested: function (id) { root.closeFloatingCard(id) }
                 onBackgroundMenuRequested: function (gx, gy, wx, wy) { root.openCreateMenu(gx, gy, wx, wy) }
                 onCreateRequested: function (wx, wy) { app.createCard("note", wx, wy) }
             }

@@ -9,6 +9,9 @@ Item {
     property var cards: []
     property string selectedId: ""
     property var selectedIds: []
+    // Cards currently shown in picture-in-picture windows. Their canvas
+    // delegates stay in place as greyed-out placeholders.
+    property var floatingIds: []
     // Card ids in stacking order, last one on top. Kept in QML so clicking a
     // card never reshuffles the card model (which used to make other cards
     // jump while their delegates were reassigned).
@@ -20,6 +23,12 @@ Item {
     property real hoverX: 0
     property real hoverY: 0
     property bool hoverValid: false
+    // Live offset applied to the other cards that travel with the card being
+    // dragged. They only get their real model position on drop, so without
+    // this preview they would stay put until the pointer is released.
+    property string dragPreviewId: ""
+    property real dragPreviewDx: 0
+    property real dragPreviewDy: 0
 
     function activateAi(id) {
         root.activeAiId = id;
@@ -125,6 +134,7 @@ Item {
         var ids = [];
         for (var i = 0; i < cards.length; i++) {
             var c = cards[i];
+            if (root.floatingIds.indexOf(c.id) >= 0) continue;
             if (c.x < wx + ww && c.x + c.width > wx && c.y < wy + wh && c.y + c.height > wy)
                 ids.push(c.id);
         }
@@ -137,16 +147,55 @@ Item {
     }
 
     function handleMoved(id, dx, dy) {
+        var ids = dragFollowerIds(id);
+        if (ids.length > 0) app.moveCards(JSON.stringify(ids), dx, dy);
+    }
+
+    // Cards that move together with `id`: the rest of a multi-selection, or
+    // the other members of its group. Used both for the live drag preview and
+    // for the real model update on drop, so the two always agree.
+    function dragFollowerIds(id) {
         var ids = [];
-        var card = cardById(id);
+        var dragged = cardById(id);
+        if (!dragged) return ids;
         if (selectedIds.length > 1 && selectedIds.indexOf(id) >= 0) {
             ids = selectedIds.filter(function (value) { return value !== id; });
-        } else if (card && card.group) {
+        } else if (dragged.group) {
             for (var i = 0; i < cards.length; i++) {
-                if (cards[i].group === card.group && cards[i].id !== id) ids.push(cards[i].id);
+                if (cards[i].group === dragged.group && cards[i].id !== id) ids.push(cards[i].id);
             }
         }
-        if (ids.length > 0) app.moveCards(JSON.stringify(ids), dx, dy);
+        return ids;
+    }
+
+    function isDragFollower(id) {
+        if (!dragPreviewId || id === dragPreviewId) return false;
+        return dragFollowerIds(dragPreviewId).indexOf(id) >= 0;
+    }
+
+    function dragPreviewX(id) {
+        return isDragFollower(id) ? dragPreviewDx : 0;
+    }
+
+    function dragPreviewY(id) {
+        return isDragFollower(id) ? dragPreviewDy : 0;
+    }
+
+    function beginCardDrag(id) {
+        dragPreviewId = id || "";
+        dragPreviewDx = 0;
+        dragPreviewDy = 0;
+    }
+
+    function updateCardDrag(dx, dy) {
+        dragPreviewDx = dx;
+        dragPreviewDy = dy;
+    }
+
+    function endCardDrag() {
+        dragPreviewId = "";
+        dragPreviewDx = 0;
+        dragPreviewDy = 0;
     }
 
     readonly property var groupBounds: {
@@ -174,6 +223,7 @@ Item {
     signal menuRequested(var card, real globalX, real globalY)
     signal dateLinkRequested(string sourceCardId, string sourceItemId, string linkId, string defaultDate)
     signal calendarManagerRequested()
+    signal returnCardRequested(string id)
     signal backgroundMenuRequested(real globalX, real globalY, real worldX, real worldY)
     signal createRequested(real worldX, real worldY)
 
@@ -625,6 +675,10 @@ Item {
 
                 objectName: "cardLoader_" + card.id
                 z: root.cardStackZ(card.id)
+                // Other cards in the drag keep their model position until the
+                // drop; offset their delegates so they follow the pointer.
+                x: root.dragPreviewX(card.id)
+                y: root.dragPreviewY(card.id)
                 active: root.inView(card)
                 source: root.bodyFor(card.type)
                 asynchronous: false
@@ -642,12 +696,18 @@ Item {
                     if (cardLoader.card.type === "ai")
                         item.activated.connect(function () { root.activateAi(cardLoader.card.id); });
                     item.selected = Qt.binding(function () { return root.selectedIds.indexOf(cardLoader.card.id) >= 0; });
+                    item.floating = Qt.binding(function () { return root.floatingIds.indexOf(cardLoader.card.id) >= 0; });
                     item.selectRequested.connect(function (additive, sceneX, sceneY) {
                         root.selectCard(cardLoader.card.id, !!additive, sceneX, sceneY);
                     });
+                    item.returnRequested.connect(function () {
+                        root.returnCardRequested(cardLoader.card.id);
+                    });
                     item.movedBy.connect(function (dx, dy) { root.handleMoved(cardLoader.card.id, dx, dy); });
                     item.menuRequested.connect(function (cardData, gx, gy) {
-                        if (root.selectedIds.indexOf(cardData.id) < 0) root.setSelection([cardData.id]);
+                        if (root.selectedIds.indexOf(cardData.id) < 0
+                                && root.floatingIds.indexOf(cardData.id) < 0)
+                            root.setSelection([cardData.id]);
                         root.menuRequested(cardData, gx, gy);
                     });
                     item.dateLinkRequested.connect(function (cardId, itemId, linkId, defaultDate) {

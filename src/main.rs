@@ -110,6 +110,12 @@ fn main() {
     }
 
     let mut app = QGuiApplication::new();
+    unsafe {
+        extern "C" {
+            fn corcho_set_app_identity();
+        }
+        corcho_set_app_identity();
+    }
     let mut engine = QQmlApplicationEngine::new();
 
     if let Some(engine) = engine.as_mut() {
