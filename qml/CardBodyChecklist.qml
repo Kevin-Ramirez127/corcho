@@ -202,6 +202,7 @@ CardFrame {
                     anchors.top: parent.top
                     anchors.bottom: parent.bottom
                     CardTapHandler {
+                        suppressSelection: false
                         acceptedButtons: Qt.LeftButton
                         onAction: {
                             if (!root.canInteractAt(point.scenePosition.x, point.scenePosition.y))
@@ -265,6 +266,7 @@ CardFrame {
                 }
 
                 CardTapHandler {
+                    suppressSelection: false
                     acceptedButtons: Qt.LeftButton
                     onAction: root.requestBodySelect(point.modifiers, point.scenePosition.x, point.scenePosition.y)
                 }

@@ -97,6 +97,7 @@ CardFrame {
             // the card from here as well, otherwise clicking a note's body
             // leaves the previously selected card selected.
             CardTapHandler {
+                suppressSelection: false
                 acceptedButtons: Qt.LeftButton
                 onAction: root.requestBodySelect(point.modifiers, point.scenePosition.x, point.scenePosition.y)
             }

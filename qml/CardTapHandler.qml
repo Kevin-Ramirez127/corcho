@@ -7,18 +7,25 @@ import "OverlayState.js" as OverlayState
 TapHandler {
     id: root
 
-    signal action(var point)
+    // Selection handlers (clicking a card body) select on purpose; ordinary
+    // action controls must only run their action, without raising the card.
+    property bool suppressSelection: true
+
+    signal action()
+
+    onPressedChanged: {
+        if (!root.suppressSelection) return;
+        var card = OverlayState.owningCard(root);
+        if (!card) return;
+        if (pressed) card.beginActionPress();
+        else card.endActionPress();
+    }
 
     onTapped: {
         var x = root.point.scenePosition.x;
         var y = root.point.scenePosition.y;
         if (!OverlayState.allowsCardAction(root, x, y))
             return;
-        // Actions are part of the card, so they also select it like a click
-        // on the card surface would.
-        var card = OverlayState.owningCard(root);
-        if (card && (root.acceptedButtons & Qt.LeftButton))
-            card.requestBodySelect(root.point.modifiers, x, y);
-        root.action(root.point);
+        root.action();
     }
 }

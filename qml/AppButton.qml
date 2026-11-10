@@ -17,16 +17,24 @@ Item {
     Accessible.role: Accessible.Button
     Accessible.name: root.text !== "" ? root.text : root.icon
     Accessible.description: root.variant === "solid" ? "Primary action" : ""
-    function activateAt(sceneX, sceneY, modifiers) {
-        if (!OverlayState.allowsCardAction(root, sceneX, sceneY)) return;
-        var card = OverlayState.owningCard(root);
-        if (card) card.requestBodySelect(modifiers || 0, sceneX, sceneY);
-        root.clicked();
+    function activateAt(sceneX, sceneY) {
+        if (OverlayState.allowsCardAction(root, sceneX, sceneY))
+            root.clicked();
     }
 
     function activate() {
         var scene = root.mapToItem(null, root.width / 2, root.height / 2);
-        root.activateAt(scene.x, scene.y, 0);
+        root.activateAt(scene.x, scene.y);
+    }
+
+    function beginCardAction() {
+        var card = OverlayState.owningCard(root);
+        if (card) card.beginActionPress();
+    }
+
+    function endCardAction() {
+        var card = OverlayState.owningCard(root);
+        if (card) card.endActionPress();
     }
 
     Accessible.onPressAction: root.activate()
@@ -84,9 +92,12 @@ Item {
     MouseArea {
         anchors.fill: parent
         enabled: root.enabledButton
+        onPressed: root.beginCardAction()
+        onReleased: root.endCardAction()
+        onCanceled: root.endCardAction()
         onClicked: function (mouse) {
             var scene = root.mapToItem(null, mouse.x, mouse.y);
-            root.activateAt(scene.x, scene.y, mouse.modifiers);
+            root.activateAt(scene.x, scene.y);
         }
     }
 }

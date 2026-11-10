@@ -307,6 +307,52 @@ Item {
             compare(bottom.running, false);
         }
 
+        // Pressing an action on a partly covered card must not select or raise
+        // that card. It should only run the action.
+        function test_action_on_partly_covered_card_does_not_raise_it() {
+            setCards([
+                { id: "pomoLow", type: "pomodoro", x: 100, y: 300, width: 320, height: 260,
+                  title: "pomodoro", text: "", locked: false, workMinutes: 25,
+                  breakMinutes: 5, phase: "work", remaining: 1500, sessions: 0 },
+                { id: "checkTop", type: "checklist", x: 100, y: 100, width: 300, height: 300,
+                  title: "tasks", text: "", locked: false,
+                  items: [{ id: "i1", text: "task one", done: false }] }
+            ]);
+            var pomo = cardItem("pomoLow");
+            verify(pomo !== null);
+            var start = findChild(pomo, "pomodoroStart");
+            verify(start !== null);
+            var at = start.mapToItem(loader.item, start.width / 2, start.height / 2);
+
+            mouseClick(loader.item, at.x, at.y);
+            wait(80);
+            compare(pomo.running, true);
+            compare(loader.item.selectedIds.length, 0);
+            compare(loader.item.raiseOrder.length, 0);
+        }
+
+        // Moving a card across another card must not interrupt the drag.
+        function test_drag_continues_when_crossing_another_card() {
+            setCards([noteCard("dragA", 100, 100), noteCard("dragB", 300, 100)]);
+            var a = cardItem("dragA");
+            verify(a !== null);
+            var startX = a.x;
+
+            mousePress(loader.item, 150, 115);
+            mouseMove(loader.item, 220, 115);
+            mouseMove(loader.item, 280, 115);
+            wait(30);
+            var afterFirstMove = a.x;
+            verify(afterFirstMove > startX);
+
+            // The pointer is now over dragB; keep moving to the far right.
+            mouseMove(loader.item, 520, 115);
+            wait(30);
+            verify(a.x > afterFirstMove);
+            mouseRelease(loader.item, 520, 115);
+            wait(60);
+        }
+
         // Same rule for plain tap actions inside card bodies.
         function test_overlapping_bookmark_only_top_action_fires() {
             setCards([

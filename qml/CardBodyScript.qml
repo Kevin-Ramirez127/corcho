@@ -36,6 +36,7 @@ CardFrame {
             onActiveFocusChanged: if (!activeFocus) root.commit({ script: text, lastOutput: root.output })
 
             CardTapHandler {
+                suppressSelection: false
                 acceptedButtons: Qt.LeftButton
                 onAction: root.requestBodySelect(point.modifiers, point.scenePosition.x, point.scenePosition.y)
             }
@@ -72,6 +73,7 @@ CardFrame {
             clip: true
 
             CardTapHandler {
+                suppressSelection: false
                 acceptedButtons: Qt.LeftButton
                 onAction: root.requestBodySelect(point.modifiers, point.scenePosition.x, point.scenePosition.y)
             }

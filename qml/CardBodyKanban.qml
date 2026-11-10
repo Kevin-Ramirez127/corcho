@@ -207,6 +207,7 @@ CardFrame {
                                 onHoveredChanged: kanbanItem.hoveredNow = hovered
                             }
                             CardTapHandler {
+                                suppressSelection: false
                                 acceptedButtons: Qt.LeftButton
                                 onAction: root.requestBodySelect(point.modifiers, point.scenePosition.x, point.scenePosition.y)
                             }
@@ -226,6 +227,7 @@ CardFrame {
                             text = "";
                         }
                         CardTapHandler {
+                            suppressSelection: false
                             acceptedButtons: Qt.LeftButton
                             onAction: root.requestBodySelect(point.modifiers, point.scenePosition.x, point.scenePosition.y)
                         }
