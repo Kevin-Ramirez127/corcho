@@ -41,10 +41,34 @@ pub fn load_workspace(data_dir: &Path) -> Result<Workspace> {
         return Ok(Workspace::default());
     }
     let raw = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
-    let mut ws: Workspace = serde_json::from_str(&raw).unwrap_or_else(|err| {
-        tracing::error!("workspace parse failed: {err}; starting with backup-safe empty state");
-        Workspace::default()
-    });
+    let mut ws: Workspace = match serde_json::from_str(&raw) {
+        Ok(ws) => ws,
+        Err(err) => {
+            tracing::error!("workspace parse failed: {err}");
+            // Never let the unreadable file be overwritten without a copy:
+            // keep it under backups/ before anything else can touch it.
+            match preserve_corrupt(data_dir, &raw) {
+                Some(copy) => tracing::error!("kept corrupt workspace at {}", copy.display()),
+                None => tracing::error!("could not keep a copy of the corrupt workspace"),
+            }
+            match recover_workspace(data_dir) {
+                Some(ws) => {
+                    // Put the recovered state back in place so the next save
+                    // does not use the corrupt file as its .bak source.
+                    if let Ok(raw) = serde_json::to_string(&ws) {
+                        let _ = atomic_write(&path, raw.as_bytes());
+                    }
+                    ws
+                }
+                None => {
+                    tracing::error!(
+                        "no usable workspace backup found; starting empty (corrupt copy kept in backups/)"
+                    );
+                    Workspace::default()
+                }
+            }
+        }
+    };
     for g in &mut ws.grids {
         for (i, c) in g.cards.iter_mut().enumerate() {
             if c.icon == "gem" || c.icon == "diamond" {
@@ -89,18 +113,65 @@ pub fn load_workspace(data_dir: &Path) -> Result<Workspace> {
 pub fn save_workspace(data_dir: &Path, ws: &Workspace) -> Result<()> {
     ensure_dirs(data_dir)?;
     let path = workspace_path(data_dir);
-    let tmp = path.with_extension("json.tmp");
     let raw = serde_json::to_string(ws)?;
-    {
-        let mut f = fs::File::create(&tmp)?;
-        f.write_all(raw.as_bytes())?;
-    }
     if path.exists() {
         let bak = path.with_extension("json.bak");
         let _ = fs::copy(&path, bak);
     }
-    fs::rename(&tmp, &path)?;
+    atomic_write(&path, raw.as_bytes())
+}
+
+/// Write through a temp file and fsync it before the atomic rename, so a crash
+/// or power loss cannot leave a truncated workspace.json behind.
+fn atomic_write(path: &Path, raw: &[u8]) -> Result<()> {
+    let tmp = path.with_extension("json.tmp");
+    {
+        let mut f = fs::File::create(&tmp)?;
+        f.write_all(raw)?;
+        f.sync_all()?;
+    }
+    fs::rename(&tmp, path)?;
+    if let Some(dir) = path.parent() {
+        if let Ok(dir) = fs::File::open(dir) {
+            let _ = dir.sync_all();
+        }
+    }
     Ok(())
+}
+
+fn preserve_corrupt(data_dir: &Path, raw: &str) -> Option<PathBuf> {
+    let dir = backups_dir(data_dir);
+    fs::create_dir_all(&dir).ok()?;
+    let stamp = time::OffsetDateTime::now_utc().unix_timestamp_nanos();
+    let copy = dir.join(format!("corrupt-{stamp}.json"));
+    fs::write(&copy, raw).ok().map(|_| copy)
+}
+
+/// Try the `.bak` copy, then the newest parseable file under backups/.
+fn recover_workspace(data_dir: &Path) -> Option<Workspace> {
+    let bak = workspace_path(data_dir).with_extension("json.bak");
+    if let Ok(raw) = fs::read_to_string(&bak) {
+        if let Ok(ws) = serde_json::from_str::<Workspace>(&raw) {
+            tracing::error!("recovered workspace from {}", bak.display());
+            return Some(ws);
+        }
+    }
+    let mut entries: Vec<_> = fs::read_dir(backups_dir(data_dir))
+        .ok()?
+        .flatten()
+        .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("json"))
+        .collect();
+    entries.sort_by_key(|e| e.metadata().and_then(|m| m.modified()).ok());
+    for entry in entries.into_iter().rev() {
+        let Ok(raw) = fs::read_to_string(entry.path()) else {
+            continue;
+        };
+        if let Ok(ws) = serde_json::from_str::<Workspace>(&raw) {
+            tracing::error!("recovered workspace from {}", entry.path().display());
+            return Some(ws);
+        }
+    }
+    None
 }
 
 pub fn export_zip(data_dir: &Path, dest: &Path) -> Result<()> {
@@ -287,5 +358,47 @@ mod tests {
         assert_eq!(loaded.grids[0].zoom, 1.0);
         assert!(loaded.grids[0].cards[0].x.is_finite());
         assert!(loaded.grids[0].cards[0].width >= 80.0);
+    }
+
+    #[test]
+    fn corrupt_workspace_recovers_from_bak_and_keeps_the_bad_copy() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut first = Workspace::default();
+        first.grids[0].cards.push(Card::new("note", 10.0, 10.0));
+        save_workspace(dir.path(), &first).unwrap();
+        let mut second = first.clone();
+        second.grids[0].cards.push(Card::new("note", 20.0, 20.0));
+        save_workspace(dir.path(), &second).unwrap();
+
+        // Truncate the live file the way a bad write would.
+        fs::write(workspace_path(dir.path()), "{\"grids\":[{\"id\":").unwrap();
+
+        let loaded = load_workspace(dir.path()).unwrap();
+        assert_eq!(loaded.grids[0].cards.len(), 1, "recovered the .bak version");
+        assert!(
+            fs::read_dir(backups_dir(dir.path()))
+                .unwrap()
+                .flatten()
+                .any(|e| e.file_name().to_string_lossy().starts_with("corrupt-")),
+            "corrupt copy is preserved"
+        );
+    }
+
+    #[test]
+    fn corrupt_workspace_without_bak_recovers_from_backups() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut original = Workspace::default();
+        original.grids[0].cards.push(Card::new("note", 5.0, 6.0));
+        let raw = serde_json::to_string(&original).unwrap();
+        ensure_dirs(dir.path()).unwrap();
+        fs::write(
+            backups_dir(dir.path()).join("git-conflict-1-local.json"),
+            &raw,
+        )
+        .unwrap();
+        fs::write(workspace_path(dir.path()), "not json").unwrap();
+
+        let loaded = load_workspace(dir.path()).unwrap();
+        assert_eq!(loaded.grids[0].cards.len(), 1);
     }
 }

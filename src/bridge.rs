@@ -17,6 +17,7 @@ use crate::theme;
 use crate::updates;
 
 static THEMES_DIRTY: AtomicBool = AtomicBool::new(true);
+static MCP_HTTP_STARTED: AtomicBool = AtomicBool::new(false);
 
 fn runtime() -> &'static tokio::runtime::Runtime {
     static RT: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
@@ -790,6 +791,23 @@ impl qobject::AppController {
     pub fn boot(mut self: Pin<&mut Self>) {
         let qt = self.as_ref().qt_thread();
         crate::deeplink::register(qt.clone());
+        // Expose this same Core over the Streamable HTTP MCP transport so an
+        // agent shares the running process instead of a second copy.
+        if !MCP_HTTP_STARTED.swap(true, Ordering::SeqCst) {
+            let core_arc = self.as_ref().rust().core.clone();
+            let qt_for_mcp = Arc::new(Mutex::new(qt.clone()));
+            let on_change: crate::mcp::ChangeHook = Arc::new(move || {
+                let qt = qt_for_mcp.lock().unwrap().clone();
+                let _ = qt.queue(|mut q| q.as_mut().refresh());
+            });
+            let addr =
+                std::env::var("CORCHO_MCP_HTTP").unwrap_or_else(|_| "127.0.0.1:7411".to_string());
+            std::thread::spawn(move || {
+                if let Err(err) = crate::mcp::serve_http_shared(&addr, core_arc, Some(on_change)) {
+                    tracing::warn!("embedded mcp http unavailable: {err}");
+                }
+            });
+        }
         self.as_mut().refresh_all();
         self.as_mut().set_status_text(s("Ready"));
 

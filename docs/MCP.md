@@ -1,12 +1,13 @@
 # Corcho MCP server: full control surface
 
 A single Model Context Protocol server that exposes **every** Corcho capability
-to an agent. The GUI and the MCP server are two clients of the same Rust core;
-neither holds state the other cannot reach.
+to an agent. The GUI and the MCP server share one Rust core when the in-app
+endpoint is used; neither holds state the other cannot reach.
 
-Transports implemented: **stdio** (`corcho --mcp`) and **minimal HTTP**
-(`corcho --mcp-http 127.0.0.1:7411`) with a bearer token stored at
-`~/.local/share/corcho/mcp.token`. Protocol version is negotiated at
+Transports implemented: **stdio** (`corcho --mcp`), **Streamable HTTP** served
+by the running app on `http://127.0.0.1:7411/mcp`, and standalone Streamable
+HTTP (`corcho --mcp-http 127.0.0.1:7411`). The HTTP endpoint uses a bearer token
+stored at `~/.local/share/corcho/mcp.token`. Protocol version is negotiated at
 initialize; tools, resources and prompts come from one registry.
 
 ---
@@ -30,11 +31,14 @@ Rules:
 - One `Arc<Mutex<Core>>` (already present) is the single source of truth.
 - Every mutation goes through `Core` methods, so undo/redo, persistence and
   validation apply identically to GUI and MCP calls.
-- The MCP server runs **headless** (`corcho --mcp`) against the same data
-  directory as the GUI. The GUI polls `workspace.json` every 1.5 s and reloads
-  on external changes, while the MCP server reloads when the file changes, so
-  data edits converge without a socket. A live Unix-socket transport for
-  driving QtWebEngine state is still planned.
+- The running GUI serves the Streamable HTTP endpoint on loopback, backed by
+  its own `Arc<Mutex<Core>>`. MCP clients therefore mutate the live process:
+  tool calls are serialized with Qt access through the same mutex, and the GUI
+  repaints immediately after each call.
+- The standalone server (`corcho --mcp`, `corcho --mcp-http`) runs **headless**
+  against the same data directory. It reloads `workspace.json` when the file
+  changes, while the GUI polls and reloads on external changes, so edits
+  converge without a socket.
 - No tool reads or writes files outside the configured data directory, except
   explicit import/export paths validated by a path guard.
 
@@ -44,12 +48,14 @@ Rules:
 
 | Mode | Command | Use |
 | --- | --- | --- |
-| stdio | `corcho --mcp` | Claude Desktop, opencode, local agents |
-| HTTP | `corcho --mcp-http 127.0.0.1:7411` | Remote tooling, multiple clients (bearer token) |
-| socket (planned) | `corcho --mcp-socket $XDG_RUNTIME_DIR/corcho.sock` | Drive a running GUI |
+| in-app HTTP | running GUI, `http://127.0.0.1:7411/mcp` | opencode and other agents sharing the live app |
+| stdio | `corcho --mcp` | Claude Desktop, standalone local agents |
+| HTTP | `corcho --mcp-http 127.0.0.1:7411` | Standalone remote tooling, multiple clients |
 
-HTTP requires a bearer token written to `~/.local/share/corcho/mcp.token`
-(mode 0600) and validates `Origin` against a localhost allowlist. Bind is
+The in-app endpoint is always on while the GUI runs unless `CORCHO_MCP_HTTP`
+overrides the bind address. HTTP requires a bearer token written to
+`~/.local/share/corcho/mcp.token` (mode 0600) and validates `Origin` against a
+localhost allowlist. Bind is
 loopback unless `--allow-remote` is explicit.
 
 ---
@@ -317,8 +323,13 @@ Planned:
 - One newline-delimited JSON-RPC loop in `src/mcp.rs` serves both stdio and a
   minimal HTTP transport. The same `call_tool` registry backs both.
 - `Core` owns the model, storage, history, sync, updates and integrations.
-  The GUI and MCP process each hold a `Core`; both reload `workspace.json` when
-  its mtime changes.
+  The in-app HTTP endpoint and the GUI share the same `Arc<Mutex<Core>>`; the
+  standalone stdio/HTTP modes hold their own `Core` and reload
+  `workspace.json` when its mtime changes.
+- The HTTP transport implements MCP Streamable HTTP: POST-only requests return
+  `application/json` or an SSE stream (`text/event-stream`), notifications get
+  an empty `202`, GET/DELETE return `405`, `MCP-Protocol-Version` is validated,
+  and tool calls with a `progressToken` stream `notifications/progress`.
 - `Workspace` carries a `revision` counter that increments on every save.
 - Viewport size is reported by `CanvasView` through `AppController.setViewport`
   and persisted in the workspace, so frame math survives restarts.

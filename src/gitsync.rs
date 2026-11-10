@@ -148,7 +148,13 @@ impl GitSync {
                         state.last_error = None;
                         state.last_sync = Some(status);
                     }
-                    Err(err) => state.last_error = Some(err.to_string()),
+                    Err(err) => {
+                        // Keep the workspace marked dirty so a failed push is
+                        // retried instead of silently staying local.
+                        state.dirty = true;
+                        state.last_change = Some(Instant::now());
+                        state.last_error = Some(err.to_string());
+                    }
                 }
             }
         });

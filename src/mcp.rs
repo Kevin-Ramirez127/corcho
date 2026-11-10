@@ -41,27 +41,61 @@ pub fn serve() -> Result<()> {
     Ok(())
 }
 
+/// Invoked after a tool call so an in-process host (the GUI) can repaint from
+/// the shared core.
+pub type ChangeHook = Arc<dyn Fn() + Send + Sync + 'static>;
+
+#[derive(Clone, Debug)]
+pub struct ProgressEvent {
+    pub token: Value,
+    pub progress: f64,
+    pub total: Option<f64>,
+    pub message: Option<String>,
+}
+
+const SUPPORTED_VERSIONS: &[&str] = &["2024-11-05", "2025-03-26", "2025-06-18"];
+const OUR_VERSION: &str = "2025-06-18";
+
 pub fn serve_http(addr: &str) -> Result<()> {
     let core = Arc::new(Mutex::new(Core::boot()?));
+    serve_http_shared(addr, core, None)
+}
+
+/// Serve the Streamable HTTP transport against an existing core. The GUI uses
+/// this so MCP clients share the live process instead of a second copy.
+pub fn serve_http_shared(
+    addr: &str,
+    core: Arc<Mutex<Core>>,
+    on_change: Option<ChangeHook>,
+) -> Result<()> {
     let token = {
-        let core = core.lock().unwrap();
+        let core = core.lock().map_err(|_| anyhow!("core lock"))?;
         http_token(&core.data_dir)?
     };
     let listener = TcpListener::bind(addr)?;
     eprintln!("corcho mcp http listening on http://{addr}");
-    eprintln!("bearer token: {token}");
+    serve_listener(listener, core, token, on_change)
+}
+
+fn serve_listener(
+    listener: TcpListener,
+    core: Arc<Mutex<Core>>,
+    token: String,
+    on_change: Option<ChangeHook>,
+) -> Result<()> {
     for connection in listener.incoming() {
         let Ok(stream) = connection else { continue };
         let core = core.clone();
         let token = token.clone();
+        let on_change = on_change.clone();
         std::thread::spawn(move || {
-            let _ = handle_http(stream, core, &token);
+            let _ = handle_http(stream, core, &token, on_change);
         });
     }
     Ok(())
 }
 
-fn http_token(data_dir: &Path) -> Result<String> {
+pub(crate) fn http_token(data_dir: &Path) -> Result<String> {
     let path = data_dir.join("mcp.token");
     if let Ok(existing) = std::fs::read_to_string(&path) {
         let existing = existing.trim().to_string();
@@ -83,51 +117,53 @@ fn http_token(data_dir: &Path) -> Result<String> {
     Ok(token)
 }
 
-fn handle_http(mut stream: TcpStream, core: Arc<Mutex<Core>>, token: &str) -> Result<()> {
-    stream.set_read_timeout(Some(Duration::from_secs(10)))?;
+struct HttpRequest {
+    method: String,
+    path: String,
+    headers: std::collections::HashMap<String, String>,
+    body: Vec<u8>,
+}
+
+fn read_http(stream: &mut TcpStream) -> Result<Option<HttpRequest>> {
+    stream.set_read_timeout(Some(Duration::from_secs(15)))?;
     let mut data = Vec::new();
     let mut buffer = [0u8; 4096];
     let header_end = loop {
         let read = stream.read(&mut buffer)?;
         if read == 0 {
-            return Ok(());
+            return Ok(None);
         }
         data.extend_from_slice(&buffer[..read]);
         if let Some(pos) = data.windows(4).position(|w| w == b"\r\n\r\n") {
             break pos;
         }
         if data.len() > 1_000_000 {
-            return Ok(());
+            return Ok(None);
         }
     };
 
-    let headers = String::from_utf8_lossy(&data[..header_end]).to_string();
-    let mut lines = headers.lines();
+    let head = String::from_utf8_lossy(&data[..header_end]).to_string();
+    let mut lines = head.lines();
     let request_line = lines.next().unwrap_or("");
     let mut parts = request_line.split_whitespace();
-    let method = parts.next().unwrap_or("");
-    let mut content_length = 0usize;
-    let mut authorization = String::new();
-    let mut origin = String::new();
+    let method = parts.next().unwrap_or("").to_string();
+    let path = parts.next().unwrap_or("/").to_string();
+    let mut headers = std::collections::HashMap::new();
     for line in lines {
         let mut pair = line.splitn(2, ':');
         let key = pair.next().unwrap_or("").trim().to_ascii_lowercase();
         let value = pair.next().unwrap_or("").trim().to_string();
-        if key == "content-length" {
-            content_length = value.parse().unwrap_or(0);
-        } else if key == "authorization" {
-            authorization = value;
-        } else if key == "origin" {
-            origin = value;
+        if !key.is_empty() {
+            headers.insert(key, value);
         }
     }
 
+    let content_length = headers
+        .get("content-length")
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(0);
     if content_length > 8 * 1024 * 1024 {
-        return respond(
-            &mut stream,
-            "413 Payload Too Large",
-            &json!({"error": "request body exceeds 8 MiB"}),
-        );
+        return Err(anyhow!("request body exceeds 8 MiB"));
     }
     let body_start = header_end + 4;
     while data.len() < body_start + content_length {
@@ -137,42 +173,181 @@ fn handle_http(mut stream: TcpStream, core: Arc<Mutex<Core>>, token: &str) -> Re
         }
         data.extend_from_slice(&buffer[..read]);
     }
+    let end = std::cmp::min(data.len(), body_start + content_length);
+    let body = data[body_start..end].to_vec();
+    Ok(Some(HttpRequest {
+        method,
+        path,
+        headers,
+        body,
+    }))
+}
 
-    if method != "POST" {
-        return respond(
-            &mut stream,
-            "405 Method Not Allowed",
-            &json!({"error": "POST only"}),
-        );
+fn handle_http(
+    mut stream: TcpStream,
+    core: Arc<Mutex<Core>>,
+    token: &str,
+    on_change: Option<ChangeHook>,
+) -> Result<()> {
+    let Some(req) = read_http(&mut stream)? else {
+        return Ok(());
+    };
+    if req.path != "/mcp" && req.path != "/" {
+        return respond(&mut stream, "404 Not Found", &json!({"error": "not found"}));
     }
-    if !origin.is_empty()
-        && !origin.starts_with("http://localhost")
-        && !origin.starts_with("http://127.0.0.1")
+    if let Some(origin) = req.headers.get("origin") {
+        if !origin.is_empty()
+            && !origin.starts_with("http://localhost")
+            && !origin.starts_with("http://127.0.0.1")
+        {
+            return respond(
+                &mut stream,
+                "403 Forbidden",
+                &json!({"error": "origin not allowed"}),
+            );
+        }
+    }
+    if req.headers.get("authorization").map(String::as_str)
+        != Some(format!("Bearer {token}").as_str())
     {
-        return respond(
-            &mut stream,
-            "403 Forbidden",
-            &json!({"error": "origin not allowed"}),
-        );
-    }
-    if authorization != format!("Bearer {token}") {
         return respond(
             &mut stream,
             "401 Unauthorized",
             &json!({"error": "missing bearer token"}),
         );
     }
+    if req.method != "POST" {
+        return respond(
+            &mut stream,
+            "405 Method Not Allowed",
+            &json!({"error": "POST only; no server-initiated stream"}),
+        );
+    }
+    if let Some(version) = req.headers.get("mcp-protocol-version") {
+        if !SUPPORTED_VERSIONS.contains(&version.as_str()) {
+            return respond(
+                &mut stream,
+                "400 Bad Request",
+                &json!({"error": "unsupported MCP-Protocol-Version"}),
+            );
+        }
+    }
 
-    let request: Value = serde_json::from_slice(&data[body_start..body_start + content_length])
-        .unwrap_or(Value::Null);
+    let request: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+    if !(request.get("id").is_some() && request.get("method").is_some()) {
+        // Notifications and JSON-RPC responses are accepted with an empty 202.
+        return respond_empty(&mut stream, "202 Accepted");
+    }
+
+    let wants_sse = req
+        .headers
+        .get("accept")
+        .map(|v| v.contains("text/event-stream"))
+        .unwrap_or(false);
+    if wants_sse {
+        return stream_sse(stream, core, request, on_change);
+    }
+
+    let is_tool_call = request.get("method").and_then(|m| m.as_str()) == Some("tools/call");
     let response = {
         let mut core = core.lock().map_err(|_| anyhow!("core lock"))?;
         handle(&mut core, request)
     };
+    if is_tool_call {
+        if let Some(hook) = &on_change {
+            hook();
+        }
+    }
     match response {
         Some(response) => respond(&mut stream, "200 OK", &response),
-        None => respond(&mut stream, "202 Accepted", &json!({})),
+        None => respond_empty(&mut stream, "202 Accepted"),
     }
+}
+
+enum SseMessage {
+    Progress(ProgressEvent),
+    Response(Option<Value>),
+}
+
+/// Stream a request response as Server-Sent Events, forwarding progress
+/// notifications and keeping the connection alive while a long tool runs.
+fn stream_sse(
+    mut stream: TcpStream,
+    core: Arc<Mutex<Core>>,
+    request: Value,
+    on_change: Option<ChangeHook>,
+) -> Result<()> {
+    stream.write_all(
+        b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: keep-alive\r\nX-Accel-Buffering: no\r\nAccess-Control-Allow-Origin: *\r\n\r\n",
+    )?;
+    stream.flush()?;
+
+    let (tx, rx) = std::sync::mpsc::channel::<SseMessage>();
+    let worker_tx = tx.clone();
+    let is_tool_call = request.get("method").and_then(|m| m.as_str()) == Some("tools/call");
+    let worker = std::thread::spawn(move || {
+        let response = match core.lock() {
+            Ok(mut core) => {
+                let sink = |event: ProgressEvent| {
+                    let _ = tx.send(SseMessage::Progress(event));
+                };
+                handle_with_progress(&mut core, request, Some(&sink))
+            }
+            Err(_) => None,
+        };
+        let _ = worker_tx.send(SseMessage::Response(response));
+        if is_tool_call {
+            if let Some(hook) = on_change {
+                hook();
+            }
+        }
+    });
+
+    loop {
+        match rx.recv_timeout(Duration::from_secs(10)) {
+            Ok(SseMessage::Progress(event)) => {
+                let mut params = json!({
+                    "progressToken": event.token,
+                    "progress": event.progress,
+                });
+                if let Some(total) = event.total {
+                    params["total"] = json!(total);
+                }
+                if let Some(message) = event.message {
+                    params["message"] = json!(message);
+                }
+                write_sse(
+                    &mut stream,
+                    &json!({
+                        "jsonrpc": "2.0",
+                        "method": "notifications/progress",
+                        "params": params,
+                    }),
+                )?;
+            }
+            Ok(SseMessage::Response(Some(response))) => {
+                write_sse(&mut stream, &response)?;
+                break;
+            }
+            Ok(SseMessage::Response(None)) => break,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                let _ = stream.write_all(b": keep-alive\n\n");
+                let _ = stream.flush();
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+        }
+    }
+    let _ = worker.join();
+    Ok(())
+}
+
+fn write_sse(stream: &mut TcpStream, message: &Value) -> Result<()> {
+    let data = serde_json::to_string(message)?;
+    stream.write_all(b"event: message\ndata: ")?;
+    stream.write_all(data.as_bytes())?;
+    stream.write_all(b"\n\n")?;
+    stream.flush()?;
+    Ok(())
 }
 
 fn respond(stream: &mut TcpStream, status: &str, body: &Value) -> Result<()> {
@@ -187,17 +362,44 @@ fn respond(stream: &mut TcpStream, status: &str, body: &Value) -> Result<()> {
     Ok(())
 }
 
+fn respond_empty(stream: &mut TcpStream, status: &str) -> Result<()> {
+    let head = format!(
+        "HTTP/1.1 {status}\r\nContent-Length: 0\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n"
+    );
+    stream.write_all(head.as_bytes())?;
+    stream.flush()?;
+    Ok(())
+}
+
 pub fn handle(core: &mut Core, request: Value) -> Option<Value> {
+    handle_with_progress(core, request, None)
+}
+
+fn negotiate_protocol(requested: &str) -> String {
+    if SUPPORTED_VERSIONS.contains(&requested) {
+        requested.to_string()
+    } else {
+        OUR_VERSION.to_string()
+    }
+}
+
+pub fn handle_with_progress(
+    core: &mut Core,
+    request: Value,
+    sink: Option<&dyn Fn(ProgressEvent)>,
+) -> Option<Value> {
     let id = request.get("id").cloned();
     let method = request.get("method").and_then(|m| m.as_str()).unwrap_or("");
     match method {
         "initialize" => Some(ok(
             id,
             json!({
-                "protocolVersion": request.get("params")
-                    .and_then(|p| p.get("protocolVersion"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("2024-11-05"),
+                "protocolVersion": negotiate_protocol(
+                    request.get("params")
+                        .and_then(|p| p.get("protocolVersion"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(OUR_VERSION)
+                ),
                 "capabilities": {
                     "tools": {},
                     "resources": {},
@@ -219,7 +421,34 @@ pub fn handle(core: &mut Core, request: Value) -> Option<Value> {
                 .and_then(|p| p.get("arguments"))
                 .cloned()
                 .unwrap_or_else(|| json!({}));
-            match call_tool(core, name, &args) {
+            let token = request
+                .get("params")
+                .and_then(|p| p.get("_meta"))
+                .and_then(|m| m.get("progressToken"))
+                .cloned();
+            let emit = |progress: f64, total: Option<f64>, message: &str| {
+                if let (Some(sink), Some(token)) = (sink, token.as_ref()) {
+                    sink(ProgressEvent {
+                        token: token.clone(),
+                        progress,
+                        total,
+                        message: Some(message.to_string()),
+                    });
+                }
+            };
+            let progress: ProgressFn = if sink.is_some() && token.is_some() {
+                Some(&emit)
+            } else {
+                None
+            };
+            if let Some(report) = progress {
+                report(0.0, None, &format!("running {name}"));
+            }
+            let result = call_tool(core, name, &args, progress);
+            if let Some(report) = progress {
+                report(1.0, None, "done");
+            }
+            match result {
                 Ok(text) => {
                     if name == "web.screenshot" {
                         if let Ok(value) = serde_json::from_str::<Value>(&text) {
@@ -573,7 +802,15 @@ fn validate_absolute_path(path: &str) -> Result<std::path::PathBuf> {
     Ok(path)
 }
 
-fn call_tool(core: &mut Core, name: &str, args: &Value) -> Result<String> {
+type ProgressFn<'a> = Option<&'a dyn Fn(f64, Option<f64>, &str)>;
+
+fn report(progress: ProgressFn, value: f64, message: &str) {
+    if let Some(cb) = progress {
+        cb(value, None, message);
+    }
+}
+
+fn call_tool(core: &mut Core, name: &str, args: &Value, progress: ProgressFn) -> Result<String> {
     let _ = core.reload_if_changed();
     if let Some(expected) = args.get("expectedRevision").and_then(|v| v.as_u64()) {
         if expected != core.ws.revision {
@@ -587,11 +824,13 @@ fn call_tool(core: &mut Core, name: &str, args: &Value) -> Result<String> {
         "workspace.get" => Ok(serde_json::to_string_pretty(&workspace_public(&core.ws))?),
         "workspace.export" => {
             let path = validate_absolute_path(&required(args, "path")?)?;
+            report(progress, 0.2, "writing backup");
             core.export_backup(&path.to_string_lossy())?;
             Ok(format!("exported to {}", path.display()))
         }
         "workspace.import" => {
             let path = validate_absolute_path(&required(args, "path")?)?;
+            report(progress, 0.2, "reading backup");
             if text_arg(args, "format") == "legacy" {
                 core.import_legacy(&path.to_string_lossy())?;
             } else {
@@ -1245,6 +1484,7 @@ fn call_tool(core: &mut Core, name: &str, args: &Value) -> Result<String> {
             let runtime = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()?;
+            report(progress, 0.4, &format!("requesting {provider}"));
             Ok(runtime.block_on(ai::complete(req, |_| {}))?)
         }
         "ai.validateKey" => {
@@ -1253,6 +1493,7 @@ fn call_tool(core: &mut Core, name: &str, args: &Value) -> Result<String> {
             let runtime = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()?;
+            report(progress, 0.4, "validating key");
             runtime.block_on(ai::validate_key(
                 &provider,
                 &key,
@@ -1289,6 +1530,7 @@ fn call_tool(core: &mut Core, name: &str, args: &Value) -> Result<String> {
             let runtime = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()?;
+            report(progress, 0.4, "fetching models");
             let models = runtime.block_on(ai::fetch_models(&server_url, &key))?;
             Ok(json!(models).to_string())
         }
@@ -1325,6 +1567,7 @@ fn call_tool(core: &mut Core, name: &str, args: &Value) -> Result<String> {
             let runtime = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()?;
+            report(progress, 0.4, "running AI node");
             let text = runtime.block_on(ai::complete(req, |_| {}))?;
             core.update_card_json(&json!({"id": id, "payload": {"lastResult": text}}).to_string());
             Ok("ok".into())
@@ -1362,6 +1605,7 @@ fn call_tool(core: &mut Core, name: &str, args: &Value) -> Result<String> {
         }
         "web.fetch" => {
             let url = web_url(core, args)?;
+            report(progress, 0.2, "requesting page");
             let runtime = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()?;
@@ -1372,6 +1616,7 @@ fn call_tool(core: &mut Core, name: &str, args: &Value) -> Result<String> {
                     .get(&url)
                     .send(),
             )?;
+            report(progress, 0.7, "reading body");
             let status = response.status().as_u16();
             let content_type = response
                 .headers()
@@ -1392,6 +1637,7 @@ fn call_tool(core: &mut Core, name: &str, args: &Value) -> Result<String> {
         }
         "web.dom" => {
             let url = web_url(core, args)?;
+            report(progress, 0.3, "rendering page");
             let output = chrome_run(&[
                 "--headless=new".into(),
                 "--disable-gpu".into(),
@@ -1430,6 +1676,7 @@ fn call_tool(core: &mut Core, name: &str, args: &Value) -> Result<String> {
                 .clamp(200.0, 4096.0);
             let path = std::env::temp_dir()
                 .join(format!("corcho-mcp-{}.png", uuid::Uuid::new_v4().simple()));
+            report(progress, 0.3, "capturing screenshot");
             let result = chrome_run(&[
                 "--headless=new".into(),
                 "--disable-gpu".into(),
@@ -1485,6 +1732,7 @@ fn call_tool(core: &mut Core, name: &str, args: &Value) -> Result<String> {
                     .cloud_folder
                     .clone()
                     .ok_or_else(|| anyhow!("no sync folder configured"))?;
+                report(progress, 0.3, "syncing folder");
                 let (status, ws) =
                     crate::sync::sync_folder(&core.data_dir, std::path::Path::new(&folder))?;
                 if let Some(mut ws) = ws {
@@ -1530,17 +1778,20 @@ fn call_tool(core: &mut Core, name: &str, args: &Value) -> Result<String> {
         "git.sync" => {
             let config = core.git_config();
             let dir = core.data_dir.clone();
+            report(progress, 0.3, "syncing git remote");
             let status = core.git.sync_now(&dir, &config)?;
             core.reload_from_disk()?;
             Ok(status)
         }
         "backup.export" => {
             let path = validate_absolute_path(&required(args, "path")?)?;
+            report(progress, 0.3, "writing backup");
             core.export_backup(&path.to_string_lossy())?;
             Ok(format!("exported to {}", path.display()))
         }
         "backup.import" => {
             let path = validate_absolute_path(&required(args, "path")?)?;
+            report(progress, 0.3, "reading backup");
             core.import_backup(&path.to_string_lossy())?;
             Ok("imported".into())
         }
@@ -1549,6 +1800,7 @@ fn call_tool(core: &mut Core, name: &str, args: &Value) -> Result<String> {
             let runtime = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()?;
+            report(progress, 0.3, "checking for updates");
             let state = runtime.block_on(updates::check(&channel))?;
             core.update = state.clone();
             Ok(serde_json::to_string_pretty(&state)?)
@@ -1571,6 +1823,7 @@ fn call_tool(core: &mut Core, name: &str, args: &Value) -> Result<String> {
             let runtime = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()?;
+            report(progress, 0.1, "downloading update");
             runtime.block_on(updates::download(&url, &dest, |_| {}))?;
             core.update.downloading = false;
             core.update.progress = 100.0;
@@ -1724,6 +1977,7 @@ fn call_tool(core: &mut Core, name: &str, args: &Value) -> Result<String> {
                 .and_then(|v| v.as_u64())
                 .unwrap_or(30)
                 .clamp(1, 300);
+            report(progress, 0.2, "running script");
             let value = integrations::run_script(&script, std::time::Duration::from_secs(timeout))?;
             Ok(value.to_string())
         }
@@ -2352,6 +2606,7 @@ fn call_tool(core: &mut Core, name: &str, args: &Value) -> Result<String> {
                 "DELETE" => client.delete(&url),
                 _ => client.get(&url),
             };
+            report(progress, 0.3, "requesting endpoint");
             let response = runtime.block_on(request.send())?;
             let status = response.status().as_u16();
             let body = runtime.block_on(response.text())?;
@@ -3548,6 +3803,150 @@ mod tests {
             last_file_mtime: None,
         };
         (dir, core)
+    }
+
+    fn spawn_mcp_http(core: Arc<Mutex<Core>>, token: String) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap().to_string();
+        std::thread::spawn(move || {
+            let _ = serve_listener(listener, core, token, None);
+        });
+        addr
+    }
+
+    fn http_raw(
+        addr: &str,
+        token: &str,
+        method: &str,
+        extra_headers: &[(&str, &str)],
+        body: &str,
+    ) -> String {
+        let mut req = format!(
+            "{method} /mcp HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {token}\r\n"
+        );
+        for (key, value) in extra_headers {
+            req.push_str(&format!("{key}: {value}\r\n"));
+        }
+        req.push_str(&format!("Content-Length: {}\r\n\r\n{body}", body.len()));
+        let mut stream = TcpStream::connect(addr).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        stream.write_all(req.as_bytes()).unwrap();
+        let mut out = String::new();
+        let _ = stream.read_to_string(&mut out);
+        out
+    }
+
+    #[test]
+    fn http_streamable_transport_negotiates_and_streams() {
+        let (_dir, core) = temp_core();
+        let core = Arc::new(Mutex::new(core));
+        let token = {
+            let c = core.lock().unwrap();
+            http_token(&c.data_dir).unwrap()
+        };
+        let addr = spawn_mcp_http(core, token.clone());
+
+        let init = http_raw(
+            &addr,
+            &token,
+            "POST",
+            &[
+                ("Accept", "application/json"),
+                ("Content-Type", "application/json"),
+            ],
+            r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25"}}"#,
+        );
+        assert!(init.starts_with("HTTP/1.1 200"), "{init}");
+        assert!(
+            init.contains("\"protocolVersion\":\"2025-06-18\""),
+            "{init}"
+        );
+
+        let note = http_raw(
+            &addr,
+            &token,
+            "POST",
+            &[("Content-Type", "application/json")],
+            r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
+        );
+        assert!(note.starts_with("HTTP/1.1 202"), "{note}");
+        assert!(note.ends_with("\r\n\r\n"), "{note}");
+
+        let sse = http_raw(
+            &addr,
+            &token,
+            "POST",
+            &[
+                ("Accept", "application/json, text/event-stream"),
+                ("Content-Type", "application/json"),
+            ],
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
+        );
+        assert!(sse.contains("Content-Type: text/event-stream"), "{sse}");
+        assert!(sse.contains("event: message"), "{sse}");
+        assert!(sse.contains("card.create"), "{sse}");
+
+        let get = http_raw(&addr, &token, "GET", &[], "");
+        assert!(get.starts_with("HTTP/1.1 405"), "{get}");
+    }
+
+    #[test]
+    fn http_transport_rejects_bad_auth_and_protocol_version() {
+        let (_dir, core) = temp_core();
+        let core = Arc::new(Mutex::new(core));
+        let token = {
+            let c = core.lock().unwrap();
+            http_token(&c.data_dir).unwrap()
+        };
+        let addr = spawn_mcp_http(core, token.clone());
+
+        let unauth = http_raw(
+            &addr,
+            "wrong",
+            "POST",
+            &[("Content-Type", "application/json")],
+            r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#,
+        );
+        assert!(unauth.starts_with("HTTP/1.1 401"), "{unauth}");
+
+        let badver = http_raw(
+            &addr,
+            &token,
+            "POST",
+            &[
+                ("Content-Type", "application/json"),
+                ("MCP-Protocol-Version", "1999-01-01"),
+            ],
+            r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#,
+        );
+        assert!(badver.starts_with("HTTP/1.1 400"), "{badver}");
+    }
+
+    #[test]
+    fn progress_notifications_are_streamed_to_the_client() {
+        let (_dir, core) = temp_core();
+        let core = Arc::new(Mutex::new(core));
+        let token = {
+            let c = core.lock().unwrap();
+            http_token(&c.data_dir).unwrap()
+        };
+        let addr = spawn_mcp_http(core, token.clone());
+
+        let sse = http_raw(
+            &addr,
+            &token,
+            "POST",
+            &[
+                ("Accept", "application/json, text/event-stream"),
+                ("Content-Type", "application/json"),
+            ],
+            r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"workspace.revision","arguments":{},"_meta":{"progressToken":"tok-1"}}}"#,
+        );
+        assert!(sse.contains("notifications/progress"), "{sse}");
+        assert!(sse.contains("\"progressToken\":\"tok-1\""), "{sse}");
+        assert!(sse.contains("\"id\":3"), "{sse}");
     }
 
     fn generated_args(

@@ -8,6 +8,16 @@ CardFrame {
     property string lastBody: (card.lastBody) || ""
     property string status: ""
     property bool busy: false
+    // A large response is kept whole in the model, but only a slice is laid
+    // out in the TextEdit. TextEdit creates a scene-graph node per glyph, so a
+    // multi-hundred-kB body makes every canvas frame (dragging, panning) slow.
+    readonly property int maxDisplayChars: 8000
+    readonly property string displayBody: {
+        var body = root.lastBody || "";
+        if (body.length <= root.maxDisplayChars) return body;
+        return body.slice(0, root.maxDisplayChars)
+            + "\n\n… " + (body.length - root.maxDisplayChars) + " more characters hidden";
+    }
 
     function fetch() {
         if (apiUrl === "") return;
@@ -97,7 +107,7 @@ CardFrame {
         TextEdit {
             width: parent.width
             height: parent.height - 84
-            text: root.lastBody
+            text: root.displayBody
             readOnly: true
             selectByMouse: true
             color: root.th.text2
