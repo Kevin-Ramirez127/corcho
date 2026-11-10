@@ -46,10 +46,13 @@ CardFrame {
     }
 
     function presetOptions() {
+        var out = [{ value: "", label: "Settings default" }];
         var list = presets();
-        return list.map(function (p) {
-            return { value: p.id, label: p.name + " · " + p.provider + "/" + p.model };
-        });
+        for (var i = 0; i < list.length; i++) {
+            var p = list[i];
+            out.push({ value: p.id, label: p.name + " · " + p.provider + "/" + p.model });
+        }
+        return out;
     }
 
     function activePreset() {
@@ -97,6 +100,7 @@ CardFrame {
         anchors.fill: parent
         spacing: root.th.space2
         SelectField {
+            objectName: "aiPresetSelect"
             width: parent.width
             th: root.th
             value: root.presetId
@@ -202,6 +206,7 @@ CardFrame {
 
     Popup {
         id: linkPopup
+        objectName: "aiLinkPopup"
         anchors.centerIn: parent
         width: Math.min(360, root.width - 32)
         height: Math.min(320, root.height - 32)

@@ -18,6 +18,12 @@ Item {
     property bool fieldHovered: false
 
     function openMenu() {
+        // The window may not exist yet when the field is created inside a
+        // card loader, so attach the popup to the content item when opening.
+        var win = root.Window.window;
+        if (win && menu.parent !== win.contentItem)
+            menu.parent = win.contentItem;
+        root.forceActiveFocus();
         menu.openBelow(root);
     }
 
@@ -71,6 +77,7 @@ Item {
 
     ContextMenu {
         id: menu
+        objectName: root.objectName !== "" ? root.objectName + "Menu" : ""
         parent: root.Window.window ? root.Window.window.contentItem : null
         th: root.th
         actions: root.options.map(function (o) {

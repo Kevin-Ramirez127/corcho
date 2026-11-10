@@ -29,6 +29,11 @@ CardFrame {
         root.commit({ items: root.items });
     }
 
+    // Called by the canvas when this card was just created.
+    function focusBody() {
+        addField.forceActiveFocus();
+    }
+
     // Pointer handlers on overlapping cards can all receive the same tap, so
     // only the card that is actually on top at the event position may react.
     function canInteractAt(sceneX, sceneY) {
@@ -71,6 +76,7 @@ CardFrame {
         anchors.fill: parent
         spacing: root.th.space2
         Rectangle {
+            id: progressBar
             width: parent.width
             height: 4
             radius: root.th.radiusHairline
@@ -87,7 +93,8 @@ CardFrame {
         ListView {
             id: list
             width: parent.width
-            height: parent.height - 42
+            height: Math.max(0, parent.height - progressBar.height - addBox.height
+                                - (root.th ? root.th.space2 : 8) * 2)
             clip: true
             spacing: root.th.spaceHalf
             model: root.items
@@ -100,7 +107,7 @@ CardFrame {
                 readonly property var link: root.linkFor(modelData.id)
 
                 width: list.width
-                height: 30
+                height: Math.max(30, taskText.implicitHeight + 8)
 
                 Rectangle {
                     anchors.fill: parent
@@ -169,13 +176,15 @@ CardFrame {
                 }
 
                 Text {
+                    id: taskText
+                    objectName: "checklistTaskText_" + index
                     anchors.left: box.right
                     anchors.leftMargin: 9
                     anchors.right: rightRow.left
                     anchors.rightMargin: 6
                     anchors.verticalCenter: parent.verticalCenter
                     text: modelData.text
-                    elide: Text.ElideRight
+                    wrapMode: Text.Wrap
                     color: modelData.done ? root.th.muted : root.th.text
                     font.family: root.th.fontFamily
                     font.pixelSize: root.th.fontSizeSmall
@@ -213,31 +222,58 @@ CardFrame {
             }
         }
 
-        TextInput {
-            id: addField
+        // The add-task field uses the same surface, radius and focus ring as
+        // the other text inputs in the app, and grows when a long task wraps.
+        Rectangle {
+            id: addBox
+            objectName: "checklistAddBox"
             width: parent.width
-            height: 28
-            color: root.th.text
-            font.family: root.th.fontFamily
-            font.pixelSize: root.th.fontSizeSmall
-            clip: true
-            onAccepted: {
-                root.addItem(text);
-                text = "";
-            }
+            height: Math.max(root.th ? root.th.controlHeight : 32, addField.contentHeight + 10)
+            radius: root.th.radiusControl
+            color: root.th.input
+            border.width: root.th.borderWidth
+            border.color: addField.activeFocus ? root.th.accent : root.th.border
+            Behavior on border.color { ColorAnimation { duration: 110 } }
 
             TapHandler {
                 acceptedButtons: Qt.LeftButton
-                onTapped: root.requestBodySelect(point.modifiers, point.scenePosition.x, point.scenePosition.y)
+                onTapped: addField.forceActiveFocus()
             }
 
-            Text {
+            TextInput {
+                id: addField
+                objectName: "checklistAddField"
                 anchors.fill: parent
-                verticalAlignment: Text.AlignVCenter
-                visible: addField.text.length === 0
-                text: "Add a task"
-                color: root.th.muted
-                font: addField.font
+                anchors.leftMargin: 8
+                anchors.rightMargin: 8
+                anchors.topMargin: 5
+                anchors.bottomMargin: 5
+                color: root.th.text
+                font.family: root.th.fontFamily
+                font.pixelSize: root.th.fontSizeSmall
+                selectionColor: root.th.accent
+                selectedTextColor: root.th.accentInk
+                wrapMode: TextInput.Wrap
+                verticalAlignment: TextInput.AlignTop
+                clip: true
+                onAccepted: {
+                    root.addItem(text);
+                    text = "";
+                }
+
+                TapHandler {
+                    acceptedButtons: Qt.LeftButton
+                    onTapped: root.requestBodySelect(point.modifiers, point.scenePosition.x, point.scenePosition.y)
+                }
+
+                Text {
+                    anchors.fill: parent
+                    verticalAlignment: Text.AlignVCenter
+                    visible: addField.text.length === 0
+                    text: "Add a task"
+                    color: root.th.muted
+                    font: addField.font
+                }
             }
         }
     }

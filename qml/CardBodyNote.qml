@@ -3,6 +3,12 @@ import QtQuick
 CardFrame {
     id: root
 
+    // Called by the canvas when this card was just created.
+    function focusBody() {
+        editor.forceActiveFocus();
+        editor.cursorPosition = editor.text.length;
+    }
+
     function wrap(before, after) {
         var start = editor.selectionStart;
         var end = editor.selectionEnd;
@@ -65,6 +71,7 @@ CardFrame {
 
         TextEdit {
             id: editor
+            objectName: "noteEditor"
             width: parent.width
             height: parent.height - 32
             text: root.card.text || ""

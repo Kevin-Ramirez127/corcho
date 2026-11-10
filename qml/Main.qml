@@ -318,6 +318,15 @@ ApplicationWindow {
         ];
     }
 
+    // Create a card from a menu or double-click and focus its editor when the
+    // card type supports typing. app.createCard returns the new card as JSON.
+    function createCard(kind, wx, wy) {
+        var card = parseJson(String(app.createCard(kind, wx, wy)), null);
+        if (card && (card.type === "note" || card.type === "checklist"))
+            canvas.focusCard(card.id);
+        return card;
+    }
+
     function openCreateMenu(px, py, wx, wy) {
         menuWorld = { x: wx, y: wy };
         showMenu(px, py, [
@@ -457,7 +466,7 @@ ApplicationWindow {
         var arg = parts.length > 1 ? parts.slice(1).join(":") : "";
 
         if (kind === "create") {
-            app.createCard(arg, menuWorld.x, menuWorld.y);
+            root.createCard(arg, menuWorld.x, menuWorld.y);
             return;
         }
         if (action === "pick-file") { pinFileDialog.open(); return; }
@@ -765,7 +774,7 @@ ApplicationWindow {
                 onCalendarManagerRequested: calendarManager.open()
                 onReturnCardRequested: function (id) { root.closeFloatingCard(id) }
                 onBackgroundMenuRequested: function (gx, gy, wx, wy) { root.openCanvasMenu(gx, gy, wx, wy) }
-                onCreateRequested: function (wx, wy) { app.createCard("note", wx, wy) }
+                onCreateRequested: function (wx, wy) { root.createCard("note", wx, wy) }
             }
 
             Rectangle {
@@ -908,6 +917,7 @@ ApplicationWindow {
         app: app
         th: root.th
         onSettingsRequested: root.openSettings("general")
+        onCardCreated: function (id) { canvas.focusCard(id) }
     }
 
     GitSyncWizard {
