@@ -17,7 +17,7 @@ FocusScope {
     property bool showChrome: true
     default property alias bodyData: body.data
 
-    signal selectRequested(bool additive)
+    signal selectRequested(bool additive, real sceneX, real sceneY)
     signal movedBy(real dx, real dy)
     Accessible.role: Accessible.Grouping
     Accessible.name: (root.card ? (root.card.title || root.card.type) : "Card") + " card"
@@ -31,6 +31,10 @@ FocusScope {
     property int dragCursorShape: Qt.SizeAllCursor
     property real parallaxX: 0
     property real parallaxY: 0
+    // Set when a drag/resize starts so pointer handlers on cards that are
+    // covered by another card can ignore the gesture.
+    property bool dragAllowed: true
+    property bool resizeAllowed: true
 
     x: card ? card.x : 0
     y: card ? card.y : 0
@@ -129,17 +133,17 @@ FocusScope {
     // wins so an additive click doesn't toggle the selection twice.
     property bool tapSelectHandled: false
 
-    function applyTapSelection(modifiers) {
+    function applyTapSelection(modifiers, sceneX, sceneY) {
         if (tapSelectHandled) return;
         tapSelectHandled = true;
         // Clear after the current event loop so the other handler that saw the
         // same tap is ignored, while the next click starts fresh.
         Qt.callLater(function () { root.tapSelectHandled = false; });
-        root.selectRequested(!!(modifiers & Qt.ControlModifier));
+        root.selectRequested(!!(modifiers & Qt.ControlModifier), sceneX, sceneY);
     }
 
-    function requestBodySelect(modifiers) {
-        root.applyTapSelection(modifiers);
+    function requestBodySelect(modifiers, sceneX, sceneY) {
+        root.applyTapSelection(modifiers, sceneX, sceneY);
     }
 
     function commitGeometry() {
@@ -167,6 +171,21 @@ FocusScope {
         border.width: root.selected ? root.th.borderWidthStrong : root.th.borderWidth
         border.color: root.selected ? root.th.accent : (root.cardHovered ? root.th.borderStrong : root.th.border)
         Behavior on border.color { ColorAnimation { duration: 120 } }
+    }
+
+    // Consume left-button presses on the card's plain surface so they cannot
+    // fall through to cards stacked behind this one. Interactive children are
+    // declared above and keep their own input handling.
+    MouseArea {
+        id: pointerShield
+        anchors.fill: parent
+        acceptedButtons: Qt.LeftButton
+        preventStealing: false
+        onClicked: function (mouse) {
+            mouse.accepted = true;
+            var scene = mapToItem(null, mouse.x, mouse.y);
+            root.applyTapSelection(mouse.modifiers, scene.x, scene.y);
+        }
     }
 
     Item {
@@ -267,10 +286,15 @@ FocusScope {
             preventStealing: false
             onClicked: function (mouse) {
                 mouse.accepted = true;
-                root.selectRequested(!!(mouse.modifiers & Qt.ControlModifier));
+                var scene = mapToItem(null, mouse.x, mouse.y);
+                root.applyTapSelection(mouse.modifiers, scene.x, scene.y);
             }
             onDoubleClicked: function (mouse) {
                 mouse.accepted = true;
+                var scene = mapToItem(null, mouse.x, mouse.y);
+                if (root.canvasView && root.card
+                        && !root.canvasView.isTopCardAtScene(root.card.id, scene.x, scene.y))
+                    return;
                 root.editingTitle = true;
                 Qt.callLater(function () {
                     titleInput.forceActiveFocus();
@@ -342,18 +366,26 @@ FocusScope {
             property real totalY: 0
             onActiveChanged: {
                 if (active) {
+                    dragAllowed = !root.canvasView || !root.card
+                        || root.canvasView.isTopCardAtScene(
+                            root.card.id, centroid.scenePosition.x, centroid.scenePosition.y);
                     lastX = 0;
                     lastY = 0;
                     totalX = 0;
                     totalY = 0;
-                    if (!root.selected) root.selectRequested(false);
+                    if (!root.selected && dragAllowed)
+                        root.selectRequested(false, centroid.scenePosition.x, centroid.scenePosition.y);
                 } else {
-                    root.commitGeometry();
-                    if (Math.abs(totalX) > 0.5 || Math.abs(totalY) > 0.5)
-                        root.movedBy(totalX, totalY);
+                    if (dragAllowed) {
+                        root.commitGeometry();
+                        if (Math.abs(totalX) > 0.5 || Math.abs(totalY) > 0.5)
+                            root.movedBy(totalX, totalY);
+                    }
+                    dragAllowed = true;
                 }
             }
             onTranslationChanged: {
+                if (!dragAllowed) return;
                 var z = Math.max(0.2, root.app.zoom);
                 var dx = (translation.x - lastX) / z;
                 var dy = (translation.y - lastY) / z;
@@ -434,14 +466,20 @@ FocusScope {
             property real lastY: 0
             onActiveChanged: {
                 if (active) {
+                    resizeAllowed = !root.canvasView || !root.card
+                        || root.canvasView.isTopCardAtScene(
+                            root.card.id, centroid.scenePosition.x, centroid.scenePosition.y);
                     lastX = 0;
                     lastY = 0;
-                    root.selectRequested(false);
+                    if (resizeAllowed)
+                        root.selectRequested(false, centroid.scenePosition.x, centroid.scenePosition.y);
                 } else {
-                    root.commitGeometry();
+                    if (resizeAllowed) root.commitGeometry();
+                    resizeAllowed = true;
                 }
             }
             onTranslationChanged: {
+                if (!resizeAllowed) return;
                 var z = Math.max(0.2, root.app.zoom);
                 root.width = Math.max(root.minimumWidth, root.width + (translation.x - lastX) / z);
                 root.height = Math.max(root.minimumHeight, root.height + (translation.y - lastY) / z);
@@ -459,12 +497,22 @@ FocusScope {
                 root.parallaxY = 0;
             }
         }
-        onPointChanged: root.updateParallax(point.position.x, point.position.y)
+        onPointChanged: {
+            if (root.canvasView && root.card
+                    && !root.canvasView.isTopCardAtScene(
+                        root.card.id, point.scenePosition.x, point.scenePosition.y)) {
+                root.parallaxX = 0;
+                root.parallaxY = 0;
+                return;
+            }
+            root.updateParallax(point.position.x, point.position.y);
+        }
     }
 
     TapHandler {
         acceptedButtons: Qt.LeftButton
-        onTapped: root.applyTapSelection(point.modifiers)
+        onTapped: root.applyTapSelection(
+            point.modifiers, point.scenePosition.x, point.scenePosition.y)
     }
 
     MouseArea {
@@ -481,6 +529,10 @@ FocusScope {
 
         onPressed: function (mouse) {
             if (!root.card) return;
+            var scene = root.mapToItem(null, mouse.x, mouse.y);
+            if (root.canvasView
+                    && !root.canvasView.isTopCardAtScene(root.card.id, scene.x, scene.y))
+                return;
             if (root.card.locked) {
                 menuPending = true;
                 mouse.accepted = true;
@@ -493,7 +545,7 @@ FocusScope {
                 startH = root.height;
                 startX = mouse.x;
                 startY = mouse.y;
-                root.selectRequested(false);
+                root.selectRequested(false, scene.x, scene.y);
                 mouse.accepted = true;
             } else {
                 resizing = false;

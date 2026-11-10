@@ -50,6 +50,7 @@ Item {
         property real fontSizeBody: 14
         property real fontSizeLarge: 20
         property real fontSizeSmall: 12
+        property real lineHeightNormal: 1.2
         property int fontWeightMedium: 500
         property real gridDotOpacity: 0.4
         property real gridDotSize: 1.4
@@ -75,6 +76,7 @@ Item {
         property real space6: 24
         property real spaceCompact: 8
         property real spaceHalf: 4
+        property real menuItemHeight: 32
         property real spaceSnug: 10
         property color surface: "#1e1e1e"
     }
@@ -114,8 +116,15 @@ Item {
                      title: id, text: "text of " + id, locked: false };
         }
 
+        function imageCard(id, x, y) {
+            return { id: id, type: "file", x: x, y: y, width: 260, height: 220,
+                     title: id, text: "", path: "", fileKind: "image",
+                     name: id + ".png", locked: false };
+        }
+
         function init() {
             testRoot.menuCount = 0;
+            loader.item.raiseOrder = [];
             loader.item.settings = ({});
             loader.item.cards = [];
             loader.item.setSelection([]);
@@ -144,6 +153,82 @@ Item {
             compare(loader.item.selectedIds[0], "b");
         }
 
+        function cardItem(id) {
+            var delegate = findChild(loader.item, "cardLoader_" + id);
+            return delegate ? delegate.item : null;
+        }
+
+        function test_click_does_not_move_other_cards() {
+            setCards([
+                { id: "img", type: "file", x: 100, y: 100, width: 280, height: 240,
+                  title: "img", text: "", path: "/missing.png", fileKind: "image",
+                  name: "img.png", locked: false },
+                { id: "note", type: "note", x: 140, y: 140, width: 260, height: 220,
+                  title: "note", text: "hello", locked: false }
+            ]);
+            var img = cardItem("img");
+            var note = cardItem("note");
+            verify(img !== null);
+            verify(note !== null);
+            var ix = img.x, iy = img.y, nx = note.x, ny = note.y;
+
+            mouseClick(loader.item, 160, 150);
+            wait(60);
+
+            compare(img.x, ix);
+            compare(img.y, iy);
+            compare(note.x, nx);
+            compare(note.y, ny);
+        }
+
+        // Overlapping cards used to both receive the same tap, so clicking the
+        // top card also selected and raised the card underneath it.
+        function test_overlapping_cards_select_top_card_only() {
+            setCards([imageCard("bottom", 100, 100), imageCard("top", 150, 150)]);
+            mouseClick(loader.item, 180, 165);
+            wait(60);
+            compare(loader.item.selectedIds.length, 1);
+            compare(loader.item.selectedIds[0], "top");
+            compare(loader.item.raiseOrder.length, 1);
+            compare(loader.item.raiseOrder[0], "top");
+        }
+
+        function test_overlapping_note_over_image_selects_note() {
+            setCards([imageCard("img", 100, 100), noteCard("note", 150, 150)]);
+            mouseClick(loader.item, 180, 165);
+            wait(60);
+            compare(loader.item.selectedIds.length, 1);
+            compare(loader.item.selectedIds[0], "note");
+            compare(loader.item.raiseOrder.length, 1);
+            compare(loader.item.raiseOrder[0], "note");
+        }
+
+        function test_click_raises_single_card() {
+            setCards([noteCard("a", 100, 100), noteCard("b", 400, 100)]);
+            mouseClick(loader.item, 450, 110);
+            wait(60);
+            compare(loader.item.raiseOrder.length, 1);
+            compare(loader.item.raiseOrder[0], "b");
+            verify(loader.item.cardStackZ("b") > loader.item.cardStackZ("a"));
+        }
+
+        // Clicking one card while a multi-selection is active only narrows the
+        // selection; it must not disturb the stacking order.
+        function test_click_during_multiselect_does_not_raise() {
+            setCards([noteCard("a", 100, 100), noteCard("b", 400, 100)]);
+            mouseClick(loader.item, 150, 110);
+            mouseClick(loader.item, 450, 110, Qt.LeftButton, Qt.ControlModifier);
+            wait(60);
+            compare(loader.item.selectedIds.length, 2);
+
+            loader.item.raiseOrder = [];
+            mouseClick(loader.item, 150, 110);
+            wait(60);
+            compare(loader.item.raiseOrder.length, 0);
+            compare(loader.item.selectedIds.length, 1);
+            compare(loader.item.selectedIds[0], "a");
+        }
+
         function test_click_empty_canvas_clears_selection() {
             setCards([noteCard("a", 100, 100)]);
             mouseClick(loader.item, 150, 110);
@@ -162,6 +247,30 @@ Item {
             wait(60);
             compare(loader.item.selectedIds.length, 1);
             compare(loader.item.selectedIds[0], "w");
+        }
+
+        function test_whiteboard_delete_requires_confirmation() {
+            setCards([{ id: "w", type: "whiteboard", x: 100, y: 100, width: 320, height: 260,
+                        title: "board", text: "", penWidth: 3, locked: false,
+                        strokes: [{ color: "#ffffff", width: 3,
+                                    points: [{ x: 10, y: 10 }, { x: 40, y: 40 }] }] }]);
+            var board = cardItem("w");
+            verify(board !== null);
+            compare(board.strokes.length, 1);
+
+            var clearButton = findChild(board, "clearStrokes");
+            verify(clearButton !== null);
+            mouseClick(clearButton, clearButton.width / 2, clearButton.height / 2);
+            wait(60);
+            // The content stays until the confirmation action is chosen.
+            compare(board.strokes.length, 1);
+
+            var menu = board.clearMenuPopup;
+            verify(menu !== null);
+            verify(menu.opened);
+            menu.activate(0);
+            wait(60);
+            compare(board.strokes.length, 0);
         }
 
         // Ctrl-click on a body must be additive just like the header.
@@ -223,6 +332,28 @@ Item {
             mouseRelease(loader.item, 640, 330);
             wait(80);
             compare(loader.item.selectedIds.length, 2);
+        }
+
+        // Dragging the top card by a spot where the covered card's header
+        // lies must only move the top card.
+        function test_drag_top_card_does_not_move_covered_card() {
+            setCards([noteCard("bottom", 100, 100), noteCard("top", 100, 120)]);
+            var bottom = cardItem("bottom");
+            var top = cardItem("top");
+            verify(bottom !== null);
+            verify(top !== null);
+            var bx = bottom.x, by = bottom.y;
+            var tx = top.x, ty = top.y;
+
+            mousePress(loader.item, 150, 128);
+            mouseMove(loader.item, 200, 178);
+            mouseMove(loader.item, 210, 188);
+            mouseRelease(loader.item, 210, 188);
+            wait(80);
+
+            compare(bottom.x, bx);
+            compare(bottom.y, by);
+            verify(top.x > tx || top.y > ty);
         }
 
         function test_long_press_on_empty_canvas_opens_menu() {

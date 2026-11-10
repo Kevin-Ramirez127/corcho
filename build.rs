@@ -21,6 +21,7 @@ fn main() {
         .qt_module("WebEngineQuick")
         .qrc("resources.qrc")
         .cpp_file("cpp/qt_logging.cpp")
+        .cpp_file("cpp/clipboard.cpp")
         .files(["src/bridge.rs"])
         .build();
 }

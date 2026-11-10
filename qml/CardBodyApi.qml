@@ -108,7 +108,7 @@ CardFrame {
 
             TapHandler {
                 acceptedButtons: Qt.LeftButton
-                onTapped: root.requestBodySelect(point.modifiers)
+                onTapped: root.requestBodySelect(point.modifiers, point.scenePosition.x, point.scenePosition.y)
             }
 
             Text {

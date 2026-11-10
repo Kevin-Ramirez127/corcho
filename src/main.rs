@@ -1,6 +1,7 @@
 mod ai;
 mod audio;
 mod bridge;
+mod clipboard;
 mod core;
 mod deeplink;
 mod gitcard;
@@ -13,6 +14,7 @@ mod model;
 mod search;
 mod single_instance;
 mod storage;
+mod svg;
 mod sync;
 mod theme;
 mod updates;

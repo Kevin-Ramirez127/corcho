@@ -164,6 +164,8 @@ Popup {
                 property var actionData: modelData || ({})
                 property bool hoveredNow: false
                 property bool hasChildren: actionData.children !== undefined && actionData.children.length > 0
+                readonly property bool dangerFill: actionData.dangerFill === true
+                readonly property bool highlighted: hoveredNow || menu.currentIndex === index
 
                 width: menu.width - menu.padding * 2
                 height: actionData.separator ? menu.th.space2 : menu.th.menuItemHeight
@@ -184,7 +186,9 @@ Popup {
                     visible: actionData.separator !== true
                     anchors.fill: parent
                     radius: menu.th.radiusKeycap
-                    color: (row.hoveredNow || menu.currentIndex === row.index) ? menu.th.hover : "transparent"
+                    color: row.dangerFill
+                        ? (row.highlighted ? Qt.darker(menu.th.danger, 1.15) : menu.th.danger)
+                        : (row.highlighted ? menu.th.hover : "transparent")
                 }
 
                 Row {
@@ -197,13 +201,17 @@ Popup {
                         visible: actionData.icon !== undefined && actionData.icon !== ""
                         name: actionData.icon || "square"
                         size: menu.th.iconBody
-                        color: actionData.danger ? menu.th.danger : menu.th.text2
+                        color: row.dangerFill
+                            ? menu.th.bg
+                            : (actionData.danger ? menu.th.danger : menu.th.text2)
                     }
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
                         width: parent.width - menu.th.space3 * 2 - menu.th.iconBody - menu.th.space2
                         text: actionData.label || ""
-                        color: actionData.danger ? menu.th.danger : menu.th.text
+                        color: row.dangerFill
+                            ? menu.th.bg
+                            : (actionData.danger ? menu.th.danger : menu.th.text)
                         font.family: menu.th.fontFamily
                         font.pixelSize: menu.th.fontSizeBody
                         elide: Text.ElideRight
@@ -213,7 +221,7 @@ Popup {
                         visible: row.hasChildren
                         name: "chevron-right"
                         size: 14
-                        color: menu.th.text2
+                        color: row.dangerFill ? menu.th.bg : menu.th.text2
                     }
                 }
 

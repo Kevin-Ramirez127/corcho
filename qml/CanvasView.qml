@@ -9,8 +9,17 @@ Item {
     property var cards: []
     property string selectedId: ""
     property var selectedIds: []
+    // Card ids in stacking order, last one on top. Kept in QML so clicking a
+    // card never reshuffles the card model (which used to make other cards
+    // jump while their delegates were reassigned).
+    property var raiseOrder: []
     property string activeAiId: ""
     property real linkPhase: 0
+    // Last pointer position inside the canvas, in canvas coordinates. Used to
+    // place cards created by pasting from the clipboard.
+    property real hoverX: 0
+    property real hoverY: 0
+    property bool hoverValid: false
 
     function activateAi(id) {
         root.activeAiId = id;
@@ -39,7 +48,63 @@ Item {
         selectedId = ids.length === 1 ? ids[0] : "";
     }
 
-    function selectCard(id, additive) {
+    function raiseCard(id) {
+        var next = [];
+        for (var i = 0; i < raiseOrder.length; i++)
+            if (raiseOrder[i] !== id) next.push(raiseOrder[i]);
+        next.push(id);
+        raiseOrder = next;
+    }
+
+    function cardStackZ(id) {
+        if (selectedIds.indexOf(id) >= 0) return 1000;
+        var at = raiseOrder.indexOf(id);
+        return at >= 0 ? at + 2 : 1;
+    }
+
+    function topCardAtWorld(wx, wy) {
+        var list = root.cards || [];
+        var best = null;
+        var bestRank = -1;
+        for (var i = 0; i < list.length; i++) {
+            var card = list[i];
+            if (wx < card.x || wx > card.x + card.width
+                    || wy < card.y || wy > card.y + card.height)
+                continue;
+            // Same tie-break as painting: higher stack z wins, then later
+            // model entries.
+            var rank = root.cardStackZ(card.id) * 10000 + i;
+            if (rank > bestRank) {
+                bestRank = rank;
+                best = card;
+            }
+        }
+        return best;
+    }
+
+    function isTopCardAtScene(id, sceneX, sceneY) {
+        if (!root.app || typeof sceneX !== "number" || !isFinite(sceneX)
+                || typeof sceneY !== "number" || !isFinite(sceneY))
+            return true;
+        var local = root.mapFromItem(null, sceneX, sceneY);
+        var z = Math.max(0.2, root.app.zoom);
+        var wx = (local.x - root.app.panX) / z;
+        var wy = (local.y - root.app.panY) / z;
+        var top = root.topCardAtWorld(wx, wy);
+        return !top || top.id === id;
+    }
+
+    function selectCard(id, additive, sceneX, sceneY) {
+        // Overlapping cards can both receive the same pointer events because
+        // handlers on sibling items do not block each other. Only the card
+        // that is actually on top at the event position may react, otherwise
+        // clicking or dragging the top card would also affect the card
+        // underneath it.
+        if (!root.isTopCardAtScene(id, sceneX, sceneY)) return;
+        // Raising is only for a plain click with at most one card selected.
+        // Additive clicks and clicks while a multi-selection is active must
+        // leave the stacking order alone.
+        var multi = selectedIds.length > 1;
         var list = selectedIds.slice();
         if (additive) {
             var at = list.indexOf(id);
@@ -48,6 +113,7 @@ Item {
             list = [id];
         }
         setSelection(list);
+        if (!additive && !multi) root.raiseCard(id);
     }
 
     function marqueeSelection() {
@@ -225,6 +291,16 @@ Item {
         app.saveNow();
     }
 
+    function pasteClipboard() {
+        if (!root.app) return false;
+        var px = root.hoverValid ? root.hoverX : root.width / 2;
+        var py = root.hoverValid ? root.hoverY : root.height / 2;
+        var z = Math.max(0.2, root.app.zoom);
+        var wx = (px - root.app.panX) / z;
+        var wy = (py - root.app.panY) / z;
+        return String(root.app.pasteClipboard(wx, wy)) !== "empty";
+    }
+
     function cardAtWorld(wx, wy) {
         var cards = root.cards || [];
         for (var i = 0; i < cards.length; i++) {
@@ -293,6 +369,10 @@ Item {
 
     Keys.onPressed: function (event) {
         if (root.modalOpen) return;
+        if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_V) {
+            if (root.pasteClipboard()) event.accepted = true;
+            return;
+        }
         var step = (event.modifiers & Qt.ShiftModifier) ? 220 : 70;
         if (event.key === Qt.Key_Left) root.app.setView(root.app.panX + step, root.app.panY, root.app.zoom);
         else if (event.key === Qt.Key_Right) root.app.setView(root.app.panX - step, root.app.panY, root.app.zoom);
@@ -543,6 +623,8 @@ Item {
                 id: cardLoader
                 required property var card
 
+                objectName: "cardLoader_" + card.id
+                z: root.cardStackZ(card.id)
                 active: root.inView(card)
                 source: root.bodyFor(card.type)
                 asynchronous: false
@@ -560,7 +642,9 @@ Item {
                     if (cardLoader.card.type === "ai")
                         item.activated.connect(function () { root.activateAi(cardLoader.card.id); });
                     item.selected = Qt.binding(function () { return root.selectedIds.indexOf(cardLoader.card.id) >= 0; });
-                    item.selectRequested.connect(function (additive) { root.selectCard(cardLoader.card.id, !!additive); });
+                    item.selectRequested.connect(function (additive, sceneX, sceneY) {
+                        root.selectCard(cardLoader.card.id, !!additive, sceneX, sceneY);
+                    });
                     item.movedBy.connect(function (dx, dy) { root.handleMoved(cardLoader.card.id, dx, dy); });
                     item.menuRequested.connect(function (cardData, gx, gy) {
                         if (root.selectedIds.indexOf(cardData.id) < 0) root.setSelection([cardData.id]);
@@ -687,6 +771,16 @@ Item {
             if (!wantPan) root.zoomAt(wheel.angleDelta.y > 0 ? 1.12 : 0.89, wheel.x, wheel.y);
             else root.app.setView(root.app.panX - wheel.angleDelta.x * 0.7, root.app.panY - wheel.angleDelta.y * 0.7, root.app.zoom);
         }
+    }
+
+    HoverHandler {
+        id: canvasHover
+        onPointChanged: {
+            root.hoverX = point.position.x;
+            root.hoverY = point.position.y;
+            root.hoverValid = true;
+        }
+        onHoveredChanged: if (!hovered) root.hoverValid = false
     }
 
     Minimap {
