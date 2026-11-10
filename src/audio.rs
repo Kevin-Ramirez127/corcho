@@ -12,6 +12,12 @@ struct Synth {
     tone_mix: f32,
     phase: f32,
     noise: u32,
+    // Short notification chime mixed into the same output stream as the
+    // ambient timbre, so both share one audio device.
+    sample_rate: f32,
+    chime_frames: u32,
+    chime_pos: u32,
+    chime_phase: f32,
 }
 
 impl Default for Synth {
@@ -26,6 +32,10 @@ impl Default for Synth {
             tone_mix: 0.4,
             phase: 0.0,
             noise: 0x1234_5678,
+            sample_rate: 48_000.0,
+            chime_frames: 0,
+            chime_pos: 0,
+            chime_phase: 0.0,
         }
     }
 }
@@ -50,6 +60,10 @@ fn ensure_stream() -> Result<(), String> {
     let config = device.default_output_config().map_err(|e| e.to_string())?;
     let sample_rate = config.sample_rate().0 as f32;
     let channels = config.channels() as usize;
+    {
+        let mut s = state().lock().map_err(|_| "audio lock".to_string())?;
+        s.sample_rate = sample_rate;
+    }
     let state = state().clone();
     let stream = device
         .build_output_stream(
@@ -70,7 +84,30 @@ fn ensure_stream() -> Result<(), String> {
                     let white = (s.noise >> 8) as f32 / 16_777_216.0 * 2.0 - 1.0;
                     let tone = s.phase.sin();
                     let mixed = white * (1.0 - s.tone_mix) + tone * s.tone_mix;
-                    let sample = mixed * s.volume * s.gain * 0.25;
+                    let mut sample = mixed * s.volume * s.gain * 0.25;
+
+                    // Three rising notes with a soft decay, about 0.9 s long.
+                    if s.chime_frames > 0 {
+                        s.chime_frames -= 1;
+                        let t = s.chime_pos as f32 / s.sample_rate;
+                        let (start, freq) = if t < 0.28 {
+                            (0.0, 880.0)
+                        } else if t < 0.56 {
+                            (0.28, 1046.5)
+                        } else {
+                            (0.56, 1318.5)
+                        };
+                        let local = t - start;
+                        let env = (1.0 - (local / 0.28)).clamp(0.0, 1.0).powi(2);
+                        s.chime_phase += freq / s.sample_rate * std::f32::consts::TAU;
+                        if s.chime_phase > std::f32::consts::TAU {
+                            s.chime_phase -= std::f32::consts::TAU;
+                        }
+                        sample += s.chime_phase.sin() * env * 0.35;
+                        s.chime_pos += 1;
+                    }
+
+                    let sample = sample.clamp(-1.0, 1.0);
                     for ch in frame.iter_mut() {
                         *ch = sample;
                     }
@@ -105,6 +142,16 @@ pub fn stop(owner: &str) {
             s.target_gain = 0.0;
         }
     }
+}
+
+/// Play a short three-note chime, used when a Pomodoro phase ends.
+pub fn chime() -> Result<(), String> {
+    ensure_stream()?;
+    let mut s = state().lock().map_err(|_| "audio lock".to_string())?;
+    s.chime_pos = 0;
+    s.chime_phase = 0.0;
+    s.chime_frames = (s.sample_rate * 0.9) as u32;
+    Ok(())
 }
 
 #[allow(dead_code)]

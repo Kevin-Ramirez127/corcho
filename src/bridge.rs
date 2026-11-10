@@ -506,6 +506,10 @@ pub mod qobject {
         fn timbre_stop(self: &Self, card_id: &QString);
 
         #[qinvokable]
+        #[cxx_name = "pomodoroChime"]
+        fn pomodoro_chime(self: &Self);
+
+        #[qinvokable]
         #[cxx_name = "adblockCheck"]
         fn adblock_check(self: &Self, url: &QString) -> bool;
 
@@ -2138,6 +2142,12 @@ impl qobject::AppController {
 
     pub fn timbre_stop(&self, card_id: &QString) {
         crate::audio::stop(&p(card_id));
+    }
+
+    pub fn pomodoro_chime(&self) {
+        if let Err(e) = crate::audio::chime() {
+            tracing::warn!("pomodoro chime: {e}");
+        }
     }
 
     pub fn adblock_check(&self, url: &QString) -> bool {
