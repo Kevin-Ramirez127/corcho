@@ -55,10 +55,16 @@ CardFrame {
 
     function toggle(index) {
         if (index < 0 || index >= items.length) return;
+        // Regrouping replaces the list model, which otherwise resets the
+        // ListView to the top. Keep the current scroll offset.
+        var keepY = list.contentY;
         var next = items.slice();
         next[index] = { id: next[index].id, text: next[index].text, done: !next[index].done };
         items = next;
         persist();
+        Qt.callLater(function () {
+            list.contentY = Math.min(keepY, Math.max(0, list.contentHeight - list.height));
+        });
     }
 
     function remove(index) {
@@ -117,6 +123,7 @@ CardFrame {
 
         ListView {
             id: list
+            objectName: "checklistList"
             width: parent.width
             height: Math.max(0, parent.height - progressBar.height - addBox.height
                                 - (root.th ? root.th.space2 : 8) * 2)

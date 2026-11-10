@@ -654,6 +654,27 @@ Item {
             verify(findChild(body, "checklistGroupHeader_Done") !== null);
         }
 
+        // Regrouping after a toggle replaces the list model; the checklist
+        // must keep its scroll position instead of jumping back to the top.
+        function test_checklist_keeps_scroll_after_toggle() {
+            var tasks = [];
+            for (var i = 0; i < 20; i++)
+                tasks.push({ id: "i" + i, text: "task " + i, done: false });
+            setCards([{ id: "check", type: "checklist", x: 100, y: 100, width: 300, height: 300,
+                        title: "tasks", text: "", locked: false, items: tasks }]);
+            var body = checklistBody();
+            var list = findChild(body, "checklistList");
+            verify(list !== null);
+            list.contentY = 180;
+            wait(60);
+            var before = list.contentY;
+            verify(before > 0);
+
+            body.toggle(8);
+            wait(120);
+            compare(list.contentY, before);
+        }
+
         // Ctrl+Left/Right at the start/end of a field must not fall through to
         // the canvas arrow-key panning.
         function test_ctrl_arrow_at_text_boundary_does_not_pan_canvas() {
