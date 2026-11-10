@@ -170,6 +170,11 @@ ApplicationWindow {
         // Website cards hand their loaded page to the window instead of
         // loading the site a second time.
         var webView = card.type === "website" ? canvas.releaseCardWebView(id) : null;
+        // Live body state that is not persisted in the card payload, such as
+        // a running Pomodoro timer, moves with the card into the PiP window.
+        var sourceBody = canvas.bodyItem(id);
+        var runtime = sourceBody && typeof sourceBody.exportRuntime === "function"
+            ? sourceBody.exportRuntime() : null;
         var win = component.createObject(null, {
             "app": app,
             "th": root.th,
@@ -195,6 +200,11 @@ ApplicationWindow {
         win.th = Qt.binding(function () { return root.th; });
         win.webProfile = Qt.binding(function () { return canvas.webProfile; });
         win.cardReturned.connect(function () { root.forgetFloatingCard(id); });
+        win.runtimeReturned.connect(function (state) {
+            var body = canvas.bodyItem(id);
+            if (body && typeof body.importRuntime === "function")
+                body.importRuntime(state);
+        });
         win.webViewReturned.connect(function (view) {
             // The window is closing: give the page back to the canvas copy,
             // or drop it when that copy no longer exists.
@@ -204,6 +214,7 @@ ApplicationWindow {
             dateLinkDialog.openFor(sourceCardId, sourceItemId, linkId, defaultDate);
         });
         win.calendarManagerRequested.connect(function () { calendarManager.open(); });
+        if (runtime) win.applyRuntime(runtime);
 
         var next = Object.assign({}, floatingCards);
         next[id] = win;

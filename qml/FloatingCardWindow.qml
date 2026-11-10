@@ -22,6 +22,9 @@ Window {
     property var externalWebView: null
     property bool pinned: true
     property string floatingToken: ""
+    // Live, non-persisted state handed over from the canvas copy (for
+    // example a running Pomodoro timer) and returned when the window closes.
+    property var runtimeState: null
     // Opacity of the card content, in percent. The title bar stays fully
     // visible so the transparency control can always be reached again.
     property int cardOpacity: 100
@@ -34,6 +37,9 @@ Window {
     property real initialHeight: 420
 
     signal cardReturned()
+    // Emitted with transient body state while the window closes so the
+    // canvas copy can continue exactly where the PiP window left off.
+    signal runtimeReturned(var state)
     // Emitted with the page while the window closes, so the canvas copy can
     // take it back without ever reloading the site.
     signal webViewReturned(var view)
@@ -70,6 +76,15 @@ Window {
         return win.th ? win.th.radiusCard : 8;
     }
 
+    property bool runtimeHandedBack: false
+
+    function applyRuntime(state) {
+        win.runtimeState = state;
+        var item = bodyLoader.item;
+        if (item && typeof item.importRuntime === "function")
+            item.importRuntime(state);
+    }
+
     // Give the page back to the canvas copy before this window goes away.
     // The second call from onClosing is a no-op: the body has already
     // released the view.
@@ -80,6 +95,15 @@ Window {
         if (view) win.webViewReturned(view);
     }
 
+    function handRuntimeBack() {
+        if (win.runtimeHandedBack) return;
+        win.runtimeHandedBack = true;
+        var item = bodyLoader.item;
+        if (!item || typeof item.exportRuntime !== "function") return;
+        var state = item.exportRuntime();
+        if (state) win.runtimeReturned(state);
+    }
+
     function setCardOpacity(value) {
         var percent = Math.round(value);
         win.cardOpacity = Math.max(3, Math.min(100, percent));
@@ -87,12 +111,14 @@ Window {
 
     function returnToCanvas() {
         win.handPageBack();
+        win.handRuntimeBack();
         win.cardReturned();
         win.close();
     }
 
     onClosing: {
         win.handPageBack();
+        win.handRuntimeBack();
         win.cardReturned();
     }
     onPinnedChanged: {
@@ -363,6 +389,12 @@ Window {
                 item.calendarManagerRequested.connect(function () {
                     win.calendarManagerRequested();
                 });
+
+                // applyRuntime() may have run before the body finished
+                // loading; in that case the state is waiting here.
+                if (win.runtimeState !== null
+                        && typeof item.importRuntime === "function")
+                    item.importRuntime(win.runtimeState);
             }
         }
     }

@@ -838,6 +838,67 @@ Item {
             wait(30);
         }
 
+        // A running Pomodoro hands its live runtime to the PiP copy instead of
+        // showing a fresh idle timer, and hands it back on close.
+        function test_pomodoro_runtime_moves_to_pip() {
+            setCards([{ id: "pomo", type: "pomodoro", x: 100, y: 100, width: 320, height: 300,
+                        title: "timer", text: "", locked: false, workMinutes: 25,
+                        breakMinutes: 5, phase: "work", remaining: 1500, sessions: 0 }]);
+            var canvasBody = loader.item.bodyItem("pomo");
+            verify(canvasBody !== null);
+            canvasBody.phase = "break";
+            canvasBody.remaining = 74;
+            canvasBody.sessions = 3;
+            canvasBody.running = true;
+            var runtime = canvasBody.exportRuntime();
+            compare(runtime.running, true);
+
+            // The canvas copy pauses while the card is detached.
+            loader.item.floatingIds = ["pomo"];
+            wait(60);
+            var canvasTimer = findChild(canvasBody, "pomodoroTimer");
+            verify(canvasTimer !== null);
+            compare(canvasTimer.running, false);
+
+            var component = Qt.createComponent("../../qml/FloatingCardWindow.qml");
+            compare(component.status, Component.Ready);
+            var win = component.createObject(null, {
+                "app": fakeApp, "th": theme, "cardId": "pomo",
+                "cardData": loader.item.cardById("pomo"),
+                "bodySource": Qt.resolvedUrl("../../qml/CardBodyPomodoro.qml"),
+                "gridId": "g1", "initialWidth": 320, "initialHeight": 300
+            });
+            verify(win !== null);
+            wait(120);
+            win.applyRuntime(runtime);
+            wait(60);
+
+            var pipBody = findCardFrame(win.contentItem);
+            verify(pipBody !== null);
+            compare(pipBody.phase, "break");
+            compare(pipBody.remaining, 74);
+            compare(pipBody.sessions, 3);
+            compare(pipBody.running, true);
+            var pipTimer = findChild(pipBody, "pomodoroTimer");
+            verify(pipTimer !== null);
+            compare(pipTimer.running, true);
+
+            // Closing the PiP window returns the current runtime to the
+            // canvas copy, which resumes its timer.
+            win.runtimeReturned.connect(function (state) {
+                canvasBody.importRuntime(state);
+            });
+            pipBody.remaining = 50;
+            win.close();
+            wait(60);
+            compare(canvasBody.remaining, 50);
+            compare(canvasBody.running, true);
+            loader.item.floatingIds = [];
+            wait(30);
+            compare(canvasTimer.running, true);
+            canvasBody.running = false;
+        }
+
         // Ctrl+Left/Right at the start/end of a field must not fall through to
         // the canvas arrow-key panning.
         function test_ctrl_arrow_at_text_boundary_does_not_pan_canvas() {

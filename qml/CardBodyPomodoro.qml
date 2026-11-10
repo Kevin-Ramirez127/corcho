@@ -63,6 +63,36 @@ CardFrame {
         editing = false;
     }
 
+    // Running state is transient QML state, not part of the persisted card.
+    // Hand it to the picture-in-picture copy when a window opens, and back
+    // again when that window closes.
+    function exportRuntime() {
+        return {
+            workMinutes: workMinutes,
+            breakMinutes: breakMinutes,
+            phase: phase,
+            remaining: remaining,
+            sessions: sessions,
+            running: running
+        };
+    }
+
+    function importRuntime(state) {
+        if (!state) return;
+        if (state.workMinutes !== undefined)
+            workMinutes = Math.max(1, Math.round(state.workMinutes));
+        if (state.breakMinutes !== undefined)
+            breakMinutes = Math.max(1, Math.round(state.breakMinutes));
+        if (state.phase !== undefined)
+            phase = state.phase === "break" ? "break" : "work";
+        if (state.remaining !== undefined)
+            remaining = Math.max(0, Math.round(state.remaining));
+        if (state.sessions !== undefined)
+            sessions = Math.max(0, Math.round(state.sessions));
+        running = state.running === true;
+        editing = false;
+    }
+
     function clockText(seconds) {
         var m = Math.floor(seconds / 60);
         var s = seconds % 60;
@@ -70,9 +100,12 @@ CardFrame {
     }
 
     Timer {
+        objectName: "pomodoroTimer"
         interval: 1000
         repeat: true
-        running: root.running
+        // The canvas copy pauses while the card lives in a PiP window; that
+        // window gets the live runtime state instead.
+        running: root.running && !root.floating
         onTriggered: {
             if (root.remaining > 0)
                 root.remaining -= 1;
