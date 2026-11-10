@@ -597,6 +597,45 @@ Item {
             menu.close();
         }
 
+        // A dropdown floats over the canvas. Clicking it must not also reach
+        // a checklist task at the same screen position underneath.
+        function test_open_dropdown_blocks_clicks_on_covered_checklist() {
+            fakeApp.settingsJson = JSON.stringify({ aiPresets: [
+                { id: "p1", name: "Fast", provider: "openai", model: "small" }
+            ] });
+            setCards([
+                { id: "ai", type: "ai", x: 100, y: 100, width: 340, height: 380,
+                  title: "AI", text: "", prompt: "", context: "", lastResult: "",
+                  presetId: "", linkedIds: [], locked: false },
+                { id: "check", type: "checklist", x: 100, y: 180, width: 300, height: 260,
+                  title: "tasks", text: "", locked: false,
+                  items: [{ id: "i1", text: "task one", done: false }] }
+            ]);
+            var aiBody = loader.item.bodyItem("ai");
+            var checkBody = checklistBody();
+            verify(aiBody !== null);
+            verify(checkBody !== null);
+
+            var select = findChild(aiBody, "aiPresetSelect");
+            verify(select !== null);
+            var at = select.mapToItem(loader.item, select.width / 2, select.height / 2);
+            mouseClick(loader.item, at.x, at.y);
+            wait(80);
+            var menu = findChild(select, "aiPresetSelectMenu");
+            verify(menu !== null);
+            verify(menu.visible);
+
+            var rowScene = loader.item.mapToItem(null, 110, 230);
+            compare(checkBody.canInteractAt(rowScene.x, rowScene.y), false);
+
+            // Click a checklist row outside the menu rectangle while the
+            // dropdown is open; the menu closes and the task stays undone.
+            mouseClick(loader.item, 110, 230);
+            wait(80);
+            compare(checkBody.items[0].done, false);
+            verify(!menu.visible);
+        }
+
         function test_click_above_card_does_not_toggle_covered_checklist_task() {
             setCards([{ id: "check", type: "checklist", x: 100, y: 100, width: 300, height: 260,
                         title: "tasks", text: "", locked: false,

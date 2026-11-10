@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import "OverlayState.js" as OverlayState
 
 Popup {
     id: menu
@@ -84,6 +85,7 @@ Popup {
     // It is created directly in the overlay so that it is not culled by
     // the popup's content positioner while the popup is closed.
     property Item penCatcher: null
+    property bool countedOpen: false
 
     Component {
         id: penCatcherComponent
@@ -93,8 +95,21 @@ Popup {
             anchors.fill: parent
             z: menu.z - 1
 
+            // Mouse and touch clicks outside the menu close it and stop
+            // there. Without this the same click also reached whatever card
+            // sat underneath, so choosing a dropdown option could toggle a
+            // checklist task at the same screen position.
+            MouseArea {
+                anchors.fill: parent
+                acceptedButtons: Qt.AllButtons
+                preventStealing: true
+                onPressed: function (mouse) { mouse.accepted = true; }
+                onClicked: menu.close()
+                onWheel: function (wheel) { wheel.accepted = true; }
+            }
+
             TapHandler {
-                acceptedPointerTypes: PointerDevice.Pen | PointerDevice.Eraser
+                acceptedPointerTypes: PointerDevice.AllDevices
                 // Take the event so it cannot activate the control underneath
                 // and immediately reopen the menu.
                 gesturePolicy: TapHandler.WithinBounds
@@ -104,12 +119,20 @@ Popup {
     }
 
     onOpened: {
+        if (!countedOpen) {
+            OverlayState.menuOpened();
+            countedOpen = true;
+        }
         var overlay = Overlay.overlay;
         if (overlay && !penCatcher)
             penCatcher = penCatcherComponent.createObject(overlay);
     }
 
     onClosed: {
+        if (countedOpen) {
+            OverlayState.menuClosed();
+            countedOpen = false;
+        }
         if (penCatcher) {
             penCatcher.destroy();
             penCatcher = null;
@@ -117,6 +140,8 @@ Popup {
     }
 
     Component.onDestruction: {
+        if (countedOpen)
+            OverlayState.menuClosed();
         if (penCatcher)
             penCatcher.destroy();
     }

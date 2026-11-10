@@ -1,4 +1,5 @@
 import QtQuick
+import "OverlayState.js" as OverlayState
 
 CardFrame {
     id: root
@@ -38,6 +39,8 @@ CardFrame {
     // only the card that is actually on top at the event position may react.
     function canInteractAt(sceneX, sceneY) {
         if (!root.card) return false;
+        // A dropdown or context menu floating over this card owns the click.
+        if (OverlayState.openMenus > 0) return false;
         return !root.canvasView
             || root.canvasView.isTopCardAtScene(root.card.id, sceneX, sceneY);
     }

@@ -1,4 +1,5 @@
 import QtQuick
+import "OverlayState.js" as OverlayState
 
 FocusScope {
     id: root
@@ -160,7 +161,7 @@ FocusScope {
     property bool tapSelectHandled: false
 
     function applyTapSelection(modifiers, sceneX, sceneY) {
-        if (tapSelectHandled) return;
+        if (tapSelectHandled || OverlayState.openMenus > 0) return;
         tapSelectHandled = true;
         // Clear after the current event loop so the other handler that saw the
         // same tap is ignored, while the next click starts fresh.
