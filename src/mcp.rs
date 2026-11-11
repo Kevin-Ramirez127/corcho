@@ -1744,45 +1744,36 @@ fn call_tool(core: &mut Core, name: &str, args: &Value, progress: ProgressFn) ->
                 Ok(status)
             } else {
                 Err(anyhow!(
-                    "use git.sync for git, or configure the folder provider"
+                    "configure the folder provider or use iroh.sync for peer sync"
                 ))
             }
         }
-        "git.status" => Ok(core.git.status_json()),
-        "git.configure" => {
-            if let Some(enabled) = args.get("enabled").and_then(|v| v.as_bool()) {
-                core.set_setting_json("git_sync_enabled", &enabled.to_string());
-            }
-            if let Some(remote) = args.get("remote").and_then(|v| v.as_str()) {
-                core.set_setting_json("git_remote", &json!(remote).to_string());
-            }
-            if let Some(branch) = args.get("branch").and_then(|v| v.as_str()) {
-                core.set_setting_json("git_branch", &json!(branch).to_string());
-            }
-            if let Some(auto) = args.get("autoPush").and_then(|v| v.as_bool()) {
-                core.set_setting_json("git_auto_push", &auto.to_string());
-            }
-            if let Some(auto) = args.get("autoPull").and_then(|v| v.as_bool()) {
-                core.set_setting_json("git_auto_pull", &auto.to_string());
-            }
-            if let Some(include) = args.get("includeAttachments").and_then(|v| v.as_bool()) {
-                core.set_setting_json("git_include_attachments", &include.to_string());
-            }
-            if let Some(auth) = args.get("auth").and_then(|v| v.as_str()) {
-                if matches!(auth, "system" | "gh") {
-                    core.set_setting_json("git_auth", &json!(auth).to_string());
-                }
-            }
-            Ok(core.git.status_json())
+        "iroh.status" => Ok(core.iroh.status_json()),
+        "iroh.create" => Ok(core.iroh.create_workspace()?),
+        "iroh.join" => {
+            let ticket = required(args, "ticket")?;
+            core.iroh.join(&ticket)?;
+            core.reload_from_disk()?;
+            Ok(core.iroh.status_json())
         }
-        "git.sync" => {
-            let config = core.git_config();
-            let dir = core.data_dir.clone();
-            report(progress, 0.3, "syncing git remote");
-            let status = core.git.sync_now(&dir, &config)?;
+        "iroh.share" => {
+            let read_only = args
+                .get("readOnly")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            Ok(core.iroh.share(read_only)?)
+        }
+        "iroh.sync" => {
+            report(progress, 0.3, "syncing peers");
+            let status = core.iroh.sync_now()?;
             core.reload_from_disk()?;
             Ok(status)
         }
+        "iroh.leave" => {
+            core.iroh.leave()?;
+            Ok("left".into())
+        }
+        "iroh.peers" => Ok(core.iroh.status_json()),
         "backup.export" => {
             let path = validate_absolute_path(&required(args, "path")?)?;
             report(progress, 0.3, "writing backup");
@@ -2735,7 +2726,8 @@ fn tool_annotations(name: &str) -> Value {
         || name.starts_with("web.dom")
         || name.starts_with("web.screenshot")
         || name.starts_with("sync.status")
-        || name.starts_with("git.status")
+        || name.starts_with("iroh.status")
+        || name.starts_with("iroh.peers")
         || name.starts_with("mpris.list")
         || name.starts_with("mpris.metadata")
         || name.starts_with("app.about")
@@ -2764,7 +2756,7 @@ fn tool_annotations(name: &str) -> Value {
     let network = name.starts_with("ai.")
         || name.starts_with("web.")
         || name.starts_with("sync.")
-        || name.starts_with("git.")
+        || name.starts_with("iroh.")
         || name.starts_with("update.")
         || name.starts_with("gdrive.");
     let idempotent = name.contains(".set")
@@ -3002,16 +2994,45 @@ fn tools() -> Vec<Value> {
         empty.clone(),
         vec![],
     );
-    add("git.status", "Git sync status.", empty.clone(), vec![]);
     add(
-        "git.configure",
-        "Configure git sync.",
-        json!({"enabled":{"type":"boolean"},"remote":{"type":"string"},"branch":{"type":"string"},"autoPush":{"type":"boolean"},"autoPull":{"type":"boolean"},"includeAttachments":{"type":"boolean"},"auth":{"type":"string","enum":["system","gh"]}}),
+        "iroh.status",
+        "Iroh peer-to-peer sync status, tickets and peers.",
+        empty.clone(),
         vec![],
     );
     add(
-        "git.sync",
-        "Commit, merge and push git sync.",
+        "iroh.create",
+        "Create a new shared workspace and return its write ticket.",
+        empty.clone(),
+        vec![],
+    );
+    add(
+        "iroh.join",
+        "Join an existing shared workspace with a ticket.",
+        json!({"ticket":{"type":"string"}}),
+        vec!["ticket"],
+    );
+    add(
+        "iroh.share",
+        "Return a share ticket for the current workspace.",
+        json!({"readOnly":{"type":"boolean"}}),
+        vec![],
+    );
+    add(
+        "iroh.sync",
+        "Publish local changes and pull remote ones.",
+        empty.clone(),
+        vec![],
+    );
+    add(
+        "iroh.leave",
+        "Leave the shared workspace on this device.",
+        empty.clone(),
+        vec![],
+    );
+    add(
+        "iroh.peers",
+        "List connected sync peers.",
         empty.clone(),
         vec![],
     );
@@ -3707,7 +3728,7 @@ mod tests {
         .unwrap();
         let tools = list["result"]["tools"].as_array().unwrap();
         assert!(tools.iter().any(|t| t["name"] == "card.create"));
-        assert!(tools.iter().any(|t| t["name"] == "git.sync"));
+        assert!(tools.iter().any(|t| t["name"] == "iroh.status"));
     }
 
     #[test]
@@ -3767,7 +3788,7 @@ mod tests {
             history: crate::history::History::new(20, ws.clone()),
             ws,
             adblock: crate::integrations::Adblock::new(),
-            git: crate::gitsync::GitSync::default(),
+            iroh: crate::irohsync::IrohSync::disabled(),
             update: crate::updates::UpdateState::default(),
             last_saved: None,
             last_file_mtime: None,
@@ -3797,7 +3818,7 @@ mod tests {
             history: crate::history::History::new(20, ws.clone()),
             ws,
             adblock: crate::integrations::Adblock::new(),
-            git: crate::gitsync::GitSync::default(),
+            iroh: crate::irohsync::IrohSync::disabled(),
             update: crate::updates::UpdateState::default(),
             last_saved: None,
             last_file_mtime: None,

@@ -18,6 +18,7 @@ use crate::updates;
 
 static THEMES_DIRTY: AtomicBool = AtomicBool::new(true);
 static MCP_HTTP_STARTED: AtomicBool = AtomicBool::new(false);
+static SNAPSHOT_STARTED: AtomicBool = AtomicBool::new(false);
 
 fn runtime() -> &'static tokio::runtime::Runtime {
     static RT: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
@@ -108,7 +109,7 @@ pub mod qobject {
         #[qproperty(bool, syncing, cxx_name = "syncing")]
         #[qproperty(bool, ai_busy, cxx_name = "aiBusy")]
         #[qproperty(QString, update_json, cxx_name = "updateJson")]
-        #[qproperty(QString, git_json, cxx_name = "gitJson")]
+        #[qproperty(QString, iroh_json, cxx_name = "irohJson")]
         #[qproperty(QString, search_json, cxx_name = "searchJson")]
         #[qproperty(QString, themes_json, cxx_name = "themesJson")]
         #[qproperty(QString, fonts_json, cxx_name = "fontsJson")]
@@ -404,8 +405,28 @@ pub mod qobject {
         fn sync_now(self: Pin<&mut Self>);
 
         #[qinvokable]
-        #[cxx_name = "gitSyncNow"]
-        fn git_sync_now(self: Pin<&mut Self>);
+        #[cxx_name = "irohCreate"]
+        fn iroh_create(self: Pin<&mut Self>) -> QString;
+
+        #[qinvokable]
+        #[cxx_name = "irohJoin"]
+        fn iroh_join(self: Pin<&mut Self>, ticket: &QString) -> QString;
+
+        #[qinvokable]
+        #[cxx_name = "irohShare"]
+        fn iroh_share(self: Pin<&mut Self>, read_only: bool) -> QString;
+
+        #[qinvokable]
+        #[cxx_name = "irohSyncNow"]
+        fn iroh_sync_now(self: Pin<&mut Self>);
+
+        #[qinvokable]
+        #[cxx_name = "irohLeave"]
+        fn iroh_leave(self: Pin<&mut Self>) -> QString;
+
+        #[qinvokable]
+        #[cxx_name = "copyText"]
+        fn copy_text(self: Pin<&mut Self>, text: &QString);
 
         #[qinvokable]
         #[cxx_name = "gdriveConnect"]
@@ -672,7 +693,7 @@ pub struct AppControllerRust {
     syncing: bool,
     ai_busy: bool,
     update_json: QString,
-    git_json: QString,
+    iroh_json: QString,
     search_json: QString,
     themes_json: QString,
     fonts_json: QString,
@@ -682,7 +703,7 @@ pub struct AppControllerRust {
 
 impl Default for AppControllerRust {
     fn default() -> Self {
-        let core = Core::boot().unwrap_or_else(|e| {
+        let core = Core::boot_gui().unwrap_or_else(|e| {
             tracing::error!("boot failed: {e}");
             Core::fallback()
         });
@@ -704,7 +725,7 @@ impl Default for AppControllerRust {
             syncing: false,
             ai_busy: false,
             update_json: QString::default(),
-            git_json: QString::from("{}"),
+            iroh_json: QString::from("{}"),
             search_json: QString::from("[]"),
             themes_json: model::themes().to_string().into(),
             fonts_json: model::fonts().to_string().into(),
@@ -754,7 +775,7 @@ impl qobject::AppController {
                 core.active_grid_view().1,
                 core.active_grid_view().2,
                 serde_json::to_string(&core.update).unwrap_or_else(|_| "{}".into()),
-                core.git.status_json(),
+                core.iroh.status_json(),
             )
         };
         macro_rules! set_str {
@@ -789,12 +810,52 @@ impl qobject::AppController {
             self.as_mut().set_viewport_height(vh);
         }
         set_str!(update_json, set_update_json, upd);
-        set_str!(git_json, set_git_json, git);
+        set_str!(iroh_json, set_iroh_json, git);
     }
 
     pub fn boot(mut self: Pin<&mut Self>) {
         let qt = self.as_ref().qt_thread();
         crate::deeplink::register(qt.clone());
+        // Give the sync engine a view of the live workspace and a way to
+        // apply remote records without an outbound republish.
+        {
+            let core_arc = self.as_ref().rust().core.clone();
+            let iroh = core_arc.lock().unwrap().iroh.clone();
+            let snapshot_core = core_arc.clone();
+            let apply_core = core_arc.clone();
+            let apply_qt = qt.clone();
+            iroh.attach(
+                Arc::new(move || snapshot_core.try_lock().ok().map(|c| c.ws.clone())),
+                Arc::new(move |records| {
+                    let Ok(mut core) = apply_core.try_lock() else {
+                        return None;
+                    };
+                    let changed = core.apply_remote(records);
+                    if changed {
+                        let qt = apply_qt.clone();
+                        let _ = qt.queue(|mut q| q.as_mut().refresh());
+                    }
+                    Some(changed)
+                }),
+            );
+        }
+        // Independent local durability: a daily workspace snapshot, pruned to
+        // the newest eight. This survives loss of the Iroh store or its peers.
+        if !SNAPSHOT_STARTED.swap(true, Ordering::SeqCst) {
+            let core_arc = self.as_ref().rust().core.clone();
+            std::thread::spawn(move || loop {
+                std::thread::sleep(Duration::from_secs(300));
+                let data_dir = { core_arc.lock().unwrap().data_dir.clone() };
+                let backups = data_dir.join("backups");
+                let _ = std::fs::create_dir_all(&backups);
+                let stamp = time::OffsetDateTime::now_utc().unix_timestamp();
+                let dest = backups.join(format!("snapshot-{stamp}.zip"));
+                if crate::storage::export_zip(&data_dir, &dest).is_ok() {
+                    prune_snapshots(&backups, 8);
+                }
+                std::thread::sleep(Duration::from_secs(86_400));
+            });
+        }
         // Expose this same Core over the Streamable HTTP MCP transport so an
         // agent shares the running process instead of a second copy.
         if !MCP_HTTP_STARTED.swap(true, Ordering::SeqCst) {
@@ -1769,29 +1830,77 @@ impl qobject::AppController {
         });
     }
 
-    pub fn git_sync_now(mut self: Pin<&mut Self>) {
-        let (git, dir, config) = {
-            let core_arc = self.as_ref().rust().core.clone();
-            let core = core_arc.lock().unwrap();
-            (core.git.clone(), core.data_dir.clone(), core.git_config())
-        };
+    pub fn iroh_create(mut self: Pin<&mut Self>) -> QString {
+        let iroh = self.as_ref().rust().core.lock().unwrap().iroh.clone();
+        match iroh.create_workspace() {
+            Ok(ticket) => {
+                self.as_mut().refresh_all();
+                s(ticket)
+            }
+            Err(err) => {
+                self.as_mut().notice(s("sync-error"), s(err.to_string()));
+                s("")
+            }
+        }
+    }
+
+    pub fn iroh_join(mut self: Pin<&mut Self>, ticket: &QString) -> QString {
+        let iroh = self.as_ref().rust().core.lock().unwrap().iroh.clone();
+        match iroh.join(&p(ticket)) {
+            Ok(namespace) => {
+                self.as_mut().refresh_all();
+                s(namespace)
+            }
+            Err(err) => {
+                self.as_mut().notice(s("sync-error"), s(err.to_string()));
+                s("")
+            }
+        }
+    }
+
+    pub fn iroh_share(mut self: Pin<&mut Self>, read_only: bool) -> QString {
+        let iroh = self.as_ref().rust().core.lock().unwrap().iroh.clone();
+        match iroh.share(read_only) {
+            Ok(ticket) => s(ticket),
+            Err(err) => {
+                self.as_mut().notice(s("sync-error"), s(err.to_string()));
+                s("")
+            }
+        }
+    }
+
+    pub fn iroh_sync_now(mut self: Pin<&mut Self>) {
+        let iroh = self.as_ref().rust().core.lock().unwrap().iroh.clone();
         let qt = self.as_mut().qt_thread();
         std::thread::spawn(move || {
-            let result = git.sync_now(&dir, &config);
+            let result = iroh.sync_now();
             let _ = qt.queue(move |mut q| match result {
-                Ok(status) => {
-                    let core_arc = q.as_ref().rust().core.clone();
-                    if let Ok(mut core) = core_arc.lock() {
-                        let _ = core.reload_from_disk();
-                    }
+                Ok(_) => {
                     q.as_mut().refresh_all();
-                    q.as_mut().notice(s("git"), s(status));
+                    q.as_mut().notice(s("sync"), s("Synced"));
                 }
                 Err(err) => {
-                    q.as_mut().notice(s("git-error"), s(err.to_string()));
+                    q.as_mut().notice(s("sync-error"), s(err.to_string()));
                 }
             });
         });
+    }
+
+    pub fn copy_text(mut self: Pin<&mut Self>, text: &QString) {
+        if crate::clipboard::write_text(&p(text)) {
+            self.as_mut().notice(s("copied"), s("Copied to clipboard"));
+        }
+    }
+
+    pub fn iroh_leave(mut self: Pin<&mut Self>) -> QString {
+        let iroh = self.as_ref().rust().core.lock().unwrap().iroh.clone();
+        match iroh.leave() {
+            Ok(_) => s("left"),
+            Err(err) => {
+                self.as_mut().notice(s("sync-error"), s(err.to_string()));
+                s("")
+            }
+        }
     }
 
     pub fn gdrive_connect(mut self: Pin<&mut Self>) -> QString {
@@ -2218,4 +2327,22 @@ async fn wait_for_oauth_code(port: u16) -> anyhow::Result<String> {
     );
     let _ = socket.write_all(response.as_bytes()).await;
     Ok(code)
+}
+
+fn prune_snapshots(dir: &std::path::Path, keep: usize) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let mut snapshots: Vec<_> = entries
+        .flatten()
+        .filter(|e| {
+            e.file_name().to_string_lossy().starts_with("snapshot-")
+                && e.path().extension().and_then(|v| v.to_str()) == Some("zip")
+        })
+        .collect();
+    snapshots.sort_by_key(|e| e.metadata().and_then(|m| m.modified()).ok());
+    while snapshots.len() > keep {
+        let entry = snapshots.remove(0);
+        let _ = std::fs::remove_file(entry.path());
+    }
 }

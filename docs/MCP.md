@@ -203,9 +203,13 @@ API keys are write-only: `settings.get` redacts them; logs never include them.
 | `sync.now` | - |
 | `sync.configure` | `enabled`, `provider` (`folder`\|`gdrive`), `folder?` |
 | `gdrive.connect` / `gdrive.disconnect` | PKCE flow (browser) |
-| `git.status` | enabled, remote, branch, last sync, last error |
-| `git.configure` | enabled, remote, branch, autoPull, autoPush, includeAttachments, auth (`system`\|`gh`) |
-| `git.sync` | commit, pull/ff/union-merge, push |
+| `iroh.status` | enabled, namespace, peers, last sync, last error |
+| `iroh.create` | create a shared workspace and return its write ticket |
+| `iroh.join` | `ticket` |
+| `iroh.share` | `readOnly` (`false` returns the write ticket) |
+| `iroh.sync` | publish local changes and pull remote ones |
+| `iroh.leave` | leave the shared workspace on this device |
+| `iroh.peers` | connected peers |
 | `backup.export` / `backup.import` | `path` |
 | `data.setDir` | `path` |
 | `attachments.list/read/write/delete` | base64 for binary |
@@ -378,7 +382,7 @@ Implemented in `src/mcp.rs`, started with `corcho --mcp` or `corcho --mcp-http`:
   card.run, stats.
 - Grids: create, rename, switch, move, reorder, delete, custom SVG icons.
 - Appearance: theme list/get/set/custom, CSS themes (template/get/set/delete), system/light/dark mode, font list/set, effects, audio volume.
-- Sync/data: sync status/configure/now, git status/configure/sync, backup
+- Sync/data: folder/Drive sync, Iroh status/create/join/share/sync/leave/peers, backup
   export/import, data.setDir, attachments list/read/write/delete.
 - OS/app: update check/download/install, launch at startup, open external,
   relaunch, changelog, about, diagnostics, tutorial reset, onboarding complete,
@@ -395,7 +399,7 @@ Implemented in `src/mcp.rs`, started with `corcho --mcp` or `corcho --mcp-http`:
 Covered without a running GUI:
 
 - All model, card, grid, folder, calendar, date link, settings, theme, font,
-  backup, attachment, sync, git, update, MPRIS, script and AI calls.
+  backup, attachment, sync, Iroh peer sync, update, MPRIS, script and AI calls.
 - Frame/visibility math against a supplied frame or a previously reported
   viewport.
 - Web content for public URLs through headless Chromium.

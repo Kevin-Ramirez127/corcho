@@ -177,7 +177,7 @@ enum CardKind { Note, Website, Bookmark, ApiData, Ai, Script,
 ### 7.6 Sync, backup, data (`crates/sync`, `crates/storage`)
 - **Folder sync** provider: any local/cloud-mounted directory (works for iCloud Drive on macOS, Nextcloud/Dropbox mounts on Linux) via `notify` watcher + debounce. This replaces the macOS-only iCloud helper on Linux.
 - **Google Drive**: `oauth2` (PKCE, local redirect) + `reqwest` Drive v3 `appDataFolder`; refresh tokens; conflict backup files; delete/clear data.
-- **Git sync**: managed repo in the data folder, any remote (GitHub/Codeberg/GitLab/self-hosted), pull at start, debounced auto-push, explicit two-parent union merge on divergence, conflict copies in `backups/`.
+- **Peer sync**: Iroh Documents with one document per workspace, per-record Lamport clocks, tombstones, conflict copies in `backups/`, content-addressed attachments, an optional read-only `--sync-daemon`, and daily snapshot zips.
 - Conflict resolution: mtime + content hash + `.backup_<ts>` like upstream; never overwrite on unknown cloud state.
 - Import/export `.corcho` ZIP; selective wipe; data-folder selection.
 
@@ -402,7 +402,7 @@ Delivered in this repository:
 - [x] Timbre audio card with manual start/stop and visualizer.
 - [x] Five AI providers plus local server, streaming, context, key validation.
 - [x] Isolated website sessions, host ad blocker, cookie panel, session probe.
-- [x] Folder sync, Google Drive sync, git sync (any remote), conflict copies,
+- [x] Folder sync, Google Drive sync, Iroh peer sync, conflict copies,
       zip backup/restore, legacy import.
 - [x] Updates (stable/beta/experimental), MPRIS, scripts, launch at startup,
       single instance, `corcho://` deep links.

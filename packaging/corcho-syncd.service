@@ -1,0 +1,16 @@
+[Unit]
+Description=Corcho read-only peer sync daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# ~/.config/corcho/syncd.env contains:
+#   CORCHO_SYNC_TICKET=<read-ticket>
+EnvironmentFile=%h/.config/corcho/syncd.env
+ExecStart=/usr/local/bin/corcho --sync-daemon --data-dir %h/.local/share/corcho --ticket ${CORCHO_SYNC_TICKET}
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

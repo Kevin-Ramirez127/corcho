@@ -2,7 +2,7 @@
 name = "corcho"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.85"
+rust-version = "1.91"
 license = "MIT"
 description = "A native grid workspace for notes, sites, tasks and calendars; built with Rust and Qt 6"
 default-run = "corcho"
@@ -14,7 +14,7 @@ cxx-qt-lib = { version = "0.10", features = ["qt_full"] }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "process", "fs", "io-util"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "process", "fs", "io-util", "signal"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
 futures-util = "0.3"
 notify = "8"
@@ -33,6 +33,12 @@ open = "5"
 directories = "6"
 libc = "0.2"
 cpal = "0.16"
+
+iroh = "1.4"
+iroh-docs = { version = "0.101", features = ["fs-store"] }
+iroh-blobs = { version = "=0.103.1", features = ["fs-store"] }
+iroh-gossip = "0.101"
+iroh-tickets = "1"
 
 [build-dependencies]
 cxx-qt-build = { version = "0.10" }

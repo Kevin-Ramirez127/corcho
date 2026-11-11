@@ -5,9 +5,9 @@ mod clipboard;
 mod core;
 mod deeplink;
 mod gitcard;
-mod gitsync;
 mod history;
 mod integrations;
+mod irohsync;
 mod logging;
 mod mcp;
 mod model;
@@ -97,6 +97,41 @@ fn main() {
     if args.iter().any(|a| a == "--mcp") || std::env::var("CORCHO_MCP").as_deref() == Ok("1") {
         if let Err(err) = mcp::serve() {
             eprintln!("mcp: {err}");
+            std::process::exit(1);
+        }
+        return;
+    }
+    if let Some(index) = args.iter().position(|a| a == "--sync-daemon") {
+        let mut ticket = String::new();
+        let mut data_dir = storage::default_data_dir();
+        let mut i = index + 1;
+        while i < args.len() {
+            match args[i].as_str() {
+                "--ticket" => {
+                    if let Some(value) = args.get(i + 1) {
+                        ticket = value.clone();
+                    }
+                    i += 2;
+                }
+                "--data-dir" => {
+                    if let Some(value) = args.get(i + 1) {
+                        data_dir = std::path::PathBuf::from(value);
+                    }
+                    i += 2;
+                }
+                other if !other.starts_with("--") => {
+                    ticket = other.to_string();
+                    i += 1;
+                }
+                _ => i += 1,
+            }
+        }
+        if ticket.trim().is_empty() {
+            eprintln!("corcho sync daemon: --ticket <read-ticket> is required");
+            std::process::exit(2);
+        }
+        if let Err(err) = irohsync::run_daemon(data_dir, ticket) {
+            eprintln!("corcho sync daemon: {err}");
             std::process::exit(1);
         }
         return;

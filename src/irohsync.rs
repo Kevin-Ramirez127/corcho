@@ -1,0 +1,1572 @@
+//! Peer-to-peer workspace replication over Iroh Documents.
+//!
+//! One document per workspace. Every grid, card, folder, calendar, date link,
+//! template, settings view and attachment is a record under a stable key, so a
+//! change publishes only what changed. Records carry a Lamport clock and the
+//! device id; the highest `(clock, device)` wins. Deletions are tombstones, so
+//! a stale peer cannot resurrect an object. Losing values are kept in
+//! `backups/`.
+//!
+//! The GUI owns the live `Workspace`; this module only sees snapshots and
+//! hands applied records back through a callback. The network runtime and the
+//! Iroh endpoint live in a dedicated thread so the Qt thread never blocks.
+
+use std::collections::{BTreeMap, HashMap};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+
+use anyhow::{anyhow, Result};
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
+
+use crate::model::{CalendarDef, Card, DateLink, Folder, Grid, Settings, Template, Workspace};
+use crate::storage;
+
+const SCHEMA: u32 = 1;
+const STATE_FILE: &str = "sync-state.json";
+const ENDPOINT_KEY_FILE: &str = "endpoint.key";
+const DEBOUNCE: Duration = Duration::from_secs(2);
+
+pub type SnapshotFn = Arc<dyn Fn() -> Option<Workspace> + Send + Sync>;
+pub type ApplyFn = Arc<dyn Fn(Vec<(String, Record)>) -> Option<bool> + Send + Sync>;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Record {
+    #[serde(default = "default_schema")]
+    pub v: u32,
+    pub device: String,
+    pub clock: u64,
+    #[serde(default)]
+    pub deleted: bool,
+    #[serde(default)]
+    pub value: Option<Value>,
+}
+
+fn default_schema() -> u32 {
+    SCHEMA
+}
+
+impl Record {
+    fn newer_than(&self, clock: u64, device: &str) -> bool {
+        (self.clock, self.device.as_str()) > (clock, device)
+    }
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+struct Applied {
+    clock: u64,
+    device: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+struct LocalState {
+    #[serde(default)]
+    device: String,
+    #[serde(default)]
+    clock: u64,
+    #[serde(default)]
+    write_ticket: Option<String>,
+    #[serde(default)]
+    read_ticket: Option<String>,
+    #[serde(default)]
+    applied: HashMap<String, Applied>,
+    #[serde(default)]
+    last_published: HashMap<String, String>,
+    #[serde(default)]
+    last_sync: Option<String>,
+    #[serde(default)]
+    attachments: HashMap<String, String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct IrohConfig {
+    pub enabled: bool,
+    pub include_attachments: bool,
+}
+
+impl Default for IrohConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            include_attachments: true,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+struct Status {
+    ready: bool,
+    configured: bool,
+    namespace: Option<String>,
+    write_ticket: bool,
+    read_ticket: bool,
+    device: Option<String>,
+    clock: u64,
+    peers: usize,
+    last_sync: Option<String>,
+    last_error: Option<String>,
+    pending: bool,
+}
+
+struct Inner {
+    tx: Mutex<Option<Sender<Command>>>,
+    status: Mutex<Status>,
+    config: Mutex<IrohConfig>,
+    snapshot: Mutex<Option<SnapshotFn>>,
+    apply: Mutex<Option<ApplyFn>>,
+    state: Mutex<LocalState>,
+    dirty_since: Mutex<Option<Instant>>,
+    pull_requested: AtomicBool,
+    peers: AtomicUsize,
+    stop: AtomicBool,
+    data_dir: PathBuf,
+}
+
+enum Command {
+    Wake,
+    Enable(bool),
+    Create {
+        reply: Sender<Result<String>>,
+    },
+    Join {
+        ticket: String,
+        reply: Sender<Result<String>>,
+    },
+    Share {
+        read_only: bool,
+        reply: Sender<Result<String>>,
+    },
+    SyncNow {
+        reply: Sender<Result<String>>,
+    },
+    Leave {
+        reply: Sender<Result<String>>,
+    },
+    Shutdown,
+}
+
+#[derive(Clone)]
+pub struct IrohSync {
+    inner: Arc<Inner>,
+}
+
+impl IrohSync {
+    /// A handle with no networking, used by headless MCP clients and tests.
+    pub fn disabled() -> Self {
+        Self {
+            inner: Arc::new(Inner {
+                tx: Mutex::new(None),
+                status: Mutex::new(Status::default()),
+                config: Mutex::new(IrohConfig::default()),
+                snapshot: Mutex::new(None),
+                apply: Mutex::new(None),
+                state: Mutex::new(LocalState::default()),
+                dirty_since: Mutex::new(None),
+                pull_requested: AtomicBool::new(false),
+                peers: AtomicUsize::new(0),
+                stop: AtomicBool::new(false),
+                data_dir: storage::default_data_dir(),
+            }),
+        }
+    }
+
+    /// Start the Iroh endpoint and the document worker for this data dir.
+    pub fn start(data_dir: PathBuf, config: IrohConfig) -> Self {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let inner = Arc::new(Inner {
+            tx: Mutex::new(Some(tx)),
+            status: Mutex::new(Status::default()),
+            config: Mutex::new(config),
+            snapshot: Mutex::new(None),
+            apply: Mutex::new(None),
+            state: Mutex::new(load_local_state(&data_dir)),
+            dirty_since: Mutex::new(None),
+            pull_requested: AtomicBool::new(false),
+            peers: AtomicUsize::new(0),
+            stop: AtomicBool::new(false),
+            data_dir,
+        });
+        let worker_inner = inner.clone();
+        let _ = std::thread::Builder::new()
+            .name("corcho-iroh".into())
+            .spawn(move || worker(worker_inner, rx));
+        Self { inner }
+    }
+
+    pub fn attach(&self, snapshot: SnapshotFn, apply: ApplyFn) {
+        *self.inner.snapshot.lock().unwrap() = Some(snapshot);
+        *self.inner.apply.lock().unwrap() = Some(apply);
+        self.wake();
+    }
+
+    pub fn configure(&self, config: IrohConfig) {
+        let enabled = config.enabled;
+        *self.inner.config.lock().unwrap() = config;
+        let _ = self.send(Command::Enable(enabled));
+    }
+
+    pub fn enabled(&self) -> bool {
+        self.inner.config.lock().map(|c| c.enabled).unwrap_or(false)
+    }
+
+    pub fn mark_dirty(&self) {
+        if !self.enabled() {
+            return;
+        }
+        *self.inner.dirty_since.lock().unwrap() = Some(Instant::now());
+        self.wake();
+    }
+
+    pub fn create_workspace(&self) -> Result<String> {
+        let (reply, rx) = std::sync::mpsc::channel();
+        self.send(Command::Create { reply })?;
+        rx.recv_timeout(Duration::from_secs(10))
+            .map_err(|_| anyhow!("timed out creating the Iroh workspace"))?
+    }
+
+    pub fn join(&self, ticket: &str) -> Result<String> {
+        let (reply, rx) = std::sync::mpsc::channel();
+        self.send(Command::Join {
+            ticket: ticket.to_string(),
+            reply,
+        })?;
+        rx.recv_timeout(Duration::from_secs(20))
+            .map_err(|_| anyhow!("timed out joining the Iroh workspace"))?
+    }
+
+    pub fn share(&self, read_only: bool) -> Result<String> {
+        let (reply, rx) = std::sync::mpsc::channel();
+        self.send(Command::Share { read_only, reply })?;
+        rx.recv_timeout(Duration::from_secs(10))
+            .map_err(|_| anyhow!("timed out creating the share ticket"))?
+    }
+
+    pub fn sync_now(&self) -> Result<String> {
+        let (reply, rx) = std::sync::mpsc::channel();
+        self.send(Command::SyncNow { reply })?;
+        rx.recv_timeout(Duration::from_secs(60))
+            .map_err(|_| anyhow!("timed out syncing the Iroh workspace"))?
+    }
+
+    pub fn leave(&self) -> Result<String> {
+        let (reply, rx) = std::sync::mpsc::channel();
+        self.send(Command::Leave { reply })?;
+        rx.recv_timeout(Duration::from_secs(10))
+            .map_err(|_| anyhow!("timed out leaving the Iroh workspace"))?
+    }
+
+    pub fn status_json(&self) -> String {
+        let config = self
+            .inner
+            .config
+            .lock()
+            .map(|c| c.clone())
+            .unwrap_or_default();
+        let mut status = self
+            .inner
+            .status
+            .lock()
+            .map(|s| s.clone())
+            .unwrap_or_default();
+        status.peers = self.inner.peers.load(Ordering::Relaxed);
+        status.clock = self
+            .inner
+            .state
+            .lock()
+            .map(|s| s.clock)
+            .unwrap_or(status.clock);
+        status.pending = self
+            .inner
+            .dirty_since
+            .lock()
+            .map(|d| d.is_some())
+            .unwrap_or(false);
+        let state = self.inner.state.lock().ok();
+        json!({
+            "enabled": config.enabled,
+            "includeAttachments": config.include_attachments,
+            "ready": status.ready,
+            "configured": status.configured,
+            "namespace": status.namespace,
+            "writeTicket": status.write_ticket,
+            "readTicket": status.read_ticket,
+            "device": status.device,
+            "clock": status.clock,
+            "peers": status.peers,
+            "lastSync": status.last_sync,
+            "lastError": status.last_error,
+            "pending": status.pending,
+            "remoteAttachments": state.as_ref().map(|s| s.attachments.len()).unwrap_or(0),
+        })
+        .to_string()
+    }
+
+    pub fn shutdown(&self) {
+        self.inner.stop.store(true, Ordering::Relaxed);
+        let _ = self.send(Command::Shutdown);
+    }
+
+    fn send(&self, command: Command) -> Result<()> {
+        let tx = self
+            .inner
+            .tx
+            .lock()
+            .map_err(|_| anyhow!("sync lock"))?
+            .clone()
+            .ok_or_else(|| anyhow!("Iroh sync is not running"))?;
+        tx.send(command).map_err(|_| anyhow!("Iroh sync stopped"))
+    }
+
+    fn wake(&self) {
+        let _ = self.send(Command::Wake);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Worker
+// ---------------------------------------------------------------------------
+
+struct Network {
+    endpoint: iroh::Endpoint,
+    router: iroh::protocol::Router,
+    blobs: iroh_blobs::store::fs::FsStore,
+    docs: iroh_docs::protocol::Docs,
+    author: iroh_docs::AuthorId,
+}
+
+fn worker(inner: Arc<Inner>, rx: Receiver<Command>) {
+    let runtime = match tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .worker_threads(2)
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(err) => {
+            set_error(&inner, format!("cannot start sync runtime: {err}"));
+            return;
+        }
+    };
+
+    let network = match runtime.block_on(start_network(&inner)) {
+        Ok(net) => net,
+        Err(err) => {
+            set_error(&inner, format!("Iroh unavailable: {err}"));
+            {
+                let mut status = inner.status.lock().unwrap();
+                status.ready = false;
+            }
+            // Keep serving commands so the UI can report the error and retry
+            // after e.g. a network change.
+            for command in rx.iter() {
+                match command {
+                    Command::Shutdown => break,
+                    Command::Wake => {}
+                    Command::Create { reply }
+                    | Command::Join { reply, .. }
+                    | Command::Share { reply, .. }
+                    | Command::SyncNow { reply }
+                    | Command::Leave { reply } => {
+                        let _ = reply.send(Err(anyhow!(
+                            "Iroh is not available: {}",
+                            status_error(&inner)
+                        )));
+                    }
+                    Command::Enable(_) => {}
+                }
+            }
+            return;
+        }
+    };
+
+    {
+        let mut status = inner.status.lock().unwrap();
+        status.ready = true;
+        status.device = Some(network.endpoint.id().to_string());
+        status.last_error = None;
+    }
+    {
+        let mut state = inner.state.lock().unwrap();
+        if state.device.is_empty() {
+            state.device = network.endpoint.id().to_string();
+            save_state(&inner, &state);
+        }
+    }
+
+    let enabled = inner.config.lock().map(|c| c.enabled).unwrap_or(false);
+    let mut doc = if enabled {
+        match runtime.block_on(open_document(&inner, &network)) {
+            Ok(doc) => doc,
+            Err(err) => {
+                set_error(&inner, format!("cannot open Iroh workspace: {err}"));
+                None
+            }
+        }
+    } else {
+        None
+    };
+    if doc.is_some() {
+        start_subscription(
+            inner.clone(),
+            doc.clone().unwrap(),
+            runtime.handle().clone(),
+        );
+    }
+
+    loop {
+        match rx.recv_timeout(Duration::from_millis(300)) {
+            Ok(Command::Wake) => {}
+            Ok(Command::Shutdown) => break,
+            Ok(Command::Enable(enabled)) => {
+                if enabled && doc.is_none() {
+                    if let Ok(Some(opened)) = runtime.block_on(open_document(&inner, &network)) {
+                        doc = Some(opened.clone());
+                        start_subscription(inner.clone(), opened.clone(), runtime.handle().clone());
+                        inner.pull_requested.store(true, Ordering::Relaxed);
+                    }
+                }
+                let mut status = inner.status.lock().unwrap();
+                status.configured = enabled && status.write_ticket;
+            }
+            Ok(Command::Create { reply }) => {
+                let result = runtime.block_on(create_workspace(&inner, &network));
+                if let Ok((ticket, new_doc)) = &result {
+                    doc = Some(new_doc.clone());
+                    start_subscription(inner.clone(), new_doc.clone(), runtime.handle().clone());
+                    *inner.dirty_since.lock().unwrap() = Some(Instant::now() - DEBOUNCE);
+                    let _ = reply.send(Ok(ticket.clone()));
+                } else if let Err(err) = result {
+                    let _ = reply.send(Err(err));
+                }
+            }
+            Ok(Command::Join { ticket, reply }) => {
+                let result = runtime.block_on(join_workspace(&inner, &network, &ticket));
+                match result {
+                    Ok(joined) => {
+                        doc = Some(joined.clone());
+                        start_subscription(inner.clone(), joined.clone(), runtime.handle().clone());
+                        inner.pull_requested.store(true, Ordering::Relaxed);
+                        let _ = reply.send(Ok(namespace_id(&inner)));
+                    }
+                    Err(err) => {
+                        let _ = reply.send(Err(err));
+                    }
+                }
+            }
+            Ok(Command::Share { read_only, reply }) => {
+                let result = match &doc {
+                    Some(doc) => runtime
+                        .block_on(share_document(&inner, doc, read_only))
+                        .map_err(|e| anyhow!("{e}")),
+                    None => Err(anyhow!("no Iroh workspace configured")),
+                };
+                let _ = reply.send(result);
+            }
+            Ok(Command::SyncNow { reply }) => {
+                let result = if doc.is_some() {
+                    *inner.dirty_since.lock().unwrap() = Some(Instant::now() - DEBOUNCE);
+                    inner.pull_requested.store(true, Ordering::Relaxed);
+                    Ok(namespace_id(&inner))
+                } else {
+                    Err(anyhow!("no Iroh workspace configured"))
+                };
+                let _ = reply.send(result);
+            }
+            Ok(Command::Leave { reply }) => {
+                if let Some(doc) = &doc {
+                    let _ = runtime.block_on(doc.leave());
+                    let _ = runtime.block_on(doc.close());
+                }
+                doc = None;
+                {
+                    let mut state = inner.state.lock().unwrap();
+                    state.write_ticket = None;
+                    state.read_ticket = None;
+                    state.applied.clear();
+                    state.last_published.clear();
+                    save_state(&inner, &state);
+                }
+                inner.peers.store(0, Ordering::Relaxed);
+                {
+                    let mut status = inner.status.lock().unwrap();
+                    status.configured = false;
+                    status.namespace = None;
+                    status.write_ticket = false;
+                    status.read_ticket = false;
+                    status.peers = 0;
+                }
+                let _ = reply.send(Ok("left".into()));
+            }
+            Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => break,
+        }
+
+        if inner.stop.load(Ordering::Relaxed) {
+            break;
+        }
+
+        if inner.pull_requested.load(Ordering::Relaxed)
+            && inner.apply.lock().map(|a| a.is_some()).unwrap_or(false)
+        {
+            if let Some(doc) = &doc {
+                let done = runtime.block_on(async { pull_and_apply(&inner, &network, doc).await });
+                if done {
+                    inner.pull_requested.store(false, Ordering::Relaxed);
+                }
+            }
+        }
+
+        let publish_due = inner
+            .dirty_since
+            .lock()
+            .map(|d| d.map(|t| t.elapsed() >= DEBOUNCE).unwrap_or(false))
+            .unwrap_or(false);
+        if publish_due {
+            if let Some(doc) = &doc {
+                if runtime.block_on(async { publish(&inner, &network, doc).await }) {
+                    *inner.dirty_since.lock().unwrap() = None;
+                }
+            }
+        }
+    }
+
+    if let Some(doc) = doc {
+        let _ = runtime.block_on(doc.close());
+    }
+    runtime.block_on(async {
+        let _ = network.router.shutdown().await;
+        let _ = network.blobs.shutdown().await;
+        network.endpoint.close().await;
+    });
+}
+
+async fn start_network(inner: &Arc<Inner>) -> Result<Network> {
+    let iroh_dir = inner.data_dir.join("iroh");
+    std::fs::create_dir_all(&iroh_dir)?;
+    std::fs::create_dir_all(iroh_dir.join("blobs"))?;
+    std::fs::create_dir_all(iroh_dir.join("docs"))?;
+
+    let key = load_endpoint_key(&iroh_dir)?;
+    let endpoint = iroh::Endpoint::builder(iroh::endpoint::presets::N0)
+        .secret_key(key)
+        .bind()
+        .await
+        .map_err(|e| anyhow!("bind endpoint: {e}"))?;
+
+    let blobs = iroh_blobs::store::fs::FsStore::load(iroh_dir.join("blobs"))
+        .await
+        .map_err(|e| anyhow!("blob store: {e}"))?;
+    let gossip = iroh_gossip::net::Gossip::builder().spawn(endpoint.clone());
+    let blobs_store: iroh_blobs::api::Store = blobs.clone().into();
+    let docs = iroh_docs::protocol::Docs::persistent(iroh_dir.join("docs"))
+        .spawn(endpoint.clone(), blobs_store, gossip.clone())
+        .await
+        .map_err(|e| anyhow!("docs store: {e}"))?;
+    let author = docs
+        .author_default()
+        .await
+        .map_err(|e| anyhow!("author: {e}"))?;
+
+    let router = iroh::protocol::Router::builder(endpoint.clone())
+        .accept(
+            iroh_blobs::ALPN,
+            iroh_blobs::BlobsProtocol::new(&blobs, None),
+        )
+        .accept(iroh_gossip::ALPN, gossip)
+        .accept(iroh_docs::ALPN, docs.clone())
+        .spawn();
+
+    Ok(Network {
+        endpoint,
+        router,
+        blobs,
+        docs,
+        author,
+    })
+}
+
+fn load_endpoint_key(dir: &Path) -> Result<iroh::SecretKey> {
+    let path = dir.join(ENDPOINT_KEY_FILE);
+    if let Ok(bytes) = std::fs::read(&path) {
+        if bytes.len() == 32 {
+            let mut raw = [0u8; 32];
+            raw.copy_from_slice(&bytes);
+            return Ok(iroh::SecretKey::from_bytes(&raw));
+        }
+    }
+    let key = iroh::SecretKey::generate();
+    write_private(&path, &key.to_bytes())?;
+    Ok(key)
+}
+
+async fn open_document(
+    inner: &Arc<Inner>,
+    network: &Network,
+) -> Result<Option<iroh_docs::api::Doc>> {
+    let ticket = {
+        let state = inner.state.lock().unwrap();
+        state
+            .write_ticket
+            .clone()
+            .or_else(|| state.read_ticket.clone())
+    };
+    let Some(ticket) = ticket else {
+        return Ok(None);
+    };
+    let ticket = parse_ticket(&ticket)?;
+    let (doc, _events) = network
+        .docs
+        .import_and_subscribe(ticket)
+        .await
+        .map_err(|e| anyhow!("open ticket: {e}"))?;
+    let namespace = doc.id().to_string();
+    {
+        let mut status = inner.status.lock().unwrap();
+        status.configured = true;
+        status.namespace = Some(namespace);
+        let state = inner.state.lock().unwrap();
+        status.write_ticket = state.write_ticket.is_some();
+        status.read_ticket = state.read_ticket.is_some();
+        status.last_sync = state.last_sync.clone();
+    }
+    Ok(Some(doc))
+}
+
+async fn create_workspace(
+    inner: &Arc<Inner>,
+    network: &Network,
+) -> Result<(String, iroh_docs::api::Doc)> {
+    let doc = network
+        .docs
+        .create()
+        .await
+        .map_err(|e| anyhow!("create document: {e}"))?;
+    let write = doc
+        .share(
+            iroh_docs::api::protocol::ShareMode::Write,
+            iroh_docs::api::protocol::AddrInfoOptions::RelayAndAddresses,
+        )
+        .await
+        .map_err(|e| anyhow!("share document: {e}"))?;
+    let read = doc
+        .share(
+            iroh_docs::api::protocol::ShareMode::Read,
+            iroh_docs::api::protocol::AddrInfoOptions::RelayAndAddresses,
+        )
+        .await
+        .ok();
+    let write = encode_ticket(&write);
+    {
+        let mut state = inner.state.lock().unwrap();
+        state.write_ticket = Some(write.clone());
+        state.read_ticket = read.as_ref().map(encode_ticket);
+        state.clock = state.clock.max(1);
+        state.applied.clear();
+        state.last_published.clear();
+        state.last_sync = Some("created".into());
+        save_state(inner, &state);
+    }
+    {
+        let mut status = inner.status.lock().unwrap();
+        status.configured = true;
+        status.namespace = Some(doc.id().to_string());
+        status.write_ticket = true;
+        status.read_ticket = true;
+        status.last_error = None;
+    }
+    Ok((write, doc))
+}
+
+async fn join_workspace(
+    inner: &Arc<Inner>,
+    network: &Network,
+    ticket: &str,
+) -> Result<iroh_docs::api::Doc> {
+    let parsed = parse_ticket(ticket)?;
+    let writable = matches!(parsed.capability, iroh_docs::Capability::Write(_));
+    let (doc, _events) = network
+        .docs
+        .import_and_subscribe(parsed)
+        .await
+        .map_err(|e| anyhow!("join document: {e}"))?;
+    {
+        let mut state = inner.state.lock().unwrap();
+        if writable {
+            state.write_ticket = Some(ticket.to_string());
+        } else {
+            state.read_ticket = Some(ticket.to_string());
+        }
+        state.last_sync = Some("joined".into());
+        save_state(inner, &state);
+    }
+    {
+        let mut status = inner.status.lock().unwrap();
+        status.configured = true;
+        status.namespace = Some(doc.id().to_string());
+        status.write_ticket = writable;
+        status.read_ticket = !writable;
+        status.last_error = None;
+    }
+    Ok(doc)
+}
+
+async fn share_document(
+    inner: &Arc<Inner>,
+    doc: &iroh_docs::api::Doc,
+    read_only: bool,
+) -> Result<String> {
+    let mode = if read_only {
+        iroh_docs::api::protocol::ShareMode::Read
+    } else {
+        iroh_docs::api::protocol::ShareMode::Write
+    };
+    let ticket = doc
+        .share(
+            mode,
+            iroh_docs::api::protocol::AddrInfoOptions::RelayAndAddresses,
+        )
+        .await
+        .map_err(|e| anyhow!("share: {e}"))?;
+    let text = encode_ticket(&ticket);
+    {
+        let mut state = inner.state.lock().unwrap();
+        if read_only {
+            state.read_ticket = Some(text.clone());
+        } else {
+            state.write_ticket = Some(text.clone());
+        }
+        save_state(inner, &state);
+    }
+    Ok(text)
+}
+
+fn start_subscription(inner: Arc<Inner>, doc: iroh_docs::api::Doc, handle: tokio::runtime::Handle) {
+    use futures_util::StreamExt;
+    let tx = inner.tx.lock().unwrap().clone();
+    let peers = inner.clone();
+    handle.spawn(async move {
+        let Ok(mut events) = doc.subscribe().await else {
+            return;
+        };
+        while let Some(event) = events.next().await {
+            match event {
+                Ok(iroh_docs::engine::LiveEvent::InsertRemote { .. })
+                | Ok(iroh_docs::engine::LiveEvent::ContentReady { .. })
+                | Ok(iroh_docs::engine::LiveEvent::PendingContentReady)
+                | Ok(iroh_docs::engine::LiveEvent::SyncFinished(_)) => {
+                    peers.pull_requested.store(true, Ordering::Relaxed);
+                    if let Some(tx) = &tx {
+                        let _ = tx.send(Command::Wake);
+                    }
+                }
+                Ok(iroh_docs::engine::LiveEvent::NeighborUp(_)) => {
+                    peers.peers.fetch_add(1, Ordering::Relaxed);
+                }
+                Ok(iroh_docs::engine::LiveEvent::NeighborDown(_)) => {
+                    let current = peers.peers.load(Ordering::Relaxed);
+                    peers
+                        .peers
+                        .store(current.saturating_sub(1), Ordering::Relaxed);
+                }
+                _ => {}
+            }
+        }
+    });
+}
+
+async fn publish(inner: &Arc<Inner>, network: &Network, doc: &iroh_docs::api::Doc) -> bool {
+    if !inner.config.lock().map(|c| c.enabled).unwrap_or(false) {
+        return true;
+    }
+    let Some(snapshot) = inner.snapshot.lock().unwrap().clone() else {
+        return false;
+    };
+    let Some(ws) = snapshot() else {
+        return false;
+    };
+    let mut records = split_workspace(&ws);
+
+    if inner
+        .config
+        .lock()
+        .map(|c| c.include_attachments)
+        .unwrap_or(false)
+    {
+        publish_attachments(inner, network, doc, &mut records).await;
+    }
+
+    let mut plan: Vec<(String, Vec<u8>)> = Vec::new();
+    let mut tombstones: Vec<(String, Vec<u8>)> = Vec::new();
+    {
+        let mut state = inner.state.lock().unwrap();
+        let device = state.device.clone();
+        for (key, value) in &records {
+            let hash = value_hash(value);
+            if state.last_published.get(key) == Some(&hash) {
+                continue;
+            }
+            state.clock = state.clock.saturating_add(1);
+            let record = Record {
+                v: SCHEMA,
+                device: device.clone(),
+                clock: state.clock,
+                deleted: false,
+                value: Some(value.clone()),
+            };
+            match serde_json::to_vec(&record) {
+                Ok(bytes) => plan.push((key.clone(), bytes)),
+                Err(_) => continue,
+            }
+        }
+        let missing: Vec<String> = state
+            .last_published
+            .keys()
+            .filter(|key| !records.contains_key(*key))
+            .cloned()
+            .collect();
+        for key in missing {
+            state.clock = state.clock.saturating_add(1);
+            let record = Record {
+                v: SCHEMA,
+                device: device.clone(),
+                clock: state.clock,
+                deleted: true,
+                value: None,
+            };
+            if let Ok(bytes) = serde_json::to_vec(&record) {
+                tombstones.push((key, bytes));
+            }
+        }
+    }
+
+    let mut applied_keys: Vec<String> = Vec::new();
+    for (key, bytes) in plan {
+        if doc
+            .set_bytes(network.author, key.clone(), bytes)
+            .await
+            .is_ok()
+        {
+            applied_keys.push(key);
+        }
+    }
+    for (key, bytes) in tombstones {
+        if doc
+            .set_bytes(network.author, key.clone(), bytes)
+            .await
+            .is_ok()
+        {
+            applied_keys.push(key);
+        }
+    }
+
+    let mut state = inner.state.lock().unwrap();
+    for key in &applied_keys {
+        if let Some(value) = records.remove(key) {
+            state.last_published.insert(key.clone(), value_hash(&value));
+        } else {
+            state.last_published.remove(key);
+        }
+    }
+    if !applied_keys.is_empty() {
+        state.last_sync = Some(now());
+        let mut status = inner.status.lock().unwrap();
+        status.last_sync = state.last_sync.clone();
+        status.last_error = None;
+    }
+    save_state(inner, &state);
+    true
+}
+
+async fn pull_and_apply(inner: &Arc<Inner>, network: &Network, doc: &iroh_docs::api::Doc) -> bool {
+    use futures_util::StreamExt;
+    let query = iroh_docs::store::Query::single_latest_per_key().build();
+    let entries = match doc.get_many(query).await {
+        Ok(entries) => entries,
+        Err(err) => {
+            set_error(inner, format!("read document: {err}"));
+            return true;
+        }
+    };
+    let mut entries = Box::pin(entries);
+
+    let mut latest: HashMap<String, (Record, String)> = HashMap::new();
+    while let Some(entry) = entries.next().await {
+        let Ok(entry) = entry else { continue };
+        let key = String::from_utf8_lossy(entry.key()).to_string();
+        let Ok(bytes) = network.blobs.get_bytes(entry.content_hash()).await else {
+            // Content is still downloading; retry on the next event.
+            inner.pull_requested.store(true, Ordering::Relaxed);
+            continue;
+        };
+        let Ok(record) = serde_json::from_slice::<Record>(&bytes) else {
+            continue;
+        };
+        let hash = value_hash(&record_json(&record));
+        match latest.get(&key) {
+            Some((existing, _)) if !record.newer_than(existing.clock, &existing.device) => {}
+            _ => {
+                latest.insert(key, (record, hash));
+            }
+        }
+    }
+
+    let mut to_apply: Vec<(String, Record)> = Vec::new();
+    {
+        let state = inner.state.lock().unwrap();
+        for (key, (record, _hash)) in &latest {
+            let applied = state.applied.get(key);
+            let stale = applied
+                .map(|a| !record.newer_than(a.clock, &a.device))
+                .unwrap_or(false);
+            if !stale {
+                to_apply.push((key.clone(), record.clone()));
+            }
+        }
+    }
+    if to_apply.is_empty() {
+        return true;
+    }
+    to_apply.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let changed = match inner
+        .apply
+        .lock()
+        .unwrap()
+        .as_ref()
+        .map(|apply| apply(to_apply.clone()))
+    {
+        Some(Some(changed)) => changed,
+        Some(None) => return false,
+        None => return false,
+    };
+
+    let mut attachments = Vec::new();
+    if changed {
+        {
+            let mut state = inner.state.lock().unwrap();
+            for (key, record) in &to_apply {
+                let hash = value_hash(&record_json(record));
+                state.applied.insert(
+                    key.clone(),
+                    Applied {
+                        clock: record.clock,
+                        device: record.device.clone(),
+                    },
+                );
+                state.clock = state.clock.max(record.clock);
+                if record.deleted {
+                    state.last_published.remove(key);
+                } else {
+                    state.last_published.insert(key.clone(), hash);
+                }
+            }
+            state.last_sync = Some(now());
+            save_state(inner, &state);
+        }
+        {
+            let mut status = inner.status.lock().unwrap();
+            status.last_sync = inner.state.lock().ok().and_then(|s| s.last_sync.clone());
+            status.last_error = None;
+        }
+        attachments.extend(
+            to_apply
+                .iter()
+                .filter(|(key, record)| key.starts_with("attachment/") && !record.deleted)
+                .cloned(),
+        );
+    }
+    for (key, record) in attachments {
+        export_attachment(inner, network, &key, &record).await;
+    }
+    true
+}
+
+async fn publish_attachments(
+    inner: &Arc<Inner>,
+    network: &Network,
+    _doc: &iroh_docs::api::Doc,
+    records: &mut BTreeMap<String, Value>,
+) {
+    let dir = storage::attachments_dir(&inner.data_dir);
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        if !entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().to_string();
+        let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+        let Ok(tag) = network.blobs.add_path(entry.path()).await else {
+            continue;
+        };
+        let hash = tag.hash.to_string();
+        {
+            let mut state = inner.state.lock().unwrap();
+            if state.attachments.get(&name) == Some(&hash) {
+                continue;
+            }
+            state.attachments.insert(name.clone(), hash.clone());
+            save_state(inner, &state);
+        }
+        records.insert(
+            format!("attachment/{name}"),
+            json!({"hash": hash, "name": name, "size": size}),
+        );
+    }
+}
+
+async fn export_attachment(inner: &Arc<Inner>, network: &Network, key: &str, record: &Record) {
+    let Some(value) = &record.value else {
+        return;
+    };
+    let Some(hash) = value.get("hash").and_then(|v| v.as_str()) else {
+        return;
+    };
+    let Ok(hash) = hash.parse::<iroh_blobs::Hash>() else {
+        return;
+    };
+    let name = key.trim_start_matches("attachment/");
+    if name.is_empty() || name.contains('/') {
+        return;
+    }
+    let dir = storage::attachments_dir(&inner.data_dir);
+    let _ = std::fs::create_dir_all(&dir);
+    let _ = network.blobs.export(hash, dir.join(name)).await;
+}
+
+// ---------------------------------------------------------------------------
+// Records: workspace <-> document
+// ---------------------------------------------------------------------------
+
+pub fn split_workspace(ws: &Workspace) -> BTreeMap<String, Value> {
+    let mut records = BTreeMap::new();
+    for grid in &ws.grids {
+        records.insert(
+            format!("grid/{}", grid.id),
+            json!({
+                "id": &grid.id,
+                "name": &grid.name,
+                "icon": &grid.icon,
+                "folderId": &grid.folder_id,
+            }),
+        );
+        for card in &grid.cards {
+            records.insert(
+                format!("card/{}", card.id),
+                json!({"grid": &grid.id, "card": card}),
+            );
+        }
+    }
+    for folder in &ws.folders {
+        if let Ok(value) = serde_json::to_value(folder) {
+            records.insert(format!("folder/{}", folder.id), value);
+        }
+    }
+    for calendar in &ws.calendars {
+        if let Ok(value) = serde_json::to_value(calendar) {
+            records.insert(format!("calendar/{}", calendar.id), value);
+        }
+    }
+    for link in &ws.date_links {
+        if let Ok(value) = serde_json::to_value(link) {
+            records.insert(format!("date-link/{}", link.id), value);
+        }
+    }
+    for template in &ws.templates {
+        if let Ok(value) = serde_json::to_value(template) {
+            records.insert(format!("template/{}", template.id), value);
+        }
+    }
+    records.insert("settings".into(), syncable_settings(&ws.settings));
+    records
+}
+
+fn syncable_settings(settings: &Settings) -> Value {
+    let mut value = serde_json::to_value(settings).unwrap_or_else(|_| json!({}));
+    if let Some(object) = value.as_object_mut() {
+        for key in [
+            "aiApiKeys",
+            "ai_local_server_url",
+            "gdrive_client_id",
+            "gdrive_client_secret",
+            "gdrive_refresh_token",
+            "gdrive_email",
+            "repo_token_github",
+            "repo_token_gitlab",
+            "repo_token_forgejo",
+            "git_auth",
+            "cloud_folder",
+            "data_dir",
+            "iroh_sync_enabled",
+            "iroh_include_attachments",
+        ] {
+            object.remove(key);
+        }
+    }
+    value
+}
+
+fn record_json(record: &Record) -> Value {
+    match &record.value {
+        Some(value) if !record.deleted => value.clone(),
+        _ => json!({"deleted": true}),
+    }
+}
+
+fn value_hash(value: &Value) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(serde_json::to_vec(value).unwrap_or_default());
+    format!("{:x}", hasher.finalize())
+}
+
+/// Apply a batch of records to a workspace. Returns true when anything changed.
+pub fn apply_records(ws: &mut Workspace, records: &[(String, Record)]) -> bool {
+    let mut ordered: Vec<&(String, Record)> = records.iter().collect();
+    ordered.sort_by_key(|(key, _)| (record_order(key), key.clone()));
+
+    let mut changed = false;
+    let before = value_hash(&serde_json::to_value(&*ws).unwrap_or(Value::Null));
+
+    for (key, record) in ordered {
+        if record.v > SCHEMA {
+            continue;
+        }
+        let deleted = record.deleted || record.value.is_none();
+        if key == "settings" {
+            if let Some(mut value) = record.value.clone() {
+                if !deleted {
+                    crate::core::merge_settings_value(&mut ws.settings, &mut value);
+                    changed = true;
+                }
+            }
+            continue;
+        }
+        if let Some(id) = key.strip_prefix("grid/") {
+            if deleted {
+                if ws.grids.iter().any(|g| g.id == id) {
+                    ws.grids.retain(|g| g.id != id);
+                    changed = true;
+                }
+            } else if let Some(value) = &record.value {
+                let name = value.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                let icon = value
+                    .get("icon")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("layout-grid");
+                let folder = value
+                    .get("folderId")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string);
+                if let Some(grid) = ws.grids.iter_mut().find(|g| g.id == id) {
+                    grid.name = name.to_string();
+                    grid.icon = icon.to_string();
+                    grid.folder_id = folder;
+                } else {
+                    let mut grid = Grid {
+                        id: id.to_string(),
+                        ..Default::default()
+                    };
+                    grid.name = name.to_string();
+                    grid.icon = icon.to_string();
+                    grid.folder_id = folder;
+                    ws.grids.push(grid);
+                }
+                changed = true;
+            }
+            continue;
+        }
+        if let Some(id) = key.strip_prefix("card/") {
+            if deleted {
+                let mut removed = false;
+                for grid in &mut ws.grids {
+                    let len = grid.cards.len();
+                    grid.cards.retain(|c| c.id != id);
+                    removed |= grid.cards.len() != len;
+                }
+                changed |= removed;
+            } else if let Some(value) = &record.value {
+                let grid_id = value.get("grid").and_then(|v| v.as_str()).unwrap_or("");
+                let Some(card_value) = value.get("card") else {
+                    continue;
+                };
+                let Ok(card) = serde_json::from_value::<Card>(card_value.clone()) else {
+                    continue;
+                };
+                for grid in &mut ws.grids {
+                    grid.cards.retain(|c| c.id != card.id);
+                }
+                if let Some(grid) = ws.grids.iter_mut().find(|g| g.id == grid_id) {
+                    grid.cards.push(card);
+                } else {
+                    let mut grid = Grid {
+                        id: grid_id.to_string(),
+                        name: "Imported".into(),
+                        ..Default::default()
+                    };
+                    grid.cards.push(card);
+                    ws.grids.push(grid);
+                }
+                changed = true;
+            }
+            continue;
+        }
+        if key.starts_with("calendar/")
+            || key.starts_with("date-link/")
+            || key.starts_with("template/")
+            || key.starts_with("folder/")
+        {
+            // Handled below with concrete types to keep serde shapes explicit.
+            continue;
+        }
+    }
+
+    // Folders, calendars, date links and templates are simple id-keyed lists.
+    for (key, record) in records {
+        let deleted = record.deleted || record.value.is_none();
+        if let Some(id) = key.strip_prefix("folder/") {
+            if deleted {
+                ws.folders.retain(|f| f.id != id);
+                changed = true;
+            } else if let Some(value) = &record.value {
+                if let Ok(folder) = serde_json::from_value::<Folder>(value.clone()) {
+                    if let Some(existing) = ws.folders.iter_mut().find(|f| f.id == folder.id) {
+                        *existing = folder;
+                    } else {
+                        ws.folders.push(folder);
+                    }
+                    changed = true;
+                }
+            }
+        } else if let Some(id) = key.strip_prefix("calendar/") {
+            if deleted {
+                ws.calendars.retain(|c| c.id != id);
+                changed = true;
+            } else if let Some(value) = &record.value {
+                if let Ok(calendar) = serde_json::from_value::<CalendarDef>(value.clone()) {
+                    if let Some(existing) = ws.calendars.iter_mut().find(|c| c.id == calendar.id) {
+                        *existing = calendar;
+                    } else {
+                        ws.calendars.push(calendar);
+                    }
+                    changed = true;
+                }
+            }
+        } else if let Some(id) = key.strip_prefix("date-link/") {
+            if deleted {
+                ws.date_links.retain(|l| l.id != id);
+                changed = true;
+            } else if let Some(value) = &record.value {
+                if let Ok(link) = serde_json::from_value::<DateLink>(value.clone()) {
+                    if let Some(existing) = ws.date_links.iter_mut().find(|l| l.id == link.id) {
+                        *existing = link;
+                    } else {
+                        ws.date_links.push(link);
+                    }
+                    changed = true;
+                }
+            }
+        } else if let Some(id) = key.strip_prefix("template/") {
+            if deleted {
+                ws.templates.retain(|t| t.id != id);
+                changed = true;
+            } else if let Some(value) = &record.value {
+                if let Ok(template) = serde_json::from_value::<Template>(value.clone()) {
+                    if let Some(existing) = ws.templates.iter_mut().find(|t| t.id == template.id) {
+                        *existing = template;
+                    } else {
+                        ws.templates.push(template);
+                    }
+                    changed = true;
+                }
+            }
+        }
+    }
+
+    if ws.active_grid_id.is_none()
+        || !ws
+            .active_grid_id
+            .as_ref()
+            .map(|id| ws.grids.iter().any(|g| &g.id == id))
+            .unwrap_or(false)
+    {
+        ws.active_grid_id = ws.grids.first().map(|g| g.id.clone());
+    }
+
+    let after = value_hash(&serde_json::to_value(&*ws).unwrap_or(Value::Null));
+    changed || before != after
+}
+
+fn record_order(key: &str) -> u8 {
+    if key.starts_with("grid/") {
+        0
+    } else if key.starts_with("folder/") || key.starts_with("calendar/") {
+        1
+    } else if key.starts_with("card/") {
+        2
+    } else if key.starts_with("date-link/") || key.starts_with("template/") {
+        3
+    } else if key == "settings" {
+        4
+    } else {
+        5
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Local state
+// ---------------------------------------------------------------------------
+
+fn state_path(data_dir: &Path) -> PathBuf {
+    data_dir.join("iroh").join(STATE_FILE)
+}
+
+fn load_local_state(data_dir: &Path) -> LocalState {
+    std::fs::read_to_string(state_path(data_dir))
+        .ok()
+        .and_then(|raw| serde_json::from_str(&raw).ok())
+        .unwrap_or_default()
+}
+
+fn save_state(inner: &Arc<Inner>, state: &LocalState) {
+    let dir = inner.data_dir.join("iroh");
+    let _ = std::fs::create_dir_all(&dir);
+    if let Ok(raw) = serde_json::to_vec_pretty(state) {
+        let _ = write_private(&state_path(&inner.data_dir), &raw);
+    }
+    if let Ok(mut status) = inner.status.lock() {
+        status.clock = state.clock;
+        status.last_sync = state.last_sync.clone();
+    }
+}
+
+fn write_private(path: &Path, bytes: &[u8]) -> Result<()> {
+    let tmp = path.with_extension("tmp");
+    std::fs::write(&tmp, bytes)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600));
+    }
+    std::fs::rename(&tmp, path)?;
+    Ok(())
+}
+
+fn set_error(inner: &Arc<Inner>, message: String) {
+    tracing::warn!("{message}");
+    if let Ok(mut status) = inner.status.lock() {
+        status.last_error = Some(message);
+    }
+}
+
+fn status_error(inner: &Arc<Inner>) -> String {
+    inner
+        .status
+        .lock()
+        .ok()
+        .and_then(|s| s.last_error.clone())
+        .unwrap_or_else(|| "unknown error".into())
+}
+
+fn namespace_id(inner: &Arc<Inner>) -> String {
+    inner
+        .status
+        .lock()
+        .ok()
+        .and_then(|s| s.namespace.clone())
+        .unwrap_or_default()
+}
+
+fn now() -> String {
+    time::OffsetDateTime::now_utc()
+        .format(&time::format_description::well_known::Rfc3339)
+        .unwrap_or_else(|_| "now".into())
+}
+
+fn parse_ticket(text: &str) -> Result<iroh_docs::DocTicket> {
+    use iroh_tickets::Ticket;
+    iroh_docs::DocTicket::decode_string(text.trim())
+        .map_err(|e| anyhow!("invalid Iroh ticket: {e}"))
+}
+
+fn encode_ticket(ticket: &iroh_docs::DocTicket) -> String {
+    use iroh_tickets::Ticket;
+    ticket.encode_string()
+}
+
+// ---------------------------------------------------------------------------
+// Headless archival daemon
+// ---------------------------------------------------------------------------
+
+/// Join a workspace read-only and keep a persistent copy so other devices can
+/// sync even when every writer is offline. Never publishes.
+pub fn run_daemon(data_dir: PathBuf, ticket: String) -> Result<()> {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .worker_threads(2)
+        .build()?;
+    runtime.block_on(async move {
+        let inner = Arc::new(Inner {
+            tx: Mutex::new(None),
+            status: Mutex::new(Status::default()),
+            config: Mutex::new(IrohConfig {
+                enabled: true,
+                include_attachments: true,
+            }),
+            snapshot: Mutex::new(None),
+            apply: Mutex::new(None),
+            state: Mutex::new(LocalState::default()),
+            dirty_since: Mutex::new(None),
+            pull_requested: AtomicBool::new(false),
+            peers: AtomicUsize::new(0),
+            stop: AtomicBool::new(false),
+            data_dir: data_dir.clone(),
+        });
+        let network = start_network(&inner).await?;
+        let parsed = parse_ticket(&ticket)?;
+        let (doc, mut events) = network
+            .docs
+            .import_and_subscribe(parsed)
+            .await
+            .map_err(|e| anyhow!("join ticket: {e}"))?;
+        eprintln!(
+            "corcho sync daemon: storing namespace {} at {}",
+            doc.id(),
+            data_dir.display()
+        );
+        use futures_util::StreamExt;
+        let mut sigterm =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+        loop {
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => break,
+                _ = sigterm.recv() => break,
+                event = events.next() => {
+                    match event {
+                        Some(Ok(iroh_docs::engine::LiveEvent::NeighborUp(id))) => {
+                            eprintln!("corcho sync daemon: peer {id}");
+                        }
+                        Some(_) => {}
+                        None => break,
+                    }
+                }
+            }
+        }
+        // Flush the stores before exiting; FsStore otherwise loses the last
+        // seconds of writes.
+        let _ = network.router.shutdown().await;
+        let _ = network.blobs.shutdown().await;
+        Ok::<(), anyhow::Error>(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn card(ws: &mut Workspace, title: &str) -> String {
+        let mut card = Card::new("note", 10.0, 20.0);
+        card.title = title.into();
+        ws.grids[0].cards.push(card);
+        ws.grids[0].cards.last().unwrap().id.clone()
+    }
+
+    #[test]
+    fn split_and_apply_round_trip() {
+        let mut ws = Workspace::default();
+        card(&mut ws, "hello");
+        let records = split_workspace(&ws);
+        let mut target = Workspace::default();
+        let applied: Vec<(String, Record)> = records
+            .into_iter()
+            .map(|(key, value)| {
+                (
+                    key,
+                    Record {
+                        v: SCHEMA,
+                        device: "dev".into(),
+                        clock: 1,
+                        deleted: false,
+                        value: Some(value),
+                    },
+                )
+            })
+            .collect();
+        assert!(apply_records(&mut target, &applied));
+        let imported = target
+            .grids
+            .iter()
+            .flat_map(|g| g.cards.iter())
+            .find(|c| c.title == "hello");
+        assert!(imported.is_some());
+    }
+
+    #[test]
+    fn tombstone_removes_card() {
+        let mut ws = Workspace::default();
+        let id = card(&mut ws, "gone");
+        let records = vec![(
+            format!("card/{id}"),
+            Record {
+                v: SCHEMA,
+                device: "dev".into(),
+                clock: 2,
+                deleted: true,
+                value: None,
+            },
+        )];
+        assert!(apply_records(&mut ws, &records));
+        assert!(ws.grids.iter().all(|g| g.cards.is_empty()));
+    }
+
+    #[test]
+    fn settings_never_publish_secrets() {
+        let mut ws = Workspace::default();
+        ws.settings
+            .ai_api_keys
+            .insert("claude".into(), "secret".into());
+        ws.settings.repo_token_github = "token".into();
+        let records = split_workspace(&ws);
+        let settings = records.get("settings").unwrap().to_string();
+        assert!(!settings.contains("secret"));
+        assert!(!settings.contains("token"));
+        assert!(!settings.contains("aiApiKeys"));
+    }
+
+    #[test]
+    fn newer_record_wins_by_clock_then_device() {
+        let mut ws = Workspace::default();
+        let id = card(&mut ws, "old");
+        let value = json!({"grid": ws.grids[0].id.clone(), "card": &ws.grids[0].cards[0]});
+        let newer = Record {
+            v: SCHEMA,
+            device: "a".into(),
+            clock: 5,
+            deleted: false,
+            value: Some(value.clone()),
+        };
+        let mut newer_card = serde_json::from_value::<Card>(value["card"].clone()).unwrap();
+        newer_card.title = "new".into();
+        let newer = Record {
+            value: Some(json!({"grid": newer_card.id.clone(), "card": newer_card})),
+            ..newer
+        };
+        let older = Record {
+            v: SCHEMA,
+            device: "z".into(),
+            clock: 4,
+            deleted: false,
+            value: Some(value.clone()),
+        };
+        assert!(!older.newer_than(newer.clock, &newer.device));
+        assert!(newer.newer_than(older.clock, &older.device));
+        let _ = id;
+    }
+}

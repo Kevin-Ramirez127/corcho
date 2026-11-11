@@ -17,7 +17,7 @@ Item {
     property string presetModel: ""
 
     signal closed()
-    signal gitWizardRequested()
+    signal irohWizardRequested()
     property bool tabHovered: false
 
     anchors.fill: parent
@@ -39,8 +39,8 @@ Item {
     readonly property var upd: {
         try { return JSON.parse(app.updateJson || "{}"); } catch (e) { return {}; }
     }
-    readonly property var git: {
-        try { return JSON.parse(app.gitJson || "{}"); } catch (e) { return {}; }
+    readonly property var iroh: {
+        try { return JSON.parse(app.irohJson || "{}"); } catch (e) { return {}; }
     }
 
     function set(key, value) {
@@ -940,97 +940,62 @@ Item {
 
                             SettingsSection {
                                 th: root.th
-                                title: "Git sync"
-                                icon: "git-branch"
-                                description: "Keep the workspace in a Git repository on GitHub, Codeberg, GitLab or any remote."
+                                title: "Peer sync"
+                                icon: "wifi"
+                                description: "Sync the workspace directly between devices with Iroh. No server is required."
 
                                 SettingRow {
                                     th: root.th
-                                    title: "Enable git sync"
-                                    description: "Pull on start and push changes after edits."
+                                    title: "Enable peer sync"
+                                    description: "Publish changes to peers two seconds after the last edit."
                                     AppButton {
                                         th: root.th
-                                        icon: "git-compare"
+                                        icon: "share-2"
                                         text: "Set up…"
-                                        onClicked: root.gitWizardRequested()
+                                        onClicked: root.irohWizardRequested()
                                     }
                                     ToggleSwitch {
                                         th: root.th
-                                        checked: root.val("git_sync_enabled", false)
-                                        onToggled: function (value) { root.set("git_sync_enabled", value); }
+                                        checked: root.val("iroh_sync_enabled", false)
+                                        onToggled: function (value) { root.set("iroh_sync_enabled", value); }
                                     }
                                 }
                                 SettingRow {
                                     th: root.th
-                                    title: "Remote"
-                                    description: "SSH or HTTPS URL. The system git credentials and SSH agent are used."
-                                    AppTextField {
-                                        width: 300
+                                    title: "Status"
+                                    description: root.iroh.lastError
+                                        ? ("Error: " + root.iroh.lastError)
+                                        : (root.iroh.peers > 0
+                                            ? (root.iroh.peers + " peer(s) connected")
+                                            : (root.iroh.namespace ? "Waiting for peers" : "Not configured"))
+                                    AppButton {
                                         th: root.th
-                                        text: root.val("git_remote", "")
-                                        placeholder: "git@github.com:you/corcho-data.git"
-                                        onCommitted: function (value) { root.set("git_remote", value); }
-                                    }
-                                }
-                                SettingRow {
-                                    th: root.th
-                                    title: "Authentication"
-                                    description: "gh CLI uses the login from the gh command instead of stored tokens."
-                                    SelectField {
-                                        width: 170
-                                        th: root.th
-                                        value: root.val("git_auth", "system")
-                                        options: [
-                                            { value: "system", label: "Git credentials" },
-                                            { value: "gh", label: "gh CLI" }
-                                        ]
-                                        onSelected: function (value) { root.set("git_auth", value); }
-                                    }
-                                }
-                                SettingRow {
-                                    th: root.th
-                                    title: "Branch"
-                                    AppTextField {
-                                        width: 160
-                                        th: root.th
-                                        text: root.val("git_branch", "main")
-                                        placeholder: "main"
-                                        onCommitted: function (value) { root.set("git_branch", value); }
-                                    }
-                                }
-                                SettingRow {
-                                    th: root.th
-                                    title: "Pull at start"
-                                    description: "Fast-forward or union-merge the remote before loading."
-                                    ToggleSwitch {
-                                        th: root.th
-                                        checked: root.val("git_auto_pull", true)
-                                        onToggled: function (value) { root.set("git_auto_pull", value); }
-                                    }
-                                }
-                                SettingRow {
-                                    th: root.th
-                                    title: "Push changes"
-                                    description: "Commit and push two seconds after the last edit."
-                                    ToggleSwitch {
-                                        th: root.th
-                                        checked: root.val("git_auto_push", true)
-                                        onToggled: function (value) { root.set("git_auto_push", value); }
+                                        icon: "refresh-cw"
+                                        text: "Sync now"
+                                        enabledButton: root.val("iroh_sync_enabled", false) && root.iroh.namespace !== null
+                                        onClicked: root.app.irohSyncNow()
                                     }
                                 }
                                 SettingRow {
                                     th: root.th
                                     title: "Include attachments"
+                                    description: "Transfer pinned files and images through Iroh blobs."
                                     ToggleSwitch {
                                         th: root.th
-                                        checked: root.val("git_include_attachments", false)
-                                        onToggled: function (value) { root.set("git_include_attachments", value); }
+                                        checked: root.val("iroh_include_attachments", true)
+                                        onToggled: function (value) { root.set("iroh_include_attachments", value); }
                                     }
                                 }
+                            }
+
+                            SettingsSection {
+                                th: root.th
+                                title: "Git cards"
+                                icon: "git-branch"
+                                description: "Tokens used by Git cards for private repositories. This is not workspace sync."
                                 SettingRow {
                                     th: root.th
                                     title: "GitHub card token"
-                                    description: "Used by Git cards for private repositories when Authentication is Git credentials."
                                     AppTextField {
                                         width: 220
                                         th: root.th
@@ -1043,7 +1008,6 @@ Item {
                                 SettingRow {
                                     th: root.th
                                     title: "GitLab card token"
-                                    description: "Used by Git cards for private repositories."
                                     AppTextField {
                                         width: 220
                                         th: root.th
@@ -1056,7 +1020,6 @@ Item {
                                 SettingRow {
                                     th: root.th
                                     title: "Forgejo card token"
-                                    description: "Used by Git cards for Forgejo and Gitea repositories."
                                     AppTextField {
                                         width: 220
                                         th: root.th
@@ -1068,14 +1031,17 @@ Item {
                                 }
                                 SettingRow {
                                     th: root.th
-                                    title: "Git status"
-                                    description: root.git.lastError ? ("Error: " + root.git.lastError) : (root.git.lastSync ? ("Last sync: " + root.git.lastSync) : "Not synced yet")
-                                    AppButton {
+                                    title: "Git card authentication"
+                                    description: "gh CLI uses the local gh login for Git cards."
+                                    SelectField {
+                                        width: 170
                                         th: root.th
-                                        icon: "git-compare"
-                                        text: "Sync now"
-                                        enabledButton: root.val("git_sync_enabled", false) && root.val("git_remote", "") !== ""
-                                        onClicked: root.app.gitSyncNow()
+                                        value: root.val("git_auth", "system")
+                                        options: [
+                                            { value: "system", label: "Stored tokens" },
+                                            { value: "gh", label: "gh CLI" }
+                                        ]
+                                        onSelected: function (value) { root.set("git_auth", value); }
                                     }
                                 }
                             }

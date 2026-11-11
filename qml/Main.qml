@@ -69,7 +69,7 @@ ApplicationWindow {
     readonly property bool modalOpen: launcher.opened
         || settingsOpen
         || onboarding.opened
-        || gitWizard.opened
+        || irohWizard.opened
         || templatesDialog.opened
         || dateLinkDialog.opened
         || calendarManager.opened
@@ -620,7 +620,7 @@ ApplicationWindow {
     Shortcut {
         sequence: "Escape"
         onActivated: {
-            if (gitWizard.opened) gitWizard.close();
+            if (irohWizard.opened) irohWizard.close();
             else if (dateLinkDialog.opened) dateLinkDialog.close();
             else if (calendarManager.opened) calendarManager.close();
             else if (prompt.opened) prompt.close();
@@ -931,8 +931,8 @@ ApplicationWindow {
         onCardCreated: function (id) { canvas.focusCard(id) }
     }
 
-    GitSyncWizard {
-        id: gitWizard
+    IrohSyncWizard {
+        id: irohWizard
         app: app
         th: root.th
     }
@@ -951,7 +951,7 @@ ApplicationWindow {
         opened: root.settingsOpen
         tab: root.settingsTab
         onClosed: root.settingsOpen = false
-        onGitWizardRequested: gitWizard.open()
+        onIrohWizardRequested: irohWizard.open()
     }
 
     Onboarding {

@@ -47,37 +47,32 @@ pub struct Core {
     pub ws: Workspace,
     pub history: History,
     pub adblock: Adblock,
-    pub git: crate::gitsync::GitSync,
+    pub iroh: crate::irohsync::IrohSync,
     pub update: crate::updates::UpdateState,
     pub last_saved: Option<std::time::Instant>,
     pub last_file_mtime: Option<std::time::SystemTime>,
 }
 
 impl Core {
+    /// Boot without any networking; used by headless MCP clients and tests.
     pub fn boot() -> Result<Self> {
+        Self::boot_with(false)
+    }
+
+    /// Boot the GUI, which owns the Iroh endpoint.
+    pub fn boot_gui() -> Result<Self> {
+        Self::boot_with(true)
+    }
+
+    fn boot_with(networking: bool) -> Result<Self> {
         let default_dir = storage::default_data_dir();
         storage::ensure_dirs(&default_dir)?;
-        let mut ws = storage::load_workspace(&default_dir)?;
-        let config = crate::gitsync::config_from(&ws.settings);
-        let git = crate::gitsync::GitSync::new(config.clone());
-
-        if config.enabled && !config.remote.is_empty() {
-            if let Err(err) = git.ensure_repo(&default_dir, &config) {
-                tracing::warn!("git sync setup failed: {err}");
-            }
-            if config.auto_pull {
-                match git.pull_at_start(&default_dir, &config) {
-                    Ok(true) => {
-                        if let Ok(fresh) = storage::load_workspace(&default_dir) {
-                            ws = fresh;
-                        }
-                    }
-                    Ok(false) => {}
-                    Err(err) => tracing::warn!("git pull failed: {err}"),
-                }
-            }
-        }
-        git.start_worker(default_dir.clone());
+        let ws = storage::load_workspace(&default_dir)?;
+        let iroh = if networking {
+            crate::irohsync::IrohSync::start(default_dir.clone(), iroh_config(&ws.settings))
+        } else {
+            crate::irohsync::IrohSync::disabled()
+        };
         let last_file_mtime = storage::workspace_path(&default_dir)
             .metadata()
             .and_then(|m| m.modified())
@@ -88,7 +83,7 @@ impl Core {
             history: History::new(ws.settings.undo_steps, ws.clone()),
             ws,
             adblock: Adblock::new(),
-            git,
+            iroh,
             update: crate::updates::UpdateState::default(),
             last_saved: None,
             last_file_mtime,
@@ -105,7 +100,7 @@ impl Core {
             history: History::new(ws.settings.undo_steps, ws.clone()),
             ws,
             adblock: Adblock::new(),
-            git: crate::gitsync::GitSync::default(),
+            iroh: crate::irohsync::IrohSync::disabled(),
             update: crate::updates::UpdateState::default(),
             last_saved: None,
             last_file_mtime: None,
@@ -120,14 +115,46 @@ impl Core {
             .metadata()
             .and_then(|m| m.modified())
             .ok();
-        self.git.mark_dirty();
+        self.iroh.mark_dirty();
         trim_allocator();
         Ok(())
+    }
+
+    /// Persist a state that arrived from a peer. Does not mark it dirty, so it
+    /// is not echoed back out as a local edit.
+    pub fn save_remote(&mut self) -> Result<()> {
+        self.ws.revision = self.ws.revision.saturating_add(1);
+        storage::save_workspace(&self.data_dir, &self.ws)?;
+        self.last_saved = Some(std::time::Instant::now());
+        self.last_file_mtime = storage::workspace_path(&self.data_dir)
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok();
+        Ok(())
+    }
+
+    /// Apply a batch of records from a peer and persist the result.
+    pub fn apply_remote(&mut self, records: Vec<(String, crate::irohsync::Record)>) -> bool {
+        // A fresh install joining an existing workspace should adopt the
+        // remote grids instead of also publishing its untouched default grid.
+        if records.iter().any(|(key, _)| key.starts_with("grid/")) && is_pristine(&self.ws) {
+            self.ws.grids.clear();
+            self.ws.folders.clear();
+            self.ws.calendars.clear();
+            self.ws.templates.clear();
+            self.ws.date_links.clear();
+        }
+        let changed = crate::irohsync::apply_records(&mut self.ws, &records);
+        if changed {
+            let _ = self.save_remote();
+        }
+        changed
     }
 
     pub fn reload_from_disk(&mut self) -> Result<()> {
         self.ws = storage::load_workspace(&self.data_dir)?;
         self.history.reset(&self.ws);
+        self.iroh.configure(iroh_config(&self.ws.settings));
         self.adblock.set_enabled(self.ws.settings.ad_blocker);
         self.last_file_mtime = storage::workspace_path(&self.data_dir)
             .metadata()
@@ -150,8 +177,8 @@ impl Core {
         Ok(false)
     }
 
-    pub fn git_config(&self) -> crate::gitsync::GitConfig {
-        crate::gitsync::config_from(&self.ws.settings)
+    pub fn iroh_config(&self) -> crate::irohsync::IrohConfig {
+        iroh_config(&self.ws.settings)
     }
 
     pub fn save_quiet(&mut self) {
@@ -702,14 +729,9 @@ impl Core {
         if key == "ad_blocker" {
             self.adblock.set_enabled(self.ws.settings.ad_blocker);
         }
-        if key.starts_with("git_") {
-            let config = crate::gitsync::config_from(&self.ws.settings);
-            self.git.configure(config.clone());
-            if config.enabled && !config.remote.is_empty() {
-                if let Err(err) = self.git.ensure_repo(&self.data_dir.clone(), &config) {
-                    tracing::warn!("git setup failed: {err}");
-                }
-            }
+        if key.starts_with("iroh_") {
+            let config = self.iroh_config();
+            self.iroh.configure(config);
         }
         self.save_quiet();
         true
@@ -1704,6 +1726,27 @@ pub fn valid_date(value: &str) -> bool {
         return false;
     };
     time::Date::from_calendar_date(year, month, day).is_ok()
+}
+
+pub fn iroh_config(settings: &crate::model::Settings) -> crate::irohsync::IrohConfig {
+    crate::irohsync::IrohConfig {
+        enabled: settings.iroh_sync_enabled,
+        include_attachments: settings.iroh_include_attachments,
+    }
+}
+
+impl Drop for Core {
+    fn drop(&mut self) {
+        self.iroh.shutdown();
+    }
+}
+
+fn is_pristine(ws: &crate::model::Workspace) -> bool {
+    ws.grids.iter().all(|g| g.cards.is_empty())
+        && ws.folders.is_empty()
+        && ws.templates.is_empty()
+        && ws.date_links.is_empty()
+        && ws.grids.len() <= 1
 }
 
 #[cfg(test)]

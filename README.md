@@ -19,17 +19,19 @@ for Linux. No Electron shell, no telemetry, no analytics.
 - A dedicated Timbre card for noise and pure-tone audio, with volume, pitch
   and mix controls.
 - Pin images, Markdown files and folders as cards; PDFs open in your system viewer.
-- Custom SVG icons for every grid, plus a guided Git sync setup wizard.
+- Custom SVG icons for every grid, plus a guided peer sync setup wizard.
 - Themes follow the system light/dark appearance, with a separate theme chosen
   for light and dark.
 - Five AI providers (Anthropic, OpenAI, Google, xAI and Mistral) plus a local
   OpenAI-compatible server, with streaming and context injection.
 - Isolated website sessions, a host-based ad blocker and a cross-origin
   session probe.
-- Folder, Google Drive and **git sync** to any remote (GitHub, Codeberg,
-  GitLab or self-hosted). Sync pulls at start, pushes after a short debounce
-  and union-merges so a grid or card is never dropped. Conflict copies stay
-  in `backups/`.
+- **Peer-to-peer sync** with Iroh: create a shared workspace, join it from
+  another device with a ticket, and edits replicate directly, encrypted. No
+  server or Git remote is required. Deletions use tombstones, losing values
+  stay in `backups/`, attachments travel as content-addressed blobs, and an
+  optional read-only `--sync-daemon` keeps an always-on copy on a NAS or home
+  server. Folder and Google Drive sync remain available.
 - Picture-in-picture cards: pop out one or more selected cards in their own
   always-on-top windows, keep working on them, and return them to the canvas
   from the greyed-out placeholder left behind.
@@ -37,7 +39,7 @@ for Linux. No Electron shell, no telemetry, no analytics.
   startup and a `corcho://` protocol handler. Every feature is free.
 - A complete **MCP server** over stdio or local HTTP: workspace, grids,
   folders, every card type, calendars and date links, viewport and frame
-  queries, card visibility, settings, AI, web fetch/DOM/screenshot, git, sync,
+  queries, card visibility, settings, AI, web fetch/DOM/screenshot, Iroh sync,
   backups and updates. See [`docs/MCP.md`](docs/MCP.md).
 
 ## Palette
@@ -147,7 +149,24 @@ Tools, resources and prompts are listed in [docs/MCP.md](docs/MCP.md).
 ## Data
 
 `~/.local/share/corcho/workspace.json` holds the workspace. The
-`attachments/`, `backups/` and `updates/` directories sit beside it.
+`attachments/`, `backups/`, `iroh/` and `updates/` directories sit beside it.
+`iroh/` holds the endpoint key, document store, blob store and sync state; all
+of it is local and mode 0600 where it holds secrets. Daily snapshot zips are
+written to `backups/` and pruned to the newest eight.
+
+### Peer sync daemon
+
+For a durable always-on copy, join the workspace read-only from a NAS or home
+server:
+
+```sh
+corcho --sync-daemon --ticket <read-ticket>   --data-dir ~/.local/share/corcho
+```
+
+The daemon stores every replicated record and attachment but never writes, so
+a new device can sync while all your writer devices are offline. A systemd
+unit example lives in `packaging/corcho-syncd.service`. Relays only provide
+connectivity; they are not a durable copy.
 
 ## Acknowledgements
 
